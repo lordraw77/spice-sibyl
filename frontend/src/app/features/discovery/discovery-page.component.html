@@ -1,0 +1,101 @@
+<div class="discovery-shell">
+<div class="discovery-submenu">
+  <button
+    type="button"
+    class="submenu-item"
+    [class.active]="activeSource() === 'cloudflare'"
+    (click)="setSource('cloudflare')"
+  >
+    Cloudflare
+  </button>
+
+  <button
+    type="button"
+    class="submenu-item"
+    [class.active]="activeSource() === 'openrouter'"
+    (click)="setSource('openrouter')"
+  >
+    OpenRouter
+  </button>
+</div>
+
+  <div class="discovery-header">
+    <div>
+      <h2 class="page-title">☁ Cloudflare Model Discovery</h2>
+      <p class="page-sub">
+        Recupera e visualizza tutti i modelli Text Generation disponibili sul tuo account Cloudflare Workers AI.
+      </p>
+    </div>
+
+    <div class="header-actions">
+      <button class="btn-run" [disabled]="loading()" (click)="run()">
+        <span *ngIf="!loading()">▶ Esegui Discovery</span>
+        <span *ngIf="loading()" class="spin">⟳ Elaborazione...</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="alert-error" *ngIf="error()">
+    <strong>Errore:</strong> {{ error() }}
+  </div>
+
+  <div class="result-row" *ngIf="modelCount() !== null">
+    <div class="stat-card">
+      <span class="stat-num">{{ modelCount() }}</span>
+      <span class="stat-label">modelli Text Generation</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-num">{{ freeModelCount() }}</span>
+      <span class="stat-label">modelli free</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-num">{{ uniqueCapabilityCount() }}</span>
+      <span class="stat-label">capability uniche</span>
+    </div>
+  </div>
+
+  <div class="editor-section" *ngIf="yamlContent()">
+  <div class="editor-toolbar">
+    <span class="toolbar-title">YAML generato — incollalo in <code>provider_models.yaml</code></span>
+
+    <button
+      type="button"
+      class="btn-copy"
+      [class.ok]="copyState() === 'success'"
+      [class.err]="copyState() === 'error'"
+      (click)="copyYaml()"
+    >
+      <span *ngIf="copyState() === 'idle'">📋 Copia</span>
+      <span *ngIf="copyState() === 'success'">✓ Copiato</span>
+      <span *ngIf="copyState() === 'error'">⚠ Copia fallita</span>
+    </button>
+  </div>
+
+  <div class="editor-wrap">
+    <div class="editor-highlight" #highlightLayer [innerHTML]="highlightedYaml()"></div>
+    <textarea
+      #editorTextarea
+      class="editor-textarea"
+      spellcheck="false"
+      autocomplete="off"
+      [value]="yamlContent()"
+      (input)="onYamlChange($any($event.target).value)"
+      (scroll)="syncEditorScroll()"
+    ></textarea>
+  </div>
+</div>
+
+  <div class="models-section" *ngIf="models().length > 0">
+    <h3 class="section-title">Anteprima modelli</h3>
+    <div class="models-grid">
+      <div class="model-card" *ngFor="let m of models(); trackBy: trackByModelId">
+        <div class="model-name">{{ m.label }}</div>
+        <div class="model-id">{{ m.id }}</div>
+        <div class="model-meta">
+          <span class="badge-free" *ngIf="m.free">free</span>
+          <span class="badge-cap" *ngFor="let c of m.capabilities; trackBy: trackByCapability">{{ c }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

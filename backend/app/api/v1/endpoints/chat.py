@@ -9,17 +9,17 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.post("/completions")
+@router.post('/completions')
 async def chat_completions(payload: ChatCompletionRequest):
-    provider = get_provider()
+    provider = get_provider(payload.model)
     try:
         return await provider.complete(payload)
     except Exception as exc:
-        logger.exception("Chat completion failed for model=%s", payload.model)
+        logger.exception('Chat completion failed for model=%s', payload.model)
         raise HTTPException(
             status_code=500,
             detail={
-                "message": str(exc),
-                "model": payload.model,
+                'message': str(exc),
+                'model': payload.model,
             },
         ) from exc

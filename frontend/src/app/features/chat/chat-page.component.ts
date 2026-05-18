@@ -1,4 +1,13 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import {
+  AfterViewChecked,
+  Component,
+  ElementRef,
+  OnInit,
+  ViewChild,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
@@ -13,18 +22,28 @@ import DOMPurify from 'dompurify';
   standalone: true,
   imports: [CommonModule, FormsModule, DatePipe],
   templateUrl: './chat-page.component.html',
-  styleUrl: './chat-page.component.css'
+  styleUrl: './chat-page.component.css',
 })
-export class ChatPageComponent implements OnInit {
+export class ChatPageComponent implements OnInit, AfterViewChecked {
   private readonly chatService = inject(ChatService);
   private readonly sanitizer = inject(DomSanitizer);
+  readonly availabilityFilter = signal<'all' | 'free'>('all');
+
+  @ViewChild('messagesContainer')
+  private messagesContainer?: ElementRef<HTMLDivElement>;
 
   readonly messages = signal<ChatMessage[]>([
-    { role: 'assistant', content: 'Benvenuto in SpiceSibyl. Seleziona un modello e inizia a chattare.', model: 'SpiceSibyl', created_at: Math.floor(Date.now() / 1000) }
+    {
+      role: 'assistant',
+      content: 'Benvenuto in SpiceSibyl. Seleziona un modello e inizia a chattare.',
+      model: 'SpiceSibyl',
+      created_at: Math.floor(Date.now() / 1000),
+    },
   ]);
   readonly models = signal<ChatModel[]>([]);
   readonly providers = signal<ProviderSummary[]>([]);
   readonly capabilityFilter = signal<string>('all');
+  readonly selectedProviders = signal<string[]>([]);
 
   readonly availableCapabilities = computed(() => {
     const caps = new Set<string>();
@@ -36,18 +55,33 @@ export class ChatPageComponent implements OnInit {
     return ['all', ...Array.from(caps).sort()];
   });
 
-  readonly filteredModels = computed(() => {
-    const filter = this.capabilityFilter();
-    if (filter === 'all') {
-      return this.models();
-    }
-    return this.models().filter((model) => (model.capabilities || []).includes(filter));
+readonly filteredModels = computed(() => {
+  const capability = this.capabilityFilter();
+  const availability = this.availabilityFilter();
+  const enabledProviders = new Set(this.selectedProviders());
+
+  return this.models().filter((model) => {
+    const providerOk =
+      enabledProviders.size === 0 || enabledProviders.has(model.provider || '');
+
+    const capabilityOk =
+      capability === 'all' || (model.capabilities || []).includes(capability);
+
+    const availabilityOk =
+      availability === 'all' || !!model.free;
+
+    return providerOk && capabilityOk && availabilityOk;
   });
+});
 
   prompt = '';
   model = 'ollama/qwen2.5:7b-instruct';
   loading = false;
-
+  private shouldAutoScroll = true;
+  setAvailabilityFilter(value: 'all' | 'free'): void {
+    this.availabilityFilter.set(value);
+    this.ensureValidSelectedModel();
+  }
   ngOnInit(): void {
     marked.setOptions({ breaks: true, gfm: true });
 
@@ -55,18 +89,40 @@ export class ChatPageComponent implements OnInit {
       next: (response) => {
         this.models.set(response.data);
         this.providers.set(response.providers || []);
+        this.selectedProviders.set(
+          (response.providers || [])
+            .filter((provider) => provider.enabled)
+            .map((provider) => provider.id)
+        );
+
         const preferred = response.data.find((item) => item.id === this.model);
         if (!preferred && response.data.length > 0) {
-          this.model = response.data.find((item) => item.default) ?.id || response.data[0].id;
+          this.model = response.data.find((item) => item.default)?.id || response.data[0].id;
         }
+
+        this.ensureValidSelectedModel();
+        this.queueScrollToBottom(true);
       },
       error: () => {
         this.messages.update((items) => [
           ...items,
-          { role: 'assistant', content: 'Impossibile caricare i modelli dal backend.', model: 'system', created_at: Math.floor(Date.now() / 1000) }
+          {
+            role: 'assistant',
+            content: 'Impossibile caricare i modelli dal backend.',
+            model: 'system',
+            created_at: Math.floor(Date.now() / 1000),
+          },
         ]);
-      }
+        this.queueScrollToBottom(true);
+      },
     });
+  }
+
+  ngAfterViewChecked(): void {
+    if (this.shouldAutoScroll) {
+      this.scrollToBottom();
+      this.shouldAutoScroll = false;
+    }
   }
 
   send(): void {
@@ -76,30 +132,41 @@ export class ChatPageComponent implements OnInit {
     }
 
     this.loading = true;
-    const nextMessages = [...this.messages(), { role: 'user' as const, content: text, created_at: Math.floor(Date.now() / 1000) }];
+    const nextMessages = [
+      ...this.messages(),
+      { role: 'user' as const, content: text, created_at: Math.floor(Date.now() / 1000) },
+    ];
     this.messages.set(nextMessages);
+    this.queueScrollToBottom();
 
     this.chatService.complete({
       model: this.model,
       messages: nextMessages,
       stream: false,
-      temperature: 0.7
+      temperature: 0.7,
     }).subscribe({
       next: (response) => {
         const reply = this.mapAssistantMessage(response);
         if (reply) {
           this.messages.update((items) => [...items, reply]);
+          this.queueScrollToBottom();
         }
       },
       error: () => {
         this.messages.update((items) => [
           ...items,
-          { role: 'assistant', content: 'Errore nella chiamata al backend.', model: this.model, created_at: Math.floor(Date.now() / 1000) }
+          {
+            role: 'assistant',
+            content: 'Errore nella chiamata al backend.',
+            model: this.model,
+            created_at: Math.floor(Date.now() / 1000),
+          },
         ]);
+        this.queueScrollToBottom();
       },
       complete: () => {
         this.loading = false;
-      }
+      },
     });
 
     this.prompt = '';
@@ -127,10 +194,60 @@ export class ChatPageComponent implements OnInit {
 
   setCapabilityFilter(value: string): void {
     this.capabilityFilter.set(value);
+    this.ensureValidSelectedModel();
+  }
+
+  toggleProvider(providerId: string): void {
+    const current = new Set(this.selectedProviders());
+
+    if (current.has(providerId)) {
+      current.delete(providerId);
+    } else {
+      current.add(providerId);
+    }
+
+    this.selectedProviders.set(Array.from(current));
+    this.ensureValidSelectedModel();
+  }
+
+  isProviderSelected(providerId: string): boolean {
+    return this.selectedProviders().includes(providerId);
+  }
+
+  onMessagesScroll(): void {
+    const container = this.messagesContainer?.nativeElement;
+    if (!container) {
+      return;
+    }
+    const threshold = 80;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    this.shouldAutoScroll = distanceFromBottom <= threshold;
+  }
+
+  private ensureValidSelectedModel(): void {
     const filtered = this.filteredModels();
-    if (!filtered.find((item) => item.id === this.model) && filtered.length > 0) {
+    if (!filtered.length) {
+      this.model = '';
+      return;
+    }
+
+    if (!filtered.find((item) => item.id === this.model)) {
       this.model = filtered[0].id;
     }
+  }
+
+  private queueScrollToBottom(force = false): void {
+    if (force || this.shouldAutoScroll) {
+      this.shouldAutoScroll = true;
+    }
+  }
+
+  private scrollToBottom(): void {
+    const container = this.messagesContainer?.nativeElement;
+    if (!container) {
+      return;
+    }
+    container.scrollTop = container.scrollHeight;
   }
 
   private mapAssistantMessage(response: ChatCompletionResponse): ChatMessage | null {
@@ -157,7 +274,7 @@ export class ChatPageComponent implements OnInit {
       estimated_cost: response.metrics?.estimated_cost,
       created_at: response.created,
       capabilities: modelMeta?.capabilities ?? [],
-      free: modelMeta?.free
+      free: modelMeta?.free,
     };
   }
 

@@ -28,22 +28,1792 @@ providers:
     enabled: true
     configured: true
     models:
-      - id: openrouter/meta-llama/llama-3.1-8b-instruct:free
-        label: OpenRouter · Llama 3.1 8B Instruct Free
+      - id: openrouter/openrouter/free
+        label: OpenRouter · Free
         default: false
         free: true
         capabilities: [chat]
-      - id: openrouter/qwen/qwen-2.5-7b-instruct:free
-        label: OpenRouter · Qwen 2.5 7B Instruct Free
+      - id: openrouter/ai21/jamba-large-1.7
+        label: OpenRouter · AI21 ·  Jamba Large 1.7
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/aion-labs/aion-1.0
+        label: OpenRouter · AionLabs ·  Aion-1.0
+        default: false
+        free: false
+        capabilities: [chat, reasoning]
+      - id: openrouter/aion-labs/aion-1.0-mini
+        label: OpenRouter · AionLabs ·  Aion-1.0-Mini
+        default: false
+        free: false
+        capabilities: [chat, reasoning]
+      - id: openrouter/aion-labs/aion-2.0
+        label: OpenRouter · AionLabs ·  Aion-2.0
+        default: false
+        free: false
+        capabilities: [chat, reasoning]
+      - id: openrouter/aion-labs/aion-rp-llama-3.1-8b
+        label: OpenRouter · AionLabs ·  Aion-RP 1.0 (8B)
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/alfredpros/codellama-7b-instruct-solidity
+        label: OpenRouter · AlfredPros ·  CodeLLaMa 7B Instruct Solidity
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/alibaba/tongyi-deepresearch-30b-a3b
+        label: OpenRouter · Tongyi DeepResearch 30B A3B
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/allenai/olmo-3-32b-think
+        label: OpenRouter · AllenAI ·  Olmo 3 32B Think
+        default: false
+        free: false
+        capabilities: [chat, json, reasoning]
+      - id: openrouter/amazon/nova-2-lite-v1
+        label: OpenRouter · Amazon ·  Nova 2 Lite
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, reasoning]
+      - id: openrouter/amazon/nova-lite-v1
+        label: OpenRouter · Amazon ·  Nova Lite 1.0
+        default: false
+        free: false
+        capabilities: [chat, vision, tools]
+      - id: openrouter/amazon/nova-micro-v1
+        label: OpenRouter · Amazon ·  Nova Micro 1.0
+        default: false
+        free: false
+        capabilities: [chat, tools]
+      - id: openrouter/amazon/nova-premier-v1
+        label: OpenRouter · Amazon ·  Nova Premier 1.0
+        default: false
+        free: false
+        capabilities: [chat, vision, tools]
+      - id: openrouter/amazon/nova-pro-v1
+        label: OpenRouter · Amazon ·  Nova Pro 1.0
+        default: false
+        free: false
+        capabilities: [chat, vision, tools]
+      - id: openrouter/anthracite-org/magnum-v4-72b
+        label: OpenRouter · Magnum v4 72B
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/anthropic/claude-3-haiku
+        label: OpenRouter · Anthropic ·  Claude 3 Haiku
+        default: false
+        free: false
+        capabilities: [chat, vision, tools]
+      - id: openrouter/anthropic/claude-3.5-haiku
+        label: OpenRouter · Anthropic ·  Claude 3.5 Haiku
+        default: false
+        free: false
+        capabilities: [chat, vision, tools]
+      - id: openrouter/anthropic/claude-haiku-4.5
+        label: OpenRouter · Anthropic ·  Claude Haiku 4.5
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/anthropic/claude-opus-4
+        label: OpenRouter · Anthropic ·  Claude Opus 4
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, reasoning]
+      - id: openrouter/anthropic/claude-opus-4.1
+        label: OpenRouter · Anthropic ·  Claude Opus 4.1
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/anthropic/claude-opus-4.5
+        label: OpenRouter · Anthropic ·  Claude Opus 4.5
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/anthropic/claude-opus-4.6
+        label: OpenRouter · Anthropic ·  Claude Opus 4.6
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/anthropic/claude-opus-4.6-fast
+        label: OpenRouter · Anthropic ·  Claude Opus 4.6 (Fast)
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/anthropic/claude-opus-4.7
+        label: OpenRouter · Anthropic ·  Claude Opus 4.7
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/anthropic/claude-opus-4.7-fast
+        label: OpenRouter · Anthropic ·  Claude Opus 4.7 (Fast)
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/anthropic/claude-sonnet-4
+        label: OpenRouter · Anthropic ·  Claude Sonnet 4
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, reasoning]
+      - id: openrouter/anthropic/claude-sonnet-4.5
+        label: OpenRouter · Anthropic ·  Claude Sonnet 4.5
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/anthropic/claude-sonnet-4.6
+        label: OpenRouter · Anthropic ·  Claude Sonnet 4.6
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/arcee-ai/coder-large
+        label: OpenRouter · Arcee AI ·  Coder Large
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/arcee-ai/maestro-reasoning
+        label: OpenRouter · Arcee AI ·  Maestro Reasoning
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/arcee-ai/spotlight
+        label: OpenRouter · Arcee AI ·  Spotlight
+        default: false
+        free: false
+        capabilities: [chat, vision]
+      - id: openrouter/arcee-ai/trinity-large-preview
+        label: OpenRouter · Arcee AI ·  Trinity Large Preview
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/arcee-ai/trinity-large-thinking
+        label: OpenRouter · Arcee AI ·  Trinity Large Thinking
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/arcee-ai/trinity-large-thinking:free
+        label: OpenRouter · Arcee AI ·  Trinity Large Thinking (free)
         default: false
         free: true
-        capabilities: [chat, code]
-      - id: openrouter/deepseek/deepseek-r1:free
-        label: OpenRouter · DeepSeek R1 Free
+        capabilities: [chat, tools, reasoning]
+      - id: openrouter/arcee-ai/trinity-mini
+        label: OpenRouter · Arcee AI ·  Trinity Mini
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/arcee-ai/virtuoso-large
+        label: OpenRouter · Arcee AI ·  Virtuoso Large
+        default: false
+        free: false
+        capabilities: [chat, tools]
+      - id: openrouter/baidu/cobuddy:free
+        label: OpenRouter · Baidu Qianfan ·  CoBuddy (free)
         default: false
         free: true
-        capabilities: [reasoning, chat]
-
+        capabilities: [chat, tools, reasoning]
+      - id: openrouter/baidu/ernie-4.5-21b-a3b
+        label: OpenRouter · Baidu ·  ERNIE 4.5 21B A3B
+        default: false
+        free: false
+        capabilities: [chat, tools]
+      - id: openrouter/baidu/ernie-4.5-21b-a3b-thinking
+        label: OpenRouter · Baidu ·  ERNIE 4.5 21B A3B Thinking
+        default: false
+        free: false
+        capabilities: [chat, reasoning]
+      - id: openrouter/baidu/ernie-4.5-300b-a47b
+        label: OpenRouter · Baidu ·  ERNIE 4.5 300B A47B 
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/baidu/ernie-4.5-vl-28b-a3b
+        label: OpenRouter · Baidu ·  ERNIE 4.5 VL 28B A3B
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, reasoning]
+      - id: openrouter/baidu/ernie-4.5-vl-424b-a47b
+        label: OpenRouter · Baidu ·  ERNIE 4.5 VL 424B A47B 
+        default: false
+        free: false
+        capabilities: [chat, vision, reasoning]
+      - id: openrouter/baidu/qianfan-ocr-fast
+        label: OpenRouter · Baidu ·  Qianfan-OCR-Fast
+        default: false
+        free: false
+        capabilities: [chat, vision, reasoning]
+      - id: openrouter/bytedance-seed/seed-1.6
+        label: OpenRouter · ByteDance Seed ·  Seed 1.6
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/bytedance-seed/seed-1.6-flash
+        label: OpenRouter · ByteDance Seed ·  Seed 1.6 Flash
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/bytedance-seed/seed-2.0-lite
+        label: OpenRouter · ByteDance Seed ·  Seed-2.0-Lite
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/bytedance-seed/seed-2.0-mini
+        label: OpenRouter · ByteDance Seed ·  Seed-2.0-Mini
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/bytedance/ui-tars-1.5-7b
+        label: OpenRouter · ByteDance ·  UI-TARS 7B 
+        default: false
+        free: false
+        capabilities: [chat, vision]
+      - id: openrouter/cognitivecomputations/dolphin-mistral-24b-venice-edition:free
+        label: OpenRouter · Venice ·  Uncensored (free)
+        default: false
+        free: true
+        capabilities: [chat, json]
+      - id: openrouter/cohere/command-a
+        label: OpenRouter · Cohere ·  Command A
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/cohere/command-r-08-2024
+        label: OpenRouter · Cohere ·  Command R (08-2024)
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/cohere/command-r-plus-08-2024
+        label: OpenRouter · Cohere ·  Command R+ (08-2024)
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/cohere/command-r7b-12-2024
+        label: OpenRouter · Cohere ·  Command R7B (12-2024)
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/deepcogito/cogito-v2.1-671b
+        label: OpenRouter · Deep Cogito ·  Cogito v2.1 671B
+        default: false
+        free: false
+        capabilities: [chat, json, reasoning]
+      - id: openrouter/deepseek/deepseek-chat
+        label: OpenRouter · DeepSeek ·  DeepSeek V3
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/deepseek/deepseek-chat-v3-0324
+        label: OpenRouter · DeepSeek ·  DeepSeek V3 0324
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/deepseek/deepseek-chat-v3.1
+        label: OpenRouter · DeepSeek ·  DeepSeek V3.1
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/deepseek/deepseek-r1
+        label: OpenRouter · DeepSeek ·  R1
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/deepseek/deepseek-r1-0528
+        label: OpenRouter · DeepSeek ·  R1 0528
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/deepseek/deepseek-r1-distill-llama-70b
+        label: OpenRouter · DeepSeek ·  R1 Distill Llama 70B
+        default: false
+        free: false
+        capabilities: [chat, json, reasoning]
+      - id: openrouter/deepseek/deepseek-r1-distill-qwen-32b
+        label: OpenRouter · DeepSeek ·  R1 Distill Qwen 32B
+        default: false
+        free: false
+        capabilities: [chat, json, reasoning]
+      - id: openrouter/deepseek/deepseek-v3.1-terminus
+        label: OpenRouter · DeepSeek ·  DeepSeek V3.1 Terminus
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/deepseek/deepseek-v3.2
+        label: OpenRouter · DeepSeek ·  DeepSeek V3.2
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/deepseek/deepseek-v3.2-exp
+        label: OpenRouter · DeepSeek ·  DeepSeek V3.2 Exp
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/deepseek/deepseek-v3.2-speciale
+        label: OpenRouter · DeepSeek ·  DeepSeek V3.2 Speciale
+        default: false
+        free: false
+        capabilities: [chat, json, reasoning]
+      - id: openrouter/deepseek/deepseek-v4-flash
+        label: OpenRouter · DeepSeek ·  DeepSeek V4 Flash
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/deepseek/deepseek-v4-flash:free
+        label: OpenRouter · DeepSeek ·  DeepSeek V4 Flash (free)
+        default: false
+        free: true
+        capabilities: [chat, tools, reasoning]
+      - id: openrouter/deepseek/deepseek-v4-pro
+        label: OpenRouter · DeepSeek ·  DeepSeek V4 Pro
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/essentialai/rnj-1-instruct
+        label: OpenRouter · EssentialAI ·  Rnj 1 Instruct
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/google/gemini-2.0-flash-001
+        label: OpenRouter · Google ·  Gemini 2.0 Flash
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json]
+      - id: openrouter/google/gemini-2.0-flash-lite-001
+        label: OpenRouter · Google ·  Gemini 2.0 Flash Lite
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json]
+      - id: openrouter/google/gemini-2.5-flash
+        label: OpenRouter · Google ·  Gemini 2.5 Flash
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json, reasoning]
+      - id: openrouter/google/gemini-2.5-flash-image
+        label: OpenRouter · Google ·  Nano Banana (Gemini 2.5 Flash Image)
+        default: false
+        free: false
+        capabilities: [chat, vision, json, image_generation]
+      - id: openrouter/google/gemini-2.5-flash-lite
+        label: OpenRouter · Google ·  Gemini 2.5 Flash Lite
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json, reasoning]
+      - id: openrouter/google/gemini-2.5-flash-lite-preview-09-2025
+        label: OpenRouter · Google ·  Gemini 2.5 Flash Lite Preview 09-2025
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json, reasoning]
+      - id: openrouter/google/gemini-2.5-pro
+        label: OpenRouter · Google ·  Gemini 2.5 Pro
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json, reasoning]
+      - id: openrouter/google/gemini-2.5-pro-preview
+        label: OpenRouter · Google ·  Gemini 2.5 Pro Preview 06-05
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json, reasoning]
+      - id: openrouter/google/gemini-2.5-pro-preview-05-06
+        label: OpenRouter · Google ·  Gemini 2.5 Pro Preview 05-06
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json, reasoning]
+      - id: openrouter/google/gemini-3-flash-preview
+        label: OpenRouter · Google ·  Gemini 3 Flash Preview
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json, reasoning]
+      - id: openrouter/google/gemini-3-pro-image-preview
+        label: OpenRouter · Google ·  Nano Banana Pro (Gemini 3 Pro Image Preview)
+        default: false
+        free: false
+        capabilities: [chat, vision, json, reasoning, image_generation]
+      - id: openrouter/google/gemini-3.1-flash-image-preview
+        label: OpenRouter · Google ·  Nano Banana 2 (Gemini 3.1 Flash Image Preview)
+        default: false
+        free: false
+        capabilities: [chat, vision, json, reasoning, image_generation]
+      - id: openrouter/google/gemini-3.1-flash-lite
+        label: OpenRouter · Google ·  Gemini 3.1 Flash Lite
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json, reasoning]
+      - id: openrouter/google/gemini-3.1-flash-lite-preview
+        label: OpenRouter · Google ·  Gemini 3.1 Flash Lite Preview
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json, reasoning]
+      - id: openrouter/google/gemini-3.1-pro-preview
+        label: OpenRouter · Google ·  Gemini 3.1 Pro Preview
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json, reasoning]
+      - id: openrouter/google/gemini-3.1-pro-preview-customtools
+        label: OpenRouter · Google ·  Gemini 3.1 Pro Preview Custom Tools
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json, reasoning]
+      - id: openrouter/google/gemma-2-27b-it
+        label: OpenRouter · Google ·  Gemma 2 27B
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/google/gemma-3-12b-it
+        label: OpenRouter · Google ·  Gemma 3 12B
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/google/gemma-3-27b-it
+        label: OpenRouter · Google ·  Gemma 3 27B
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/google/gemma-3-4b-it
+        label: OpenRouter · Google ·  Gemma 3 4B
+        default: false
+        free: false
+        capabilities: [chat, vision, json]
+      - id: openrouter/google/gemma-3n-e4b-it
+        label: OpenRouter · Google ·  Gemma 3n 4B
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/google/gemma-4-26b-a4b-it
+        label: OpenRouter · Google ·  Gemma 4 26B A4B 
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/google/gemma-4-26b-a4b-it:free
+        label: OpenRouter · Google ·  Gemma 4 26B A4B  (free)
+        default: false
+        free: true
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/google/gemma-4-31b-it
+        label: OpenRouter · Google ·  Gemma 4 31B
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/google/gemma-4-31b-it:free
+        label: OpenRouter · Google ·  Gemma 4 31B (free)
+        default: false
+        free: true
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/google/lyria-3-clip-preview
+        label: OpenRouter · Google ·  Lyria 3 Clip Preview
+        default: false
+        free: true
+        capabilities: [chat, vision, json]
+      - id: openrouter/google/lyria-3-pro-preview
+        label: OpenRouter · Google ·  Lyria 3 Pro Preview
+        default: false
+        free: true
+        capabilities: [chat, vision, json]
+      - id: openrouter/gryphe/mythomax-l2-13b
+        label: OpenRouter · MythoMax 13B
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/ibm-granite/granite-4.0-h-micro
+        label: OpenRouter · IBM ·  Granite 4.0 Micro
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/ibm-granite/granite-4.1-8b
+        label: OpenRouter · IBM ·  Granite 4.1 8B
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/inception/mercury-2
+        label: OpenRouter · Inception ·  Mercury 2
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/inclusionai/ling-2.6-1t
+        label: OpenRouter · inclusionAI ·  Ling-2.6-1T
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/inclusionai/ling-2.6-flash
+        label: OpenRouter · inclusionAI ·  Ling-2.6-flash
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/inclusionai/ring-2.6-1t
+        label: OpenRouter · inclusionAI ·  Ring-2.6-1T
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/inflection/inflection-3-pi
+        label: OpenRouter · Inflection ·  Inflection 3 Pi
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/inflection/inflection-3-productivity
+        label: OpenRouter · Inflection ·  Inflection 3 Productivity
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/kwaipilot/kat-coder-pro-v2
+        label: OpenRouter · Kwaipilot ·  KAT-Coder-Pro V2
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/liquid/lfm-2-24b-a2b
+        label: OpenRouter · LiquidAI ·  LFM2-24B-A2B
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/liquid/lfm-2.5-1.2b-instruct:free
+        label: OpenRouter · LiquidAI ·  LFM2.5-1.2B-Instruct (free)
+        default: false
+        free: true
+        capabilities: [chat]
+      - id: openrouter/liquid/lfm-2.5-1.2b-thinking:free
+        label: OpenRouter · LiquidAI ·  LFM2.5-1.2B-Thinking (free)
+        default: false
+        free: true
+        capabilities: [chat, reasoning]
+      - id: openrouter/mancer/weaver
+        label: OpenRouter · Mancer ·  Weaver (alpha)
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/meta-llama/llama-3-70b-instruct
+        label: OpenRouter · Meta ·  Llama 3 70B Instruct
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/meta-llama/llama-3-8b-instruct
+        label: OpenRouter · Meta ·  Llama 3 8B Instruct
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/meta-llama/llama-3.1-70b-instruct
+        label: OpenRouter · Meta ·  Llama 3.1 70B Instruct
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/meta-llama/llama-3.1-8b-instruct
+        label: OpenRouter · Meta ·  Llama 3.1 8B Instruct
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/meta-llama/llama-3.2-11b-vision-instruct
+        label: OpenRouter · Meta ·  Llama 3.2 11B Vision Instruct
+        default: false
+        free: false
+        capabilities: [chat, vision, json]
+      - id: openrouter/meta-llama/llama-3.2-1b-instruct
+        label: OpenRouter · Meta ·  Llama 3.2 1B Instruct
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/meta-llama/llama-3.2-3b-instruct
+        label: OpenRouter · Meta ·  Llama 3.2 3B Instruct
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/meta-llama/llama-3.2-3b-instruct:free
+        label: OpenRouter · Meta ·  Llama 3.2 3B Instruct (free)
+        default: false
+        free: true
+        capabilities: [chat]
+      - id: openrouter/meta-llama/llama-3.3-70b-instruct
+        label: OpenRouter · Meta ·  Llama 3.3 70B Instruct
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/meta-llama/llama-3.3-70b-instruct:free
+        label: OpenRouter · Meta ·  Llama 3.3 70B Instruct (free)
+        default: false
+        free: true
+        capabilities: [chat, tools]
+      - id: openrouter/meta-llama/llama-4-maverick
+        label: OpenRouter · Meta ·  Llama 4 Maverick
+        default: false
+        free: false
+        capabilities: [chat, vision, json]
+      - id: openrouter/meta-llama/llama-4-scout
+        label: OpenRouter · Meta ·  Llama 4 Scout
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/meta-llama/llama-guard-3-8b
+        label: OpenRouter · Llama Guard 3 8B
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/meta-llama/llama-guard-4-12b
+        label: OpenRouter · Meta ·  Llama Guard 4 12B
+        default: false
+        free: false
+        capabilities: [chat, vision, json]
+      - id: openrouter/microsoft/phi-4
+        label: OpenRouter · Microsoft ·  Phi 4
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/microsoft/phi-4-mini-instruct
+        label: OpenRouter · Microsoft ·  Phi 4 Mini Instruct
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/microsoft/wizardlm-2-8x22b
+        label: OpenRouter · WizardLM-2 8x22B
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/minimax/minimax-01
+        label: OpenRouter · MiniMax ·  MiniMax-01
+        default: false
+        free: false
+        capabilities: [chat, vision]
+      - id: openrouter/minimax/minimax-m1
+        label: OpenRouter · MiniMax ·  MiniMax M1
+        default: false
+        free: false
+        capabilities: [chat, tools, reasoning]
+      - id: openrouter/minimax/minimax-m2
+        label: OpenRouter · MiniMax ·  MiniMax M2
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/minimax/minimax-m2-her
+        label: OpenRouter · MiniMax ·  MiniMax M2-her
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/minimax/minimax-m2.1
+        label: OpenRouter · MiniMax ·  MiniMax M2.1
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/minimax/minimax-m2.5
+        label: OpenRouter · MiniMax ·  MiniMax M2.5
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/minimax/minimax-m2.5:free
+        label: OpenRouter · MiniMax ·  MiniMax M2.5 (free)
+        default: false
+        free: true
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/minimax/minimax-m2.7
+        label: OpenRouter · MiniMax ·  MiniMax M2.7
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/mistralai/codestral-2508
+        label: OpenRouter · Mistral ·  Codestral 2508
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/mistralai/devstral-2512
+        label: OpenRouter · Mistral ·  Devstral 2 2512
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/mistralai/devstral-medium
+        label: OpenRouter · Mistral ·  Devstral Medium
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/mistralai/devstral-small
+        label: OpenRouter · Mistral ·  Devstral Small 1.1
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/mistralai/ministral-14b-2512
+        label: OpenRouter · Mistral ·  Ministral 3 14B 2512
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/mistralai/ministral-3b-2512
+        label: OpenRouter · Mistral ·  Ministral 3 3B 2512
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/mistralai/ministral-8b-2512
+        label: OpenRouter · Mistral ·  Ministral 3 8B 2512
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/mistralai/mistral-7b-instruct-v0.1
+        label: OpenRouter · Mistral ·  Mistral 7B Instruct v0.1
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/mistralai/mistral-large
+        label: OpenRouter · Mistral Large
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/mistralai/mistral-large-2407
+        label: OpenRouter · Mistral Large 2407
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/mistralai/mistral-large-2411
+        label: OpenRouter · Mistral Large 2411
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/mistralai/mistral-large-2512
+        label: OpenRouter · Mistral ·  Mistral Large 3 2512
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/mistralai/mistral-medium-3
+        label: OpenRouter · Mistral ·  Mistral Medium 3
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/mistralai/mistral-medium-3-5
+        label: OpenRouter · Mistral ·  Mistral Medium 3.5
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/mistralai/mistral-medium-3.1
+        label: OpenRouter · Mistral ·  Mistral Medium 3.1
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/mistralai/mistral-nemo
+        label: OpenRouter · Mistral ·  Mistral Nemo
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/mistralai/mistral-saba
+        label: OpenRouter · Mistral ·  Saba
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/mistralai/mistral-small-24b-instruct-2501
+        label: OpenRouter · Mistral ·  Mistral Small 3
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/mistralai/mistral-small-2603
+        label: OpenRouter · Mistral ·  Mistral Small 4
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/mistralai/mistral-small-3.1-24b-instruct
+        label: OpenRouter · Mistral ·  Mistral Small 3.1 24B
+        default: false
+        free: false
+        capabilities: [chat, vision]
+      - id: openrouter/mistralai/mistral-small-3.2-24b-instruct
+        label: OpenRouter · Mistral ·  Mistral Small 3.2 24B
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/mistralai/mixtral-8x22b-instruct
+        label: OpenRouter · Mistral ·  Mixtral 8x22B Instruct
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/mistralai/pixtral-large-2411
+        label: OpenRouter · Mistral ·  Pixtral Large 2411
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/mistralai/voxtral-small-24b-2507
+        label: OpenRouter · Mistral ·  Voxtral Small 24B 2507
+        default: false
+        free: false
+        capabilities: [chat, audio, tools, json]
+      - id: openrouter/moonshotai/kimi-k2
+        label: OpenRouter · MoonshotAI ·  Kimi K2 0711
+        default: false
+        free: false
+        capabilities: [chat, tools]
+      - id: openrouter/moonshotai/kimi-k2-0905
+        label: OpenRouter · MoonshotAI ·  Kimi K2 0905
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/moonshotai/kimi-k2-thinking
+        label: OpenRouter · MoonshotAI ·  Kimi K2 Thinking
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/moonshotai/kimi-k2.5
+        label: OpenRouter · MoonshotAI ·  Kimi K2.5
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/moonshotai/kimi-k2.6
+        label: OpenRouter · MoonshotAI ·  Kimi K2.6
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/morph/morph-v3-fast
+        label: OpenRouter · Morph ·  Morph V3 Fast
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/morph/morph-v3-large
+        label: OpenRouter · Morph ·  Morph V3 Large
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/nex-agi/deepseek-v3.1-nex-n1
+        label: OpenRouter · Nex AGI ·  DeepSeek V3.1 Nex N1
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/nousresearch/hermes-2-pro-llama-3-8b
+        label: OpenRouter · NousResearch ·  Hermes 2 Pro - Llama-3 8B
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/nousresearch/hermes-3-llama-3.1-405b
+        label: OpenRouter · Nous ·  Hermes 3 405B Instruct
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/nousresearch/hermes-3-llama-3.1-405b:free
+        label: OpenRouter · Nous ·  Hermes 3 405B Instruct (free)
+        default: false
+        free: true
+        capabilities: [chat]
+      - id: openrouter/nousresearch/hermes-3-llama-3.1-70b
+        label: OpenRouter · Nous ·  Hermes 3 70B Instruct
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/nousresearch/hermes-4-405b
+        label: OpenRouter · Nous ·  Hermes 4 405B
+        default: false
+        free: false
+        capabilities: [chat, json, reasoning]
+      - id: openrouter/nousresearch/hermes-4-70b
+        label: OpenRouter · Nous ·  Hermes 4 70B
+        default: false
+        free: false
+        capabilities: [chat, json, reasoning]
+      - id: openrouter/nvidia/llama-3.3-nemotron-super-49b-v1.5
+        label: OpenRouter · NVIDIA ·  Llama 3.3 Nemotron Super 49B V1.5
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/nvidia/nemotron-3-nano-30b-a3b
+        label: OpenRouter · NVIDIA ·  Nemotron 3 Nano 30B A3B
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/nvidia/nemotron-3-nano-30b-a3b:free
+        label: OpenRouter · NVIDIA ·  Nemotron 3 Nano 30B A3B (free)
+        default: false
+        free: true
+        capabilities: [chat, tools, reasoning]
+      - id: openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+        label: OpenRouter · NVIDIA ·  Nemotron 3 Nano Omni (free)
+        default: false
+        free: true
+        capabilities: [chat, vision, audio, tools, reasoning]
+      - id: openrouter/nvidia/nemotron-3-super-120b-a12b
+        label: OpenRouter · NVIDIA ·  Nemotron 3 Super
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+        label: OpenRouter · NVIDIA ·  Nemotron 3 Super (free)
+        default: false
+        free: true
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/nvidia/nemotron-nano-12b-v2-vl:free
+        label: OpenRouter · NVIDIA ·  Nemotron Nano 12B 2 VL (free)
+        default: false
+        free: true
+        capabilities: [chat, vision, tools, reasoning]
+      - id: openrouter/nvidia/nemotron-nano-9b-v2
+        label: OpenRouter · NVIDIA ·  Nemotron Nano 9B V2
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/nvidia/nemotron-nano-9b-v2:free
+        label: OpenRouter · NVIDIA ·  Nemotron Nano 9B V2 (free)
+        default: false
+        free: true
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/openai/gpt-3.5-turbo
+        label: OpenRouter · OpenAI ·  GPT-3.5 Turbo
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/openai/gpt-3.5-turbo-0613
+        label: OpenRouter · OpenAI ·  GPT-3.5 Turbo (older v0613)
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/openai/gpt-3.5-turbo-16k
+        label: OpenRouter · OpenAI ·  GPT-3.5 Turbo 16k
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/openai/gpt-3.5-turbo-instruct
+        label: OpenRouter · OpenAI ·  GPT-3.5 Turbo Instruct
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/openai/gpt-4
+        label: OpenRouter · OpenAI ·  GPT-4
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/openai/gpt-4-0314
+        label: OpenRouter · OpenAI ·  GPT-4 (older v0314)
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/openai/gpt-4-1106-preview
+        label: OpenRouter · OpenAI ·  GPT-4 Turbo (older v1106)
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/openai/gpt-4-turbo
+        label: OpenRouter · OpenAI ·  GPT-4 Turbo
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/openai/gpt-4-turbo-preview
+        label: OpenRouter · OpenAI ·  GPT-4 Turbo Preview
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/openai/gpt-4.1
+        label: OpenRouter · OpenAI ·  GPT-4.1
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/openai/gpt-4.1-mini
+        label: OpenRouter · OpenAI ·  GPT-4.1 Mini
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/openai/gpt-4.1-nano
+        label: OpenRouter · OpenAI ·  GPT-4.1 Nano
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/openai/gpt-4o
+        label: OpenRouter · OpenAI ·  GPT-4o
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/openai/gpt-4o-2024-05-13
+        label: OpenRouter · OpenAI ·  GPT-4o (2024-05-13)
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/openai/gpt-4o-2024-08-06
+        label: OpenRouter · OpenAI ·  GPT-4o (2024-08-06)
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/openai/gpt-4o-2024-11-20
+        label: OpenRouter · OpenAI ·  GPT-4o (2024-11-20)
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/openai/gpt-4o-audio-preview
+        label: OpenRouter · OpenAI ·  GPT-4o Audio
+        default: false
+        free: false
+        capabilities: [chat, audio, tools, json]
+      - id: openrouter/openai/gpt-4o-mini
+        label: OpenRouter · OpenAI ·  GPT-4o-mini
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/openai/gpt-4o-mini-2024-07-18
+        label: OpenRouter · OpenAI ·  GPT-4o-mini (2024-07-18)
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/openai/gpt-4o-mini-search-preview
+        label: OpenRouter · OpenAI ·  GPT-4o-mini Search Preview
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/openai/gpt-4o-search-preview
+        label: OpenRouter · OpenAI ·  GPT-4o Search Preview
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/openai/gpt-5
+        label: OpenRouter · OpenAI ·  GPT-5
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5-chat
+        label: OpenRouter · OpenAI ·  GPT-5 Chat
+        default: false
+        free: false
+        capabilities: [chat, vision, json]
+      - id: openrouter/openai/gpt-5-codex
+        label: OpenRouter · OpenAI ·  GPT-5 Codex
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5-image
+        label: OpenRouter · OpenAI ·  GPT-5 Image
+        default: false
+        free: false
+        capabilities: [chat, vision, json, reasoning, image_generation]
+      - id: openrouter/openai/gpt-5-image-mini
+        label: OpenRouter · OpenAI ·  GPT-5 Image Mini
+        default: false
+        free: false
+        capabilities: [chat, vision, json, reasoning, image_generation]
+      - id: openrouter/openai/gpt-5-mini
+        label: OpenRouter · OpenAI ·  GPT-5 Mini
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5-nano
+        label: OpenRouter · OpenAI ·  GPT-5 Nano
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5-pro
+        label: OpenRouter · OpenAI ·  GPT-5 Pro
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5.1
+        label: OpenRouter · OpenAI ·  GPT-5.1
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5.1-chat
+        label: OpenRouter · OpenAI ·  GPT-5.1 Chat
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/openai/gpt-5.1-codex
+        label: OpenRouter · OpenAI ·  GPT-5.1-Codex
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5.1-codex-max
+        label: OpenRouter · OpenAI ·  GPT-5.1-Codex-Max
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5.1-codex-mini
+        label: OpenRouter · OpenAI ·  GPT-5.1-Codex-Mini
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5.2
+        label: OpenRouter · OpenAI ·  GPT-5.2
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5.2-chat
+        label: OpenRouter · OpenAI ·  GPT-5.2 Chat
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/openai/gpt-5.2-codex
+        label: OpenRouter · OpenAI ·  GPT-5.2-Codex
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5.2-pro
+        label: OpenRouter · OpenAI ·  GPT-5.2 Pro
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5.3-chat
+        label: OpenRouter · OpenAI ·  GPT-5.3 Chat
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/openai/gpt-5.3-codex
+        label: OpenRouter · OpenAI ·  GPT-5.3-Codex
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5.4
+        label: OpenRouter · OpenAI ·  GPT-5.4
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5.4-image-2
+        label: OpenRouter · OpenAI ·  GPT-5.4 Image 2
+        default: false
+        free: false
+        capabilities: [chat, vision, json, reasoning, image_generation]
+      - id: openrouter/openai/gpt-5.4-mini
+        label: OpenRouter · OpenAI ·  GPT-5.4 Mini
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5.4-nano
+        label: OpenRouter · OpenAI ·  GPT-5.4 Nano
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5.4-pro
+        label: OpenRouter · OpenAI ·  GPT-5.4 Pro
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5.5
+        label: OpenRouter · OpenAI ·  GPT-5.5
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-5.5-pro
+        label: OpenRouter · OpenAI ·  GPT-5.5 Pro
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/gpt-audio
+        label: OpenRouter · OpenAI ·  GPT Audio
+        default: false
+        free: false
+        capabilities: [chat, audio, tools, json]
+      - id: openrouter/openai/gpt-audio-mini
+        label: OpenRouter · OpenAI ·  GPT Audio Mini
+        default: false
+        free: false
+        capabilities: [chat, audio, tools, json]
+      - id: openrouter/openai/gpt-chat-latest
+        label: OpenRouter · OpenAI ·  GPT Chat Latest
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/openai/gpt-oss-120b
+        label: OpenRouter · OpenAI ·  gpt-oss-120b
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/openai/gpt-oss-120b:free
+        label: OpenRouter · OpenAI ·  gpt-oss-120b (free)
+        default: false
+        free: true
+        capabilities: [chat, tools, reasoning]
+      - id: openrouter/openai/gpt-oss-20b
+        label: OpenRouter · OpenAI ·  gpt-oss-20b
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/openai/gpt-oss-20b:free
+        label: OpenRouter · OpenAI ·  gpt-oss-20b (free)
+        default: false
+        free: true
+        capabilities: [chat, tools, reasoning]
+      - id: openrouter/openai/gpt-oss-safeguard-20b
+        label: OpenRouter · OpenAI ·  gpt-oss-safeguard-20b
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/openai/o1
+        label: OpenRouter · OpenAI ·  o1
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/o1-pro
+        label: OpenRouter · OpenAI ·  o1-pro
+        default: false
+        free: false
+        capabilities: [chat, vision, json, reasoning]
+      - id: openrouter/openai/o3
+        label: OpenRouter · OpenAI ·  o3
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/o3-deep-research
+        label: OpenRouter · OpenAI ·  o3 Deep Research
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/o3-mini
+        label: OpenRouter · OpenAI ·  o3 Mini
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/openai/o3-mini-high
+        label: OpenRouter · OpenAI ·  o3 Mini High
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/openai/o3-pro
+        label: OpenRouter · OpenAI ·  o3 Pro
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/o4-mini
+        label: OpenRouter · OpenAI ·  o4 Mini
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/o4-mini-deep-research
+        label: OpenRouter · OpenAI ·  o4 Mini Deep Research
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openai/o4-mini-high
+        label: OpenRouter · OpenAI ·  o4 Mini High
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openrouter/auto
+        label: OpenRouter · Auto Router
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json, reasoning, image_generation]
+      - id: openrouter/openrouter/bodybuilder
+        label: OpenRouter · Body Builder (beta)
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/openrouter/free
+        label: OpenRouter · Free Models Router
+        default: false
+        free: true
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/openrouter/owl-alpha
+        label: OpenRouter · Owl Alpha
+        default: false
+        free: true
+        capabilities: [chat, tools, json]
+      - id: openrouter/openrouter/pareto-code
+        label: OpenRouter · Pareto Code Router
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/perceptron/perceptron-mk1
+        label: OpenRouter · Perceptron ·  Perceptron Mk1
+        default: false
+        free: false
+        capabilities: [chat, vision, json, reasoning]
+      - id: openrouter/perplexity/sonar
+        label: OpenRouter · Perplexity ·  Sonar
+        default: false
+        free: false
+        capabilities: [chat, vision]
+      - id: openrouter/perplexity/sonar-deep-research
+        label: OpenRouter · Perplexity ·  Sonar Deep Research
+        default: false
+        free: false
+        capabilities: [chat, reasoning]
+      - id: openrouter/perplexity/sonar-pro
+        label: OpenRouter · Perplexity ·  Sonar Pro
+        default: false
+        free: false
+        capabilities: [chat, vision]
+      - id: openrouter/perplexity/sonar-pro-search
+        label: OpenRouter · Perplexity ·  Sonar Pro Search
+        default: false
+        free: false
+        capabilities: [chat, vision, json, reasoning]
+      - id: openrouter/perplexity/sonar-reasoning-pro
+        label: OpenRouter · Perplexity ·  Sonar Reasoning Pro
+        default: false
+        free: false
+        capabilities: [chat, vision, reasoning]
+      - id: openrouter/poolside/laguna-m.1:free
+        label: OpenRouter · Poolside ·  Laguna M.1 (free)
+        default: false
+        free: true
+        capabilities: [chat, tools, reasoning]
+      - id: openrouter/poolside/laguna-xs.2:free
+        label: OpenRouter · Poolside ·  Laguna XS.2 (free)
+        default: false
+        free: true
+        capabilities: [chat, tools, reasoning]
+      - id: openrouter/prime-intellect/intellect-3
+        label: OpenRouter · Prime Intellect ·  INTELLECT-3
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/qwen/qwen-2.5-72b-instruct
+        label: OpenRouter · Qwen2.5 72B Instruct
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/qwen/qwen-2.5-7b-instruct
+        label: OpenRouter · Qwen ·  Qwen2.5 7B Instruct
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/qwen/qwen-2.5-coder-32b-instruct
+        label: OpenRouter · Qwen2.5 Coder 32B Instruct
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/qwen/qwen-plus
+        label: OpenRouter · Qwen ·  Qwen-Plus
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/qwen/qwen-plus-2025-07-28
+        label: OpenRouter · Qwen ·  Qwen Plus 0728
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/qwen/qwen-plus-2025-07-28:thinking
+        label: OpenRouter · Qwen ·  Qwen Plus 0728 (thinking)
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/qwen/qwen2.5-vl-72b-instruct
+        label: OpenRouter · Qwen ·  Qwen2.5 VL 72B Instruct
+        default: false
+        free: false
+        capabilities: [chat, vision, json]
+      - id: openrouter/qwen/qwen3-14b
+        label: OpenRouter · Qwen ·  Qwen3 14B
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3-235b-a22b
+        label: OpenRouter · Qwen ·  Qwen3 235B A22B
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3-235b-a22b-2507
+        label: OpenRouter · Qwen ·  Qwen3 235B A22B Instruct 2507
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/qwen/qwen3-235b-a22b-thinking-2507
+        label: OpenRouter · Qwen ·  Qwen3 235B A22B Thinking 2507
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3-30b-a3b
+        label: OpenRouter · Qwen ·  Qwen3 30B A3B
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3-30b-a3b-instruct-2507
+        label: OpenRouter · Qwen ·  Qwen3 30B A3B Instruct 2507
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/qwen/qwen3-30b-a3b-thinking-2507
+        label: OpenRouter · Qwen ·  Qwen3 30B A3B Thinking 2507
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3-32b
+        label: OpenRouter · Qwen ·  Qwen3 32B
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3-8b
+        label: OpenRouter · Qwen ·  Qwen3 8B
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3-coder
+        label: OpenRouter · Qwen ·  Qwen3 Coder 480B A35B
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/qwen/qwen3-coder-30b-a3b-instruct
+        label: OpenRouter · Qwen ·  Qwen3 Coder 30B A3B Instruct
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/qwen/qwen3-coder-flash
+        label: OpenRouter · Qwen ·  Qwen3 Coder Flash
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/qwen/qwen3-coder-next
+        label: OpenRouter · Qwen ·  Qwen3 Coder Next
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/qwen/qwen3-coder-plus
+        label: OpenRouter · Qwen ·  Qwen3 Coder Plus
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/qwen/qwen3-coder:free
+        label: OpenRouter · Qwen ·  Qwen3 Coder 480B A35B (free)
+        default: false
+        free: true
+        capabilities: [chat, tools]
+      - id: openrouter/qwen/qwen3-max
+        label: OpenRouter · Qwen ·  Qwen3 Max
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/qwen/qwen3-max-thinking
+        label: OpenRouter · Qwen ·  Qwen3 Max Thinking
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3-next-80b-a3b-instruct
+        label: OpenRouter · Qwen ·  Qwen3 Next 80B A3B Instruct
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/qwen/qwen3-next-80b-a3b-instruct:free
+        label: OpenRouter · Qwen ·  Qwen3 Next 80B A3B Instruct (free)
+        default: false
+        free: true
+        capabilities: [chat, tools, json]
+      - id: openrouter/qwen/qwen3-next-80b-a3b-thinking
+        label: OpenRouter · Qwen ·  Qwen3 Next 80B A3B Thinking
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3-vl-235b-a22b-instruct
+        label: OpenRouter · Qwen ·  Qwen3 VL 235B A22B Instruct
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/qwen/qwen3-vl-235b-a22b-thinking
+        label: OpenRouter · Qwen ·  Qwen3 VL 235B A22B Thinking
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3-vl-30b-a3b-instruct
+        label: OpenRouter · Qwen ·  Qwen3 VL 30B A3B Instruct
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/qwen/qwen3-vl-30b-a3b-thinking
+        label: OpenRouter · Qwen ·  Qwen3 VL 30B A3B Thinking
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3-vl-32b-instruct
+        label: OpenRouter · Qwen ·  Qwen3 VL 32B Instruct
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/qwen/qwen3-vl-8b-instruct
+        label: OpenRouter · Qwen ·  Qwen3 VL 8B Instruct
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/qwen/qwen3-vl-8b-thinking
+        label: OpenRouter · Qwen ·  Qwen3 VL 8B Thinking
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3.5-122b-a10b
+        label: OpenRouter · Qwen ·  Qwen3.5-122B-A10B
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3.5-27b
+        label: OpenRouter · Qwen ·  Qwen3.5-27B
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3.5-35b-a3b
+        label: OpenRouter · Qwen ·  Qwen3.5-35B-A3B
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3.5-397b-a17b
+        label: OpenRouter · Qwen ·  Qwen3.5 397B A17B
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3.5-9b
+        label: OpenRouter · Qwen ·  Qwen3.5-9B
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3.5-flash-02-23
+        label: OpenRouter · Qwen ·  Qwen3.5-Flash
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3.5-plus-02-15
+        label: OpenRouter · Qwen ·  Qwen3.5 Plus 2026-02-15
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3.5-plus-20260420
+        label: OpenRouter · Qwen ·  Qwen3.5 Plus 2026-04-20
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3.6-27b
+        label: OpenRouter · Qwen ·  Qwen3.6 27B
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3.6-35b-a3b
+        label: OpenRouter · Qwen ·  Qwen3.6 35B A3B
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3.6-flash
+        label: OpenRouter · Qwen ·  Qwen3.6 Flash
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3.6-max-preview
+        label: OpenRouter · Qwen ·  Qwen3.6 Max Preview
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/qwen/qwen3.6-plus
+        label: OpenRouter · Qwen ·  Qwen3.6 Plus
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/rekaai/reka-edge
+        label: OpenRouter · Reka Edge
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: openrouter/rekaai/reka-flash-3
+        label: OpenRouter · Reka Flash 3
+        default: false
+        free: false
+        capabilities: [chat, reasoning]
+      - id: openrouter/relace/relace-apply-3
+        label: OpenRouter · Relace ·  Relace Apply 3
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/relace/relace-search
+        label: OpenRouter · Relace ·  Relace Search
+        default: false
+        free: false
+        capabilities: [chat, tools]
+      - id: openrouter/sao10k/l3-euryale-70b
+        label: OpenRouter · Sao10k ·  Llama 3 Euryale 70B v2.1
+        default: false
+        free: false
+        capabilities: [chat, tools]
+      - id: openrouter/sao10k/l3-lunaris-8b
+        label: OpenRouter · Sao10K ·  Llama 3 8B Lunaris
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/sao10k/l3.1-70b-hanami-x1
+        label: OpenRouter · Sao10K ·  Llama 3.1 70B Hanami x1
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/sao10k/l3.1-euryale-70b
+        label: OpenRouter · Sao10K ·  Llama 3.1 Euryale 70B v2.2
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/sao10k/l3.3-euryale-70b
+        label: OpenRouter · Sao10K ·  Llama 3.3 Euryale 70B
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/stepfun/step-3.5-flash
+        label: OpenRouter · StepFun ·  Step 3.5 Flash
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/switchpoint/router
+        label: OpenRouter · Switchpoint Router
+        default: false
+        free: false
+        capabilities: [chat, reasoning]
+      - id: openrouter/tencent/hunyuan-a13b-instruct
+        label: OpenRouter · Tencent ·  Hunyuan A13B Instruct
+        default: false
+        free: false
+        capabilities: [chat, json, reasoning]
+      - id: openrouter/tencent/hy3-preview
+        label: OpenRouter · Tencent ·  Hy3 preview
+        default: false
+        free: false
+        capabilities: [chat, tools, reasoning]
+      - id: openrouter/thedrummer/cydonia-24b-v4.1
+        label: OpenRouter · TheDrummer ·  Cydonia 24B V4.1
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/thedrummer/rocinante-12b
+        label: OpenRouter · TheDrummer ·  Rocinante 12B
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/thedrummer/skyfall-36b-v2
+        label: OpenRouter · TheDrummer ·  Skyfall 36B V2
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/thedrummer/unslopnemo-12b
+        label: OpenRouter · TheDrummer ·  UnslopNemo 12B
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: openrouter/undi95/remm-slerp-l2-13b
+        label: OpenRouter · ReMM SLERP 13B
+        default: false
+        free: false
+        capabilities: [chat, json]
+      - id: openrouter/upstage/solar-pro-3
+        label: OpenRouter · Upstage ·  Solar Pro 3
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/writer/palmyra-x5
+        label: OpenRouter · Writer ·  Palmyra X5
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: openrouter/x-ai/grok-4.20
+        label: OpenRouter · xAI ·  Grok 4.20
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/x-ai/grok-4.20-multi-agent
+        label: OpenRouter · xAI ·  Grok 4.20 Multi-Agent
+        default: false
+        free: false
+        capabilities: [chat, vision, json, reasoning]
+      - id: openrouter/x-ai/grok-4.3
+        label: OpenRouter · xAI ·  Grok 4.3
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/xiaomi/mimo-v2-flash
+        label: OpenRouter · Xiaomi ·  MiMo-V2-Flash
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/xiaomi/mimo-v2-omni
+        label: OpenRouter · Xiaomi ·  MiMo-V2-Omni
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json, reasoning]
+      - id: openrouter/xiaomi/mimo-v2-pro
+        label: OpenRouter · Xiaomi ·  MiMo-V2-Pro
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/xiaomi/mimo-v2.5
+        label: OpenRouter · Xiaomi ·  MiMo-V2.5
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json, reasoning]
+      - id: openrouter/xiaomi/mimo-v2.5-pro
+        label: OpenRouter · Xiaomi ·  MiMo-V2.5-Pro
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/z-ai/glm-4-32b
+        label: OpenRouter · Z.ai ·  GLM 4 32B 
+        default: false
+        free: false
+        capabilities: [chat, tools]
+      - id: openrouter/z-ai/glm-4.5
+        label: OpenRouter · Z.ai ·  GLM 4.5
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/z-ai/glm-4.5-air
+        label: OpenRouter · Z.ai ·  GLM 4.5 Air
+        default: false
+        free: false
+        capabilities: [chat, tools, reasoning]
+      - id: openrouter/z-ai/glm-4.5-air:free
+        label: OpenRouter · Z.ai ·  GLM 4.5 Air (free)
+        default: false
+        free: true
+        capabilities: [chat, tools, reasoning]
+      - id: openrouter/z-ai/glm-4.5v
+        label: OpenRouter · Z.ai ·  GLM 4.5V
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/z-ai/glm-4.6
+        label: OpenRouter · Z.ai ·  GLM 4.6
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/z-ai/glm-4.6v
+        label: OpenRouter · Z.ai ·  GLM 4.6V
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, reasoning]
+      - id: openrouter/z-ai/glm-4.7
+        label: OpenRouter · Z.ai ·  GLM 4.7
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/z-ai/glm-4.7-flash
+        label: OpenRouter · Z.ai ·  GLM 4.7 Flash
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/z-ai/glm-5
+        label: OpenRouter · Z.ai ·  GLM 5
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/z-ai/glm-5-turbo
+        label: OpenRouter · Z.ai ·  GLM 5 Turbo
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/z-ai/glm-5.1
+        label: OpenRouter · Z.ai ·  GLM 5.1
+        default: false
+        free: false
+        capabilities: [chat, tools, json, reasoning]
+      - id: openrouter/z-ai/glm-5v-turbo
+        label: OpenRouter · Z.ai ·  GLM 5V Turbo
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/~anthropic/claude-haiku-latest
+        label: OpenRouter · Anthropic Claude Haiku Latest
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/~anthropic/claude-opus-latest
+        label: OpenRouter · Anthropic ·  Claude Opus Latest
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/~anthropic/claude-sonnet-latest
+        label: OpenRouter · Anthropic Claude Sonnet Latest
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/~google/gemini-flash-latest
+        label: OpenRouter · Google Gemini Flash Latest
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json, reasoning]
+      - id: openrouter/~google/gemini-pro-latest
+        label: OpenRouter · Google Gemini Pro Latest
+        default: false
+        free: false
+        capabilities: [chat, vision, audio, tools, json, reasoning]
+      - id: openrouter/~moonshotai/kimi-latest
+        label: OpenRouter · MoonshotAI Kimi Latest
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/~openai/gpt-latest
+        label: OpenRouter · OpenAI GPT Latest
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+      - id: openrouter/~openai/gpt-mini-latest
+        label: OpenRouter · OpenAI GPT Mini Latest
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json, reasoning]
+        
   gemini:
     enabled: true
     configured: true
@@ -73,46 +1843,191 @@ providers:
         default: false
         free: true
         capabilities: [chat]
-
-  huggingface:
-    enabled: true
-    configured: false
-    models:
-      - id: huggingface/mistralai/Mistral-7B-Instruct-v0.3
-        label: HuggingFace · Mistral 7B Instruct
-        default: false
-        free: true
-        capabilities: [chat]
-
-  together_ai:
-    enabled: true
-    configured: false
-    models:
-      - id: together_ai/meta-llama/Llama-3.1-8B-Instruct-Turbo
-        label: Together AI · Llama 3.1 8B Turbo
-        default: false
-        free: false
-        capabilities: [chat, fast]
-
-  fireworks_ai:
-    enabled: true
-    configured: false
-    models:
-      - id: fireworks_ai/accounts/fireworks/models/llama-v3p1-8b-instruct
-        label: Fireworks AI · Llama 3.1 8B
+      - id: cloudflare/@cf/aisingapore/gemma-sea-lion-v4-27b-it
+        label: Cloudflare · Gemma Sea Lion V4 27B It
         default: false
         free: false
         capabilities: [chat]
-
-  mistral:
-    enabled: true
-    configured: false
-    models:
-      - id: mistral/mistral-small-latest
-        label: Mistral Small Latest
+      - id: cloudflare/@cf/deepseek-ai/deepseek-r1-distill-qwen-32b
+        label: Cloudflare · Deepseek R1 Distill Qwen 32B
         default: false
         free: false
         capabilities: [chat, reasoning]
+      - id: cloudflare/@cf/defog/sqlcoder-7b-2
+        label: Cloudflare · SQLCoder 7B 2
+        default: false
+        free: true
+        capabilities: [chat]
+      - id: cloudflare/@cf/google/gemma-2b-it-lora
+        label: Cloudflare · Gemma 2B It LoRA
+        default: false
+        free: true
+        capabilities: [chat]
+      - id: cloudflare/@cf/google/gemma-3-12b-it
+        label: Cloudflare · Gemma 3 12B It
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: cloudflare/@cf/google/gemma-4-26b-a4b-it
+        label: Cloudflare · Gemma 4 26B A4b It
+        default: false
+        free: false
+        capabilities: [chat, tools, reasoning, vision]
+      - id: cloudflare/@cf/google/gemma-7b-it-lora
+        label: Cloudflare · Gemma 7B It LoRA
+        default: false
+        free: true
+        capabilities: [chat]
+      - id: cloudflare/@cf/ibm-granite/granite-4.0-h-micro
+        label: Cloudflare · Granite 4.0 H Micro
+        default: false
+        free: false
+        capabilities: [chat, tools]
+      - id: cloudflare/@cf/meta-llama/llama-2-7b-chat-hf-lora
+        label: Cloudflare · Llama 2 7B Chat Hf LoRA
+        default: false
+        free: true
+        capabilities: [chat]
+      - id: cloudflare/@cf/meta/llama-2-7b-chat-fp16
+        label: Cloudflare · Llama 2 7B Chat Fp16
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: cloudflare/@cf/meta/llama-2-7b-chat-int8
+        label: Cloudflare · Llama 2 7B Chat INT8
+        default: false
+        free: true
+        capabilities: [chat]
+      - id: cloudflare/@cf/meta/llama-3-8b-instruct
+        label: Cloudflare · Llama 3 8B Instruct
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: cloudflare/@cf/meta/llama-3-8b-instruct-awq
+        label: Cloudflare · Llama 3 8B Instruct AWQ
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: cloudflare/@cf/meta/llama-3.1-8b-instruct-awq
+        label: Cloudflare · Llama 3.1 8B Instruct AWQ
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: cloudflare/@cf/meta/llama-3.1-8b-instruct-fp8
+        label: Cloudflare · Llama 3.1 8B Instruct FP8
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: cloudflare/@cf/meta/llama-3.2-11b-vision-instruct
+        label: Cloudflare · Llama 3.2 11B Vision Instruct
+        default: false
+        free: false
+        capabilities: [chat, vision]
+      - id: cloudflare/@cf/meta/llama-3.2-1b-instruct
+        label: Cloudflare · Llama 3.2 1B Instruct
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: cloudflare/@cf/meta/llama-3.2-3b-instruct
+        label: Cloudflare · Llama 3.2 3B Instruct
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast
+        label: Cloudflare · Llama 3.3 70B Instruct FP8 Fast
+        default: false
+        free: false
+        capabilities: [chat, tools]
+      - id: cloudflare/@cf/meta/llama-4-scout-17b-16e-instruct
+        label: Cloudflare · Llama 4 Scout 17B 16e Instruct
+        default: false
+        free: false
+        capabilities: [chat, tools, vision]
+      - id: cloudflare/@cf/meta/llama-guard-3-8b
+        label: Cloudflare · Llama Guard 3 8B
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: cloudflare/@cf/microsoft/phi-2
+        label: Cloudflare · Phi 2
+        default: false
+        free: true
+        capabilities: [chat]
+      - id: cloudflare/@cf/mistral/mistral-7b-instruct-v0.1
+        label: Cloudflare · Mistral 7B Instruct V0.1
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: cloudflare/@cf/mistral/mistral-7b-instruct-v0.2-lora
+        label: Cloudflare · Mistral 7B Instruct V0.2 LoRA
+        default: false
+        free: true
+        capabilities: [chat]
+      - id: cloudflare/@cf/mistralai/mistral-small-3.1-24b-instruct
+        label: Cloudflare · Mistral Small 3.1 24B Instruct
+        default: false
+        free: false
+        capabilities: [chat, tools]
+      - id: cloudflare/@cf/moonshotai/kimi-k2.5
+        label: Cloudflare · Kimi K2.5
+        default: false
+        free: false
+        capabilities: [chat, tools, reasoning, vision]
+      - id: cloudflare/@cf/moonshotai/kimi-k2.6
+        label: Cloudflare · Kimi K2.6
+        default: false
+        free: false
+        capabilities: [chat, tools, reasoning, vision]
+      - id: cloudflare/@cf/nvidia/nemotron-3-120b-a12b
+        label: Cloudflare · Nemotron 3 120B A12b
+        default: false
+        free: false
+        capabilities: [chat, tools, reasoning]
+      - id: cloudflare/@cf/openai/gpt-oss-120b
+        label: Cloudflare · Gpt Oss 120B
+        default: false
+        free: false
+        capabilities: [chat, tools, reasoning]
+      - id: cloudflare/@cf/openai/gpt-oss-20b
+        label: Cloudflare · Gpt Oss 20B
+        default: false
+        free: false
+        capabilities: [chat, tools, reasoning]
+      - id: cloudflare/@cf/qwen/qwen2.5-coder-32b-instruct
+        label: Cloudflare · Qwen2.5 Coder 32B Instruct
+        default: false
+        free: false
+        capabilities: [chat]
+      - id: cloudflare/@cf/qwen/qwen3-30b-a3b-fp8
+        label: Cloudflare · Qwen3 30B A3b FP8
+        default: false
+        free: false
+        capabilities: [chat, tools, reasoning]
+      - id: cloudflare/@cf/qwen/qwq-32b
+        label: Cloudflare · Qwq 32B
+        default: false
+        free: false
+        capabilities: [chat, reasoning]
+      - id: cloudflare/@cf/zai-org/glm-4.7-flash
+        label: Cloudflare · Glm 4.7 Flash
+        default: false
+        free: false
+        capabilities: [chat, tools, reasoning]
+      - id: cloudflare/@hf/google/gemma-7b-it
+        label: Cloudflare · Gemma 7B It
+        default: false
+        free: true
+        capabilities: [chat]
+      - id: cloudflare/@hf/mistral/mistral-7b-instruct-v0.2
+        label: Cloudflare · Mistral 7B Instruct V0.2
+        default: false
+        free: true
+        capabilities: [chat]
+      - id: cloudflare/@hf/nousresearch/hermes-2-pro-mistral-7b
+        label: Cloudflare · Hermes 2 Pro Mistral 7B
+        default: false
+        free: true
+        capabilities: [chat, tools]
 
   mock:
     enabled: true

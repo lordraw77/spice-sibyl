@@ -97,7 +97,54 @@
   flex-wrap: wrap;
   gap: .35rem;
 }
+.provider-toggle {
+  width: 100%;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: .85rem;
+  padding: .6rem .75rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .18s ease, background .18s ease, transform .18s ease;
+}
 
+.provider-toggle:hover {
+  border-color: rgba(214,178,121,.18);
+  background: rgba(255,255,255,.02);
+}
+
+.provider-toggle.active {
+  border-color: rgba(143,221,158,.26);
+  background: rgba(73, 132, 83, 0.10);
+}
+
+.provider-toggle:not(.active) .provider-name {
+  color: #9aa3b2;
+}
+
+.provider-toggle:not(.active) .provider-count {
+  color: #7f8796;
+}
+
+.provider-filters {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: .75rem;
+  margin: .85rem 0 1rem;
+}
+
+.form-label-sm {
+  display: block;
+  margin-bottom: .35rem;
+  font-size: .78rem;
+  color: #aab3c3;
+}
+
+@media (min-width: 992px) {
+  .provider-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+}
 .mini-cap {
   font-size: .7rem;
   padding: .15rem .45rem;
@@ -112,6 +159,7 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  height: 100vh;
 }
 
 .topbar {
@@ -134,8 +182,12 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  min-height: 50vh;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: .35rem;
+  scroll-behavior: smooth;
 }
+
 
 .message .role {
   text-transform: uppercase;
@@ -200,10 +252,15 @@
   justify-content: flex-end;
 }
 
-.composer .actions {
+.actions {
   display: flex;
   justify-content: flex-end;
   margin-top: 1rem;
+}
+.composer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
 }
 
 textarea.form-control,
@@ -260,4 +317,36 @@ select.form-select:focus {
 .markdown-body pre code {
   background: transparent;
   padding: 0;
+}
+.typing-bubble {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  padding: .85rem 1.1rem !important;
+  width: fit-content;
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d6b279;
+  opacity: 0.4;
+  animation: typing-bounce 1.2s ease-in-out infinite;
+}
+
+.dot:nth-child(1) { animation-delay: 0s; }
+.dot:nth-child(2) { animation-delay: 0.2s; }
+.dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typing-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
 }

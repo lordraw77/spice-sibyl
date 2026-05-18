@@ -4,7 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
 
 import { AppComponent } from './app/app.component';
-import { appRoutes } from './app/app.routes';
+import { routes } from './app/app.routes';
 import { AppConfigService } from './app/core/config/app-config.service';
 
 function initializeApp(configService: AppConfigService) {
@@ -14,7 +14,7 @@ function initializeApp(configService: AppConfigService) {
 bootstrapApplication(AppComponent, {
   providers: [
     provideHttpClient(),
-    provideRouter(appRoutes),
+    provideRouter(routes),
     {
       provide: APP_INITIALIZER,
       useFactory: initializeApp,
