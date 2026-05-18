@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: spice-sibyl-backend
+    env_file:
+      - ./backend/.env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app:z
+      - ./shared-config:/config:z
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: spice-sibyl-frontend
+    environment:
+      API_URL: ${FRONTEND_API_URL:-http://192.168.0.215:8000/api/v1}
+    ports:
+      - "4200:4200"
+    volumes:
+      - ./frontend:/workspace:z
+      - /workspace/node_modules
+    depends_on:
+      - backend

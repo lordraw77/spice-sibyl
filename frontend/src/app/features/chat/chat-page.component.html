@@ -1,0 +1,94 @@
+<div class="shell container-fluid">
+  <div class="row min-vh-100">
+    <aside class="col-12 col-lg-3 sidebar">
+      <div class="brand-wrap">
+        <div class="brand">SpiceSibyl</div>
+        <div class="tagline">One gateway, many minds.</div>
+      </div>
+
+      <div class="panel">
+        <label class="form-label">Filtro capacità</label>
+        <select class="form-select mb-3" [ngModel]="capabilityFilter()" (ngModelChange)="setCapabilityFilter($event)">
+          <option *ngFor="let capability of availableCapabilities()" [value]="capability">
+            {{ capability === 'all' ? 'Tutte' : capability }}
+          </option>
+        </select>
+
+        <label class="form-label">Modello</label>
+        <select class="form-select" [(ngModel)]="model">
+          <option *ngFor="let item of filteredModels()" [value]="item.id">{{ item.label || item.id }}</option>
+        </select>
+        <div class="model-badges" *ngIf="selectedModelMeta() as selected">
+          <span class="badge-chip provider">{{ selected.provider || 'provider' }}</span>
+          <span class="badge-chip ok" *ngIf="selected.configured">configurato</span>
+          <span class="badge-chip free" *ngIf="selected.free">free</span>
+          <span class="badge-chip" *ngFor="let capability of selected.capabilities || []">{{ capability }}</span>
+        </div>
+      </div>
+
+      <div class="panel mt-3">
+        <div class="small-title">Provider supportati</div>
+        <ul class="provider-list rich">
+          <li *ngFor="let provider of providers()">
+            <div class="provider-row">
+              <span class="provider-name">
+                <span class="provider-check" [class.on]="provider.configured">{{ provider.configured ? '✓' : '○' }}</span>
+                {{ provider.label }}
+              </span>
+              <span class="provider-count">{{ provider.model_count }} modelli</span>
+            </div>
+            <div class="provider-caps" *ngIf="provider.capabilities.length">
+              <span class="mini-cap" *ngFor="let capability of provider.capabilities">{{ capability }}</span>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </aside>
+
+    <main class="col-12 col-lg-9 content">
+      <header class="topbar">
+        <h1>Console</h1>
+        <span class="status" [class.live]="!loading">{{ loading ? 'Thinking…' : 'Ready' }}</span>
+      </header>
+
+      <div class="messages">
+        <div class="message" *ngFor="let message of messages()" [class.user]="message.role === 'user'">
+          <div class="role">{{ roleLabel(message) }}</div>
+          <div class="bubble markdown-body" [innerHTML]="renderedContent(message)"></div>
+
+          <div class="meta" *ngIf="message.role === 'assistant' && (message.latency_ms || message.prompt_tokens || message.completion_tokens || message.tokens_per_second || message.provider || message.finish_reason || message.created_at || message.estimated_cost)">
+            <span *ngIf="message.provider">{{ message.provider }}</span>
+            <span *ngIf="message.created_at"> · {{ (message.created_at * 1000) | date:'HH:mm:ss' }}</span>
+            <span *ngIf="message.latency_ms"> · {{ (message.latency_ms / 1000).toFixed(2) }}s</span>
+            <span *ngIf="message.first_token_ms"> · first {{ (message.first_token_ms / 1000).toFixed(2) }}s</span>
+            <span *ngIf="message.prompt_tokens !== undefined"> · in {{ message.prompt_tokens }} tok</span>
+            <span *ngIf="message.completion_tokens !== undefined"> · out {{ message.completion_tokens }} tok</span>
+            <span *ngIf="message.total_tokens !== undefined"> · total {{ message.total_tokens }} tok</span>
+            <span *ngIf="message.tokens_per_second !== undefined"> · {{ message.tokens_per_second.toFixed(1) }} tok/s</span>
+            <span *ngIf="message.finish_reason"> · {{ message.finish_reason }}</span>
+            <span *ngIf="message.estimated_cost !== undefined && message.estimated_cost !== null"> · ${{ message.estimated_cost.toFixed(6) }}</span>
+          </div>
+
+          <div class="badges" *ngIf="message.role === 'assistant' && ((message.capabilities?.length || 0) > 0 || message.free !== undefined)">
+            <span class="badge-chip free" *ngIf="message.free">free</span>
+            <span class="badge-chip" *ngFor="let capability of message.capabilities || []">{{ capability }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <textarea
+          class="form-control"
+          rows="4"
+          [(ngModel)]="prompt"
+          [disabled]="loading"
+          placeholder="Scrivi un messaggio..."></textarea>
+        <div class="actions">
+          <button class="btn btn-primary" [disabled]="loading" (click)="send()">
+            {{ loading ? 'Invio...' : 'Invia' }}
+          </button>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>

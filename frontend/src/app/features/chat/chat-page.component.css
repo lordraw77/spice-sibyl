@@ -1,0 +1,263 @@
+:host {
+  display: block;
+}
+
+.shell {
+  background:
+    radial-gradient(circle at top left, rgba(193,165,107,0.16), transparent 24%),
+    linear-gradient(180deg, #0b0d11 0%, #12151c 100%);
+  color: #f7f3ea;
+}
+
+.sidebar {
+  background: rgba(17, 20, 27, 0.95);
+  padding: 2rem;
+  border-right: 1px solid rgba(255,255,255,.08);
+}
+
+.brand-wrap {
+  margin-bottom: 2rem;
+}
+
+.brand {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: .03em;
+}
+
+.tagline,
+.small-title,
+.role,
+.status {
+  color: #d6b279;
+}
+
+.panel,
+.composer,
+.message .bubble,
+.topbar {
+  background: rgba(27, 31, 41, 0.88);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 1rem;
+}
+
+.panel,
+.composer,
+.topbar {
+  padding: 1rem;
+}
+
+.provider-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: #d7dbe4;
+}
+
+.provider-list.rich {
+  list-style: none;
+  padding-left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .95rem;
+}
+
+.provider-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .75rem;
+}
+
+.provider-name {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  color: #e6e9ef;
+}
+
+.provider-check {
+  width: 1.2rem;
+  display: inline-flex;
+  justify-content: center;
+  color: #7b8190;
+}
+
+.provider-check.on {
+  color: #89d39a;
+}
+
+.provider-count {
+  color: #aab3c3;
+  font-size: .83rem;
+}
+
+.provider-caps {
+  margin-top: .35rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+}
+
+.mini-cap {
+  font-size: .7rem;
+  padding: .15rem .45rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.07);
+  color: #aab3c3;
+}
+
+.content {
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.status.live {
+  color: #89d39a;
+}
+
+.messages {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 50vh;
+}
+
+.message .role {
+  text-transform: uppercase;
+  font-size: .75rem;
+  letter-spacing: .08em;
+  margin-bottom: .35rem;
+}
+
+.message .bubble {
+  padding: 1rem;
+  max-width: min(86%, 980px);
+  line-height: 1.6;
+}
+
+.message .meta {
+  margin-top: .4rem;
+  font-size: .8rem;
+  letter-spacing: .01em;
+  color: #9fa8ba;
+}
+
+.badges,
+.model-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+  margin-top: .55rem;
+}
+
+.badge-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: .2rem .55rem;
+  border-radius: 999px;
+  font-size: .74rem;
+  background: rgba(214, 178, 121, 0.12);
+  color: #e4c28f;
+  border: 1px solid rgba(214, 178, 121, 0.18);
+}
+
+.badge-chip.provider {
+  color: #8ed0ff;
+  background: rgba(74, 131, 177, 0.14);
+  border-color: rgba(74, 131, 177, 0.24);
+}
+
+.badge-chip.free,
+.badge-chip.ok {
+  color: #8fdd9e;
+  background: rgba(73, 132, 83, 0.16);
+  border-color: rgba(73, 132, 83, 0.24);
+}
+
+.message.user .bubble {
+  margin-left: auto;
+  background: rgba(111, 78, 55, 0.88);
+}
+
+.message.user .meta,
+.message.user .badges {
+  text-align: right;
+  justify-content: flex-end;
+}
+
+.composer .actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+textarea.form-control,
+select.form-select {
+  background: #10131a;
+  color: #f7f3ea;
+  border-color: rgba(255,255,255,.12);
+}
+
+textarea.form-control:focus,
+select.form-select:focus {
+  background: #10131a;
+  color: #f7f3ea;
+  box-shadow: 0 0 0 .2rem rgba(193,165,107,.2);
+  border-color: rgba(214,178,121,.5);
+}
+
+.markdown-body p {
+  margin: 0 0 .85rem;
+}
+
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  margin: 0 0 .75rem;
+  line-height: 1.25;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.25rem;
+  margin-bottom: .85rem;
+}
+
+.markdown-body code {
+  background: rgba(255,255,255,.06);
+  padding: .1rem .35rem;
+  border-radius: .35rem;
+}
+
+.markdown-body pre {
+  background: #0f1218;
+  padding: .9rem;
+  border-radius: .75rem;
+  overflow: auto;
+  border: 1px solid rgba(255,255,255,.08);
+}
+
+.markdown-body pre code {
+  background: transparent;
+  padding: 0;
+}
