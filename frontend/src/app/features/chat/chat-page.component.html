@@ -1,20 +1,57 @@
-<div class="shell container-fluid">
-  <div class="sidebar-backdrop d-lg-none" *ngIf="sidebarOpen" (click)="toggleSidebar()"></div>
-  <div class="row min-vh-100">
-    <aside class="col-12 col-lg-3 sidebar" [class.sidebar-open]="sidebarOpen">
-      <div class="panel">
-        <label class="form-label">Filtro capacità</label>
-        <select class="form-select mb-3" [ngModel]="capabilityFilter()" (ngModelChange)="setCapabilityFilter($event)">
+<div class="shell" [class.sidebar-open]="sidebarOpen">
+
+  <!-- Mobile backdrop -->
+  <div class="sidebar-backdrop" *ngIf="sidebarOpen" (click)="toggleSidebar()"></div>
+
+  <!-- ── Sidebar ─────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <div class="sidebar-head">
+        <span class="sidebar-brand">SpiceSibyl</span>
+        <button class="btn-icon" (click)="toggleSidebar()" title="Chiudi sidebar" aria-label="Chiudi sidebar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Conversations -->
+      <div class="sidebar-section">
+        <div class="section-header">
+          <span class="section-label">Conversazioni</span>
+          <button class="btn-new-chat" (click)="newConversation()" title="Nuova chat">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Nuova
+          </button>
+        </div>
+        <ul class="conversation-list" *ngIf="conversations().length; else noConvs">
+          <li
+            *ngFor="let conv of conversations()"
+            class="conversation-item"
+            [class.active]="conv.id === currentConversationId"
+            (click)="selectConversation(conv.id)"
+          >
+            <span class="conv-title">{{ conv.title }}</span>
+            <button class="conv-delete" (click)="deleteConversation(conv.id, $event)" title="Elimina">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </li>
+        </ul>
+        <ng-template #noConvs>
+          <p class="no-convs">Nessuna conversazione salvata.</p>
+        </ng-template>
+      </div>
+
+      <!-- Model -->
+      <div class="sidebar-section">
+        <div class="section-label">Modello</div>
+        <select class="form-select mb-2" [ngModel]="capabilityFilter()" (ngModelChange)="setCapabilityFilter($event)">
           <option *ngFor="let capability of availableCapabilities()" [value]="capability">
-            {{ capability === 'all' ? 'Tutte' : capability }}
+            {{ capability === 'all' ? 'Tutte le capacità' : capability }}
           </option>
         </select>
-
-        <label class="form-label">Modello</label>
         <select class="form-select" [(ngModel)]="model">
           <option *ngFor="let item of filteredModels()" [value]="item.id">{{ item.label || item.id }}</option>
         </select>
-
         <div class="model-badges" *ngIf="selectedModelMeta() as selected">
           <span class="badge-chip provider">{{ selected.provider || 'provider' }}</span>
           <span class="badge-chip ok" *ngIf="selected.configured">configurato</span>
@@ -23,126 +60,116 @@
         </div>
       </div>
 
-<div class="panel mt-3">
-  <div class="small-title">Provider supportati</div>
-
-  <div class="provider-filters">
-    <div>
-      <label class="form-label form-label-sm">Disponibilità</label>
-      <select
-        class="form-select form-select-sm"
-        [ngModel]="availabilityFilter()"
-        (ngModelChange)="setAvailabilityFilter($event)"
-      >
-        <option value="all">Tutti</option>
-        <option value="free">Solo free</option>
-      </select>
-    </div>
-
-    <div>
-      <label class="form-label form-label-sm">Capability</label>
-      <select
-        class="form-select form-select-sm"
-        [ngModel]="capabilityFilter()"
-        (ngModelChange)="setCapabilityFilter($event)"
-      >
-        <option *ngFor="let capability of availableCapabilities()" [value]="capability">
-          {{ capability === 'all' ? 'Tutte' : capability }}
-        </option>
-      </select>
-    </div>
-  </div>
-
-  <ul class="provider-list rich">
-    <li *ngFor="let provider of providers()">
-      <button
-        type="button"
-        class="provider-toggle"
-        [class.active]="isProviderSelected(provider.id)"
-        (click)="toggleProvider(provider.id)"
-      >
-        <div class="provider-row">
-          <span class="provider-name">
-            <span class="provider-check" [class.on]="isProviderSelected(provider.id)">
-              {{ isProviderSelected(provider.id) ? '✓' : '○' }}
-            </span>
-            {{ provider.label }}
-          </span>
-          <span class="provider-count">{{ provider.model_count }} modelli</span>
+      <!-- Providers -->
+      <div class="sidebar-section">
+        <div class="section-label">Provider</div>
+        <div class="provider-filters">
+          <select class="form-select form-select-sm" [ngModel]="availabilityFilter()" (ngModelChange)="setAvailabilityFilter($event)">
+            <option value="all">Tutti</option>
+            <option value="free">Solo free</option>
+          </select>
+          <select class="form-select form-select-sm" [ngModel]="capabilityFilter()" (ngModelChange)="setCapabilityFilter($event)">
+            <option *ngFor="let capability of availableCapabilities()" [value]="capability">
+              {{ capability === 'all' ? 'Tutte' : capability }}
+            </option>
+          </select>
         </div>
-      </button>
-
-      <div class="provider-caps" *ngIf="provider.capabilities.length">
-        <span class="mini-cap" *ngFor="let capability of provider.capabilities">{{ capability }}</span>
+        <ul class="provider-list">
+          <li *ngFor="let provider of providers()">
+            <button type="button" class="provider-toggle" [class.active]="isProviderSelected(provider.id)" (click)="toggleProvider(provider.id)">
+              <div class="provider-row">
+                <span class="provider-name">
+                  <span class="provider-check" [class.on]="isProviderSelected(provider.id)">
+                    {{ isProviderSelected(provider.id) ? '✓' : '○' }}
+                  </span>
+                  {{ provider.label }}
+                </span>
+                <span class="provider-count">{{ provider.model_count }}</span>
+              </div>
+            </button>
+            <div class="provider-caps" *ngIf="provider.capabilities.length">
+              <span class="mini-cap" *ngFor="let capability of provider.capabilities">{{ capability }}</span>
+            </div>
+          </li>
+        </ul>
       </div>
-    </li>
-  </ul>
-</div>
-    </aside>
 
-    <main class="col-12 col-lg-9 content">
-      <header class="topbar">
-        <div class="topbar-left">
-          <button class="sidebar-toggle d-lg-none" (click)="toggleSidebar()" [attr.aria-expanded]="sidebarOpen" aria-label="Apri filtri">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-          </button>
-          <h1>Console</h1>
+    </div>
+  </aside>
+
+  <!-- ── Main panel ──────────────────────────────────────────── -->
+  <div class="main-panel">
+
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="btn-icon" (click)="toggleSidebar()" [attr.aria-expanded]="sidebarOpen" aria-label="Toggle sidebar">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <h1 class="topbar-title">Console</h1>
+      </div>
+      <span class="status" [class.live]="!loading">{{ loading ? 'Thinking…' : 'Ready' }}</span>
+    </header>
+
+    <div class="messages" #messagesContainer (scroll)="onMessagesScroll()">
+      <div
+        class="message"
+        *ngFor="let message of messages(); let last = last"
+        [class.user]="message.role === 'user'"
+        [class.streaming]="streaming && last && message.role === 'assistant'"
+      >
+        <div class="role">{{ roleLabel(message) }}</div>
+        <div class="bubble markdown-body" [innerHTML]="renderedContent(message)"></div>
+
+        <div class="meta" *ngIf="message.role === 'assistant' && (message.latency_ms || message.prompt_tokens || message.completion_tokens || message.tokens_per_second || message.provider || message.finish_reason || message.created_at || message.estimated_cost)">
+          <span *ngIf="message.provider">{{ message.provider }}</span>
+          <span *ngIf="message.created_at"> · {{ (message.created_at * 1000) | date:'HH:mm:ss' }}</span>
+          <span *ngIf="message.latency_ms"> · {{ (message.latency_ms / 1000).toFixed(2) }}s</span>
+          <span *ngIf="message.first_token_ms"> · first {{ (message.first_token_ms / 1000).toFixed(2) }}s</span>
+          <span *ngIf="message.prompt_tokens !== undefined"> · in {{ message.prompt_tokens }} tok</span>
+          <span *ngIf="message.completion_tokens !== undefined"> · out {{ message.completion_tokens }} tok</span>
+          <span *ngIf="message.total_tokens !== undefined"> · tot {{ message.total_tokens }} tok</span>
+          <span *ngIf="message.tokens_per_second !== undefined"> · {{ message.tokens_per_second.toFixed(1) }} tok/s</span>
+          <span *ngIf="message.finish_reason"> · {{ message.finish_reason }}</span>
+          <span *ngIf="message.estimated_cost !== undefined && message.estimated_cost !== null"> · ${{ message.estimated_cost.toFixed(6) }}</span>
         </div>
-        <span class="status" [class.live]="!loading">{{ loading ? 'Thinking…' : 'Ready' }}</span>
-      </header>
 
-<div class="messages" #messagesContainer>
-  <div class="message" *ngFor="let message of messages(); let last = last" [class.user]="message.role === 'user'" [class.streaming]="streaming && last && message.role === 'assistant'">
-    <div class="role">{{ roleLabel(message) }}</div>
-    <div class="bubble markdown-body" [innerHTML]="renderedContent(message)"></div>
+        <div class="badges" *ngIf="message.role === 'assistant' && ((message.capabilities?.length || 0) > 0 || message.free !== undefined)">
+          <span class="badge-chip free" *ngIf="message.free">free</span>
+          <span class="badge-chip" *ngFor="let capability of message.capabilities || []">{{ capability }}</span>
+        </div>
+      </div>
 
-    <div
-      class="meta"
-      *ngIf="message.role === 'assistant' && (message.latency_ms || message.prompt_tokens || message.completion_tokens || message.tokens_per_second || message.provider || message.finish_reason || message.created_at || message.estimated_cost)"
-    >
-      <span *ngIf="message.provider">{{ message.provider }}</span>
-      <span *ngIf="message.created_at"> · {{ (message.created_at * 1000) | date:'HH:mm:ss' }}</span>
-      <span *ngIf="message.latency_ms"> · {{ (message.latency_ms / 1000).toFixed(2) }}s</span>
-      <span *ngIf="message.first_token_ms"> · first {{ (message.first_token_ms / 1000).toFixed(2) }}s</span>
-      <span *ngIf="message.prompt_tokens !== undefined"> · in {{ message.prompt_tokens }} tok</span>
-      <span *ngIf="message.completion_tokens !== undefined"> · out {{ message.completion_tokens }} tok</span>
-      <span *ngIf="message.total_tokens !== undefined"> · total {{ message.total_tokens }} tok</span>
-      <span *ngIf="message.tokens_per_second !== undefined"> · {{ message.tokens_per_second.toFixed(1) }} tok/s</span>
-      <span *ngIf="message.finish_reason"> · {{ message.finish_reason }}</span>
-      <span *ngIf="message.estimated_cost !== undefined && message.estimated_cost !== null"> · ${{ message.estimated_cost.toFixed(6) }}</span>
+      <div class="message" *ngIf="loading && !streaming">
+        <div class="role">{{ model.split('/').pop()?.toUpperCase() }}</div>
+        <div class="bubble typing-bubble">
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        </div>
+      </div>
     </div>
 
-    <div class="badges" *ngIf="message.role === 'assistant' && ((message.capabilities?.length || 0) > 0 || message.free !== undefined)">
-      <span class="badge-chip free" *ngIf="message.free">free</span>
-      <span class="badge-chip" *ngFor="let capability of message.capabilities || []">{{ capability }}</span>
-    </div>
-  </div>
-
-  <div class="message typing-indicator" *ngIf="loading && !streaming">
-    <div class="role">{{ model.split('/').pop()?.toUpperCase() }}</div>
-    <div class="bubble typing-bubble">
-      <span class="dot"></span>
-      <span class="dot"></span>
-      <span class="dot"></span>
-    </div>
-  </div>
-</div>
-
-      <div class="composer">
-        <label class="form-label">Prompt</label>
+    <div class="composer">
+      <div class="composer-inner">
         <textarea
-          class="form-control"
-          rows="6"
+          class="composer-textarea"
+          rows="2"
           [(ngModel)]="prompt"
-          placeholder="Scrivi il tuo prompt..."
+          placeholder="Scrivi il tuo prompt…"
+          (keydown.enter)="onEnter($event)"
         ></textarea>
-
-        <div class="actions">
-          <button class="btn btn-primary" [disabled]="loading || !prompt.trim()" (click)="send()">
-            {{ loading ? 'Invio...' : 'Invia' }}
-          </button>
-        </div>
+        <button
+          class="composer-send"
+          [disabled]="loading || !prompt.trim()"
+          (click)="send()"
+          [title]="loading ? 'Invio in corso…' : 'Invia (Enter)'"
+        >
+          <svg *ngIf="!loading" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+          <span *ngIf="loading" class="send-spinner"></span>
+        </button>
       </div>
-    </main>
+      <p class="composer-hint">Enter per inviare · Shift+Enter per andare a capo</p>
+    </div>
+
   </div>
 </div>

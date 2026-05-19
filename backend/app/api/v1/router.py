@@ -21,6 +21,7 @@ from app.api.v1.endpoints import (
     cerebras_discovery,
     chat,
     cloudflare_discovery,
+    conversations,
     gemini_discovery,
     groq_discovery,
     health,
@@ -42,3 +43,4 @@ api_router.include_router(gemini_discovery.router, prefix="/gemini-discovery", t
 api_router.include_router(groq_discovery.router, prefix="/groq-discovery", tags=["groq-discovery"])
 api_router.include_router(cerebras_discovery.router, prefix="/cerebras-discovery", tags=["cerebras-discovery"])
 api_router.include_router(mistral_discovery.router, prefix="/mistral-discovery", tags=["mistral-discovery"])
+api_router.include_router(conversations.router, prefix="/conversations", tags=["conversations"])

@@ -27,7 +27,8 @@ import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 import { ChatService } from '../../core/services/chat.service';
-import { ChatCompletionResponse, ChatMessage, ChatModel, ProviderSummary } from '../../core/models/chat.models';
+import { ConversationService } from '../../core/services/conversation.service';
+import { ChatCompletionResponse, ChatMessage, ChatModel, ConversationSummary, ProviderSummary } from '../../core/models/chat.models';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -42,12 +43,16 @@ import { NotificationService } from '../../core/services/notification.service';
 })
 export class ChatPageComponent implements OnInit, AfterViewChecked {
   private readonly chatService = inject(ChatService);
+  private readonly conversationService = inject(ConversationService);
   private readonly sanitizer = inject(DomSanitizer);
   private readonly notifications = inject(NotificationService);
   readonly availabilityFilter = signal<'all' | 'free'>('all');
 
   @ViewChild('messagesContainer')
   private messagesContainer?: ElementRef<HTMLDivElement>;
+
+  readonly conversations = signal<ConversationSummary[]>([]);
+  currentConversationId: string | null = null;
 
   readonly messages = signal<ChatMessage[]>([
     {
@@ -97,7 +102,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked {
   model = 'ollama/qwen2.5:7b-instruct';
   loading = false;
   streaming = false;
-  sidebarOpen = false;
+  sidebarOpen = window.innerWidth >= 992;
 
   toggleSidebar(): void {
     this.sidebarOpen = !this.sidebarOpen;
@@ -110,8 +115,9 @@ export class ChatPageComponent implements OnInit, AfterViewChecked {
     this.ensureValidSelectedModel();
   }
   ngOnInit(): void {
-    // Enable GitHub-Flavoured Markdown with soft line breaks
     marked.setOptions({ breaks: true, gfm: true });
+
+    this.loadConversationList();
 
     this.chatService.models().subscribe({
       next: (response) => {
@@ -152,6 +158,13 @@ export class ChatPageComponent implements OnInit, AfterViewChecked {
     if (this.shouldAutoScroll) {
       this.scrollToBottom();
       this.shouldAutoScroll = false;
+    }
+  }
+
+  onEnter(event: KeyboardEvent): void {
+    if (!event.shiftKey) {
+      event.preventDefault();
+      this.send();
     }
   }
 
@@ -251,7 +264,85 @@ export class ChatPageComponent implements OnInit, AfterViewChecked {
         this.loading = false;
         this.streaming = false;
         this.queueScrollToBottom();
+        this.persistExchange(userMessages[userMessages.length - 1], streamingIdx);
       },
+    });
+  }
+
+  /**
+   * After a successful exchange, create or update the persisted conversation.
+   * Creates a new conversation on first send, then appends the user + assistant pair.
+   */
+  private persistExchange(userMessage: ChatMessage, assistantIdx: number): void {
+    const assistantMessage = this.messages()[assistantIdx];
+    if (!assistantMessage?.content) {
+      return;
+    }
+    const saveMessages = () => {
+      this.conversationService
+        .appendMessages(this.currentConversationId!, [userMessage, assistantMessage])
+        .subscribe({ next: () => this.loadConversationList() });
+    };
+
+    if (this.currentConversationId) {
+      saveMessages();
+    } else {
+      const title = userMessage.content.slice(0, 60);
+      this.conversationService.create(title, this.model).subscribe({
+        next: (conv) => {
+          this.currentConversationId = conv.id;
+          saveMessages();
+        },
+      });
+    }
+  }
+
+  /** Load conversation list from backend. */
+  loadConversationList(): void {
+    this.conversationService.list().subscribe({
+      next: (list) => this.conversations.set(list),
+      error: () => {},
+    });
+  }
+
+  /** Start a blank new chat without persisting anything until the first send. */
+  newConversation(): void {
+    this.currentConversationId = null;
+    this.messages.set([
+      {
+        role: 'assistant',
+        content: 'Nuova conversazione. Seleziona un modello e inizia a chattare.',
+        model: 'SpiceSibyl',
+        created_at: Math.floor(Date.now() / 1000),
+      },
+    ]);
+    this.queueScrollToBottom(true);
+  }
+
+  /** Load an existing conversation from the backend and display it. */
+  selectConversation(id: string): void {
+    this.conversationService.get(id).subscribe({
+      next: (conv) => {
+        this.currentConversationId = conv.id;
+        this.model = conv.model;
+        this.messages.set(conv.messages);
+        this.queueScrollToBottom(true);
+      },
+      error: () => this.notifications.add('error', 'Errore', 'Impossibile caricare la conversazione.'),
+    });
+  }
+
+  /** Delete a conversation and refresh the list. */
+  deleteConversation(id: string, event: Event): void {
+    event.stopPropagation();
+    this.conversationService.delete(id).subscribe({
+      next: () => {
+        if (this.currentConversationId === id) {
+          this.newConversation();
+        }
+        this.loadConversationList();
+      },
+      error: () => this.notifications.add('error', 'Errore', 'Impossibile eliminare la conversazione.'),
     });
   }
 

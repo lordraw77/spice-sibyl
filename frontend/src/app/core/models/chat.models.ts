@@ -118,3 +118,17 @@ export interface ProviderSummary {
   model_count: number;
   capabilities: string[];
 }
+
+/** Conversation metadata returned by GET /api/v1/conversations */
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  model: string;
+  created_at: number;
+  updated_at: number;
+}
+
+/** Full conversation including message history */
+export interface Conversation extends ConversationSummary {
+  messages: ChatMessage[];
+}

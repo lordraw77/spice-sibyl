@@ -7,11 +7,20 @@ health/info endpoint.  All provider-specific logic lives under app/providers/.
 
 import logging
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.db.database import init_db
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    await init_db()
+    yield
+
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -29,6 +38,7 @@ app = FastAPI(
     title=settings.app_name,
     version='0.2.0',
     description='OpenAI-compatible multi-provider AI gateway',
+    lifespan=lifespan,
 )
 
 app.add_middleware(
