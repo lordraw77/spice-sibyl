@@ -4,9 +4,11 @@ FastAPI dependency that resolves the correct provider adapter from a model strin
 Routing rules (evaluated in order):
   cloudflare/<model>  → CloudflareProvider  (direct Workers AI HTTP calls)
   openrouter/<model>  → OpenRouterProvider  (LiteLLM via OpenRouter)
-  *                   → LiteLLMProvider     (all other prefixes: ollama, groq, gemini, …)
+  gemini/<model>      → GeminiProvider      (LiteLLM via Google Generative AI)
+  *                   → LiteLLMProvider     (all other prefixes: ollama, groq, …)
 """
 from app.providers.cloudflare_provider import CloudflareProvider
+from app.providers.gemini_provider import GeminiProvider
 from app.providers.litellm_provider import LiteLLMProvider
 from app.providers.openrouter_provider import OpenRouterProvider
 
@@ -17,4 +19,6 @@ def get_provider(model: str | None = None):
         return CloudflareProvider()
     if model and model.startswith('openrouter/'):
         return OpenRouterProvider()
+    if model and model.startswith('gemini/'):
+        return GeminiProvider()
     return LiteLLMProvider()

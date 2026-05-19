@@ -8,6 +8,7 @@ SSE EventSourceResponse; otherwise the provider's complete() is called directly.
 import logging
 
 from fastapi import APIRouter, HTTPException
+from litellm.exceptions import RateLimitError
 
 from app.dependencies.provider_factory import get_provider
 from app.schemas.chat import ChatCompletionRequest
@@ -24,6 +25,12 @@ async def chat_completions(payload: ChatCompletionRequest):
     if payload.stream:
         try:
             return await _chat_service.stream(payload)
+        except RateLimitError as exc:
+            logger.warning('Rate limit hit for model=%s', payload.model)
+            raise HTTPException(
+                status_code=429,
+                detail={'message': str(exc), 'model': payload.model},
+            ) from exc
         except Exception as exc:
             logger.exception('Streaming failed for model=%s', payload.model)
             raise HTTPException(
@@ -34,6 +41,12 @@ async def chat_completions(payload: ChatCompletionRequest):
     provider = get_provider(payload.model)
     try:
         return await provider.complete(payload)
+    except RateLimitError as exc:
+        logger.warning('Rate limit hit for model=%s', payload.model)
+        raise HTTPException(
+            status_code=429,
+            detail={'message': str(exc), 'model': payload.model},
+        ) from exc
     except Exception as exc:
         logger.exception('Chat completion failed for model=%s', payload.model)
         raise HTTPException(
