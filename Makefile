@@ -1,4 +1,4 @@
-DOCKER_USER   ?= lordraw77
+DOCKER_USER   ?= lordraw
 BACKEND_IMAGE  = $(DOCKER_USER)/spice-sibyl-backend
 FRONTEND_IMAGE = $(DOCKER_USER)/spice-sibyl-frontend
 VERSION       ?= latest
