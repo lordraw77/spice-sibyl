@@ -16,7 +16,8 @@ SpiceSibyl is an OpenAI-compatible multi-provider AI gateway with a built-in Ang
 6. [API reference](#api-reference)
 7. [Provider catalog](#provider-catalog)
 8. [Model discovery](#model-discovery)
-9. [Running tests](#running-tests)
+9. [Error handling](#error-handling)
+10. [Running tests](#running-tests)
 
 ---
 
@@ -25,17 +26,18 @@ SpiceSibyl is an OpenAI-compatible multi-provider AI gateway with a built-in Ang
 ```
 Browser (Angular)
       │
-      │  HTTP / REST
+      │  HTTP / REST + SSE
       ▼
 FastAPI gateway  (/api/v1)
       │
-      ├── LiteLLMProvider   ──► Ollama, Groq, Gemini, Mistral, …
+      ├── GeminiProvider    ──► Google Generative AI
+      ├── LiteLLMProvider   ──► Ollama, Groq, Mistral, Together, Fireworks, HuggingFace
       ├── OpenRouterProvider ──► OpenRouter
       └── CloudflareProvider ──► Cloudflare Workers AI
 ```
 
 The gateway selects the correct provider adapter based on the model-ID prefix
-(e.g. `cloudflare/…`, `openrouter/…`, `ollama/…`).  All providers implement
+(e.g. `cloudflare/…`, `openrouter/…`, `gemini/…`, `groq/…`).  All providers implement
 the same `BaseProvider` interface (`complete`, `stream`, `list_models`).
 
 ---
@@ -45,7 +47,7 @@ the same `BaseProvider` interface (`complete`, `stream`, `list_models`).
 | Layer     | Technology                                      |
 |-----------|-------------------------------------------------|
 | Backend   | Python 3.11 · FastAPI · LiteLLM · httpx · SSE  |
-| Frontend  | Angular 18 · Bootstrap · marked · DOMPurify    |
+| Frontend  | Angular 18 · signals · marked · DOMPurify       |
 | Dev env   | Docker Compose · Makefile                       |
 
 ---
@@ -56,7 +58,7 @@ the same `BaseProvider` interface (`complete`, `stream`, `list_models`).
 spice-sibyl/
 ├── backend/
 │   ├── app/
-│   │   ├── api/v1/endpoints/   # Route handlers (chat, models, discovery)
+│   │   ├── api/v1/endpoints/   # Route handlers (chat, models, providers, discovery)
 │   │   ├── core/               # Settings (pydantic-settings)
 │   │   ├── data/               # Model catalog loader (YAML)
 │   │   ├── dependencies/       # FastAPI provider factory dependency
@@ -68,9 +70,16 @@ spice-sibyl/
 │   └── requirements.txt
 ├── frontend/
 │   └── src/app/
-│       ├── core/               # Models, services, config
-│       ├── features/chat/      # Chat page component
-│       ├── features/discovery/ # Provider discovery page component
+│       ├── core/
+│       │   ├── config/         # Runtime config (app-config.json)
+│       │   ├── interceptors/   # Global HTTP error interceptor
+│       │   ├── models/         # TypeScript domain models
+│       │   └── services/       # ChatService, DiscoveryService, NotificationService
+│       ├── features/
+│       │   ├── chat/           # Chat page component
+│       │   └── discovery/      # Provider discovery page component
+│       ├── shared/
+│       │   └── toast-container/ # Global toast notification component
 │       └── layout/             # Navbar
 ├── shared-config/
 │   └── provider_models.yaml    # Static model catalog (shared volume)
@@ -151,61 +160,45 @@ Returns the full model list and a per-provider summary.
   "object": "list",
   "data": [
     {
-      "id": "ollama/qwen2.5:7b-instruct",
-      "label": "qwen2.5:7b-instruct",
-      "provider": "ollama",
+      "id": "gemini/gemini-2.0-flash",
+      "label": "Gemini · Gemini 2.0 Flash",
+      "provider": "gemini",
       "configured": true,
       "free": true,
-      "capabilities": ["chat"]
+      "capabilities": ["chat", "vision", "tools", "json"]
     }
   ],
   "providers": [
-    {
-      "id": "ollama",
-      "label": "Ollama",
-      "enabled": true,
-      "configured": true,
-      "model_count": 3,
-      "capabilities": ["chat", "code"]
-    }
+    { "id": "gemini", "label": "Gemini", "enabled": true, "configured": true, "model_count": 6 }
   ]
 }
 ```
 
+### `GET /providers`
+Returns all providers with live configuration status (API key present/absent).
+
+### `POST /providers/{id}/test`
+Tests connectivity for the given provider and returns a pass/fail result.
+
 ### `POST /chat/completions`
-OpenAI-compatible chat completion.
+OpenAI-compatible chat completion. Supports both regular and streaming (`stream: true`) responses.
 
 **Request body:**
 ```jsonc
 {
-  "model": "ollama/qwen2.5:7b-instruct",
-  "messages": [
-    { "role": "user", "content": "Hello!" }
-  ],
+  "model": "groq/llama-3.3-70b-versatile",
+  "messages": [{ "role": "user", "content": "Hello!" }],
   "stream": false,
   "temperature": 0.7,
   "max_tokens": 1024
 }
 ```
 
-**Response:** OpenAI `chat.completion` envelope extended with a `metrics` field:
-```jsonc
-{
-  "id": "chatcmpl-…",
-  "object": "chat.completion",
-  "created": 1716000000,
-  "model": "ollama/qwen2.5:7b-instruct",
-  "choices": [ … ],
-  "usage": { "prompt_tokens": 12, "completion_tokens": 48, "total_tokens": 60 },
-  "metrics": {
-    "latency_ms": 1240,
-    "first_token_ms": 1240,
-    "tokens_per_second": 38.7,
-    "provider": "ollama",
-    "estimated_cost": null
-  }
-}
-```
+**Error responses:**
+- `429` — rate limit exceeded (e.g. Gemini free-tier quota)
+- `500` — generic backend error; `detail.message` contains the provider error string
+
+For streaming requests, errors that occur after the SSE connection is established are sent as an `event: error` SSE event with `data: {"message": "..."}` before the stream closes.
 
 ### `POST /cloudflare-discovery/run`
 Fetch the Cloudflare Workers AI Text Generation model catalog.  
@@ -214,6 +207,14 @@ Requires `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_KEY`.
 ### `POST /openrouter-discovery/run`
 Fetch the OpenRouter chat model catalog.  
 Requires `OPENROUTER_API_KEY`.
+
+### `POST /gemini-discovery/run`
+Fetch the Google Gemini model catalog (all models supporting `generateContent`).  
+Requires `GEMINI_API_KEY`.
+
+### `POST /groq-discovery/run`
+Fetch the Groq LLM model catalog (excludes Whisper, TTS, and guard models).  
+Requires `GROQ_API_KEY`.
 
 ---
 
@@ -224,15 +225,15 @@ at `/config/provider_models.yaml` inside the container).  Example entry:
 
 ```yaml
 providers:
-  groq:
+  gemini:
     enabled: true
-    configured: true        # set to true once GROQ_API_KEY is provided
+    configured: true
     models:
-      - id: groq/llama-3.3-70b-versatile
-        label: Groq · Llama 3.3 70B
+      - id: gemini/gemini-2.0-flash
+        label: Gemini · Gemini 2.0 Flash
         default: false
-        free: false
-        capabilities: [chat, tools]
+        free: true
+        capabilities: [chat, vision, tools, json]
 ```
 
 **Catalog lookup order at runtime:**
@@ -244,10 +245,29 @@ providers:
 
 ## Model discovery
 
-The **Discovery** page (frontend) and the `/cloudflare-discovery/run` and
-`/openrouter-discovery/run` endpoints let you fetch the live model catalog
-from a provider and generate a ready-to-paste YAML block for
-`provider_models.yaml`.
+The **Discovery** page (frontend) and the four `*-discovery/run` endpoints let you
+fetch the live model catalog from a provider and generate a ready-to-paste YAML block
+for `provider_models.yaml`.
+
+| Provider   | Endpoint                        | Auth required                                   |
+|------------|---------------------------------|-------------------------------------------------|
+| Cloudflare | `POST /cloudflare-discovery/run` | `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_KEY` |
+| OpenRouter | `POST /openrouter-discovery/run` | `OPENROUTER_API_KEY`                           |
+| Gemini     | `POST /gemini-discovery/run`     | `GEMINI_API_KEY`                               |
+| Groq       | `POST /groq-discovery/run`       | `GROQ_API_KEY`                                 |
+
+Each endpoint returns `model_count`, `yaml` (paste-ready YAML string), and `models` (structured list).
+
+---
+
+## Error handling
+
+Backend errors are surfaced to the user via a global toast notification system:
+
+- **HTTP errors** (from `HttpClient`-based calls — discovery, model loading, providers) are intercepted globally by `ErrorInterceptor` and displayed as dismissible toast notifications in the top-right corner.
+- **Streaming SSE errors** (chat completions) are signalled by the backend with an `event: error` SSE frame before the stream closes. The frontend parses the error message and shows it both in the chat bubble and as a toast notification.
+
+Toast types: `error` (pink), `warning` (gold), `info` (blue). All toasts auto-dismiss after 6 seconds.
 
 ---
 
