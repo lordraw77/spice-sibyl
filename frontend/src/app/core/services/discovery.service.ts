@@ -47,4 +47,12 @@ export class DiscoveryService {
       {}
     );
   }
+
+  /** Trigger a Google Gemini model catalog fetch on the backend. */
+  runGeminiDiscovery(): Observable<DiscoveryResult> {
+    return this.http.post<DiscoveryResult>(
+      `${this.config.apiUrl}/gemini-discovery/run`,
+      {}
+    );
+  }
 }

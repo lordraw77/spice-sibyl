@@ -15,7 +15,7 @@ import { FormsModule } from '@angular/forms';
 import { DiscoveryService, DiscoveryModel } from '../../core/services/discovery.service';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 
-type DiscoverySource = 'cloudflare' | 'openrouter';
+type DiscoverySource = 'cloudflare' | 'openrouter' | 'gemini';
 
 @Component({
   selector: 'app-discovery-page',
@@ -41,17 +41,24 @@ export class DiscoveryPageComponent {
   /** 'idle' | 'success' | 'error' — drives the copy-button label and color */
   copyState = signal<'idle' | 'success' | 'error'>('idle');
 
-  pageTitle = computed(() =>
-    this.activeSource() === 'cloudflare'
-      ? '☁ Cloudflare Model Discovery'
-      : '🧭 OpenRouter Model Discovery'
-  );
+  pageTitle = computed(() => {
+    switch (this.activeSource()) {
+      case 'cloudflare': return '☁ Cloudflare Model Discovery';
+      case 'openrouter': return '🧭 OpenRouter Model Discovery';
+      case 'gemini':     return '✦ Gemini Model Discovery';
+    }
+  });
 
-  pageSubtitle = computed(() =>
-    this.activeSource() === 'cloudflare'
-      ? 'Fetch and browse all Text Generation models available on your Cloudflare Workers AI account.'
-      : 'Fetch and browse chat models available via OpenRouter and generate a YAML block ready for the provider catalog.'
-  );
+  pageSubtitle = computed(() => {
+    switch (this.activeSource()) {
+      case 'cloudflare':
+        return 'Recupera e visualizza tutti i modelli Text Generation disponibili sul tuo account Cloudflare Workers AI.';
+      case 'openrouter':
+        return 'Recupera e visualizza i modelli chat disponibili via OpenRouter e genera il blocco YAML per il catalogo.';
+      case 'gemini':
+        return 'Recupera e visualizza tutti i modelli generateContent disponibili tramite la Google Generative AI API.';
+    }
+  });
 
   freeModelCount = computed(() => this.models().filter((m) => m.free).length);
   uniqueCapabilityCount = computed(() => {
@@ -76,10 +83,11 @@ export class DiscoveryPageComponent {
     this.modelCount.set(null);
     this.copyState.set('idle');
 
+    const source = this.activeSource();
     const request$ =
-      this.activeSource() === 'cloudflare'
-        ? this.discoveryService.runCloudflareDiscovery()
-        : this.discoveryService.runOpenRouterDiscovery();
+      source === 'cloudflare' ? this.discoveryService.runCloudflareDiscovery()
+      : source === 'openrouter' ? this.discoveryService.runOpenRouterDiscovery()
+      : this.discoveryService.runGeminiDiscovery();
 
     request$.subscribe({
       next: (result) => {
@@ -92,10 +100,8 @@ export class DiscoveryPageComponent {
         queueMicrotask(() => this.syncEditorScroll(true));
       },
       error: (err) => {
-        this.error.set(
-          err?.error?.detail ||
-          `Discovery failed for ${this.activeSource() === 'cloudflare' ? 'Cloudflare' : 'OpenRouter'}.`
-        );
+        const providerName = { cloudflare: 'Cloudflare', openrouter: 'OpenRouter', gemini: 'Gemini' }[this.activeSource()];
+        this.error.set(err?.error?.detail || `Discovery failed for ${providerName}.`);
         this.loading.set(false);
       },
     });

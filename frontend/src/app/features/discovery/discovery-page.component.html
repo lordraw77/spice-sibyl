@@ -17,14 +17,21 @@
   >
     OpenRouter
   </button>
+
+  <button
+    type="button"
+    class="submenu-item"
+    [class.active]="activeSource() === 'gemini'"
+    (click)="setSource('gemini')"
+  >
+    Gemini
+  </button>
 </div>
 
   <div class="discovery-header">
     <div>
-      <h2 class="page-title">☁ Cloudflare Model Discovery</h2>
-      <p class="page-sub">
-        Recupera e visualizza tutti i modelli Text Generation disponibili sul tuo account Cloudflare Workers AI.
-      </p>
+      <h2 class="page-title">{{ pageTitle() }}</h2>
+      <p class="page-sub">{{ pageSubtitle() }}</p>
     </div>
 
     <div class="header-actions">
