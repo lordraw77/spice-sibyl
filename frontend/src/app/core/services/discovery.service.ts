@@ -71,4 +71,12 @@ export class DiscoveryService {
       {}
     );
   }
+
+  /** Trigger a Mistral AI model catalog fetch on the backend. */
+  runMistralDiscovery(): Observable<DiscoveryResult> {
+    return this.http.post<DiscoveryResult>(
+      `${this.config.apiUrl}/mistral-discovery/run`,
+      {}
+    );
+  }
 }

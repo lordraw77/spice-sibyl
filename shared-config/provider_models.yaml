@@ -103,7 +103,47 @@ providers:
         default: false
         free: false
         capabilities: [chat, tools, json]
-        
+
+  mistral:
+    enabled: true
+    configured: false
+    models:
+      - id: mistral/mistral-small-latest
+        label: Mistral · Mistral Small
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: mistral/mistral-medium-latest
+        label: Mistral · Mistral Medium
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: mistral/mistral-large-latest
+        label: Mistral · Mistral Large
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: mistral/codestral-latest
+        label: Mistral · Codestral
+        default: false
+        free: false
+        capabilities: [chat, code, tools, json]
+      - id: mistral/pixtral-large-latest
+        label: Mistral · Pixtral Large
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: mistral/pixtral-12b-latest
+        label: Mistral · Pixtral 12B
+        default: false
+        free: false
+        capabilities: [chat, vision, tools, json]
+      - id: mistral/open-mistral-nemo
+        label: Mistral · Mistral Nemo
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+
   openrouter:
     enabled: true
     configured: true

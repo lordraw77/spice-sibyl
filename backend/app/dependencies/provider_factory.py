@@ -11,6 +11,7 @@ from app.providers.cerebras_provider import CerebrasProvider
 from app.providers.cloudflare_provider import CloudflareProvider
 from app.providers.gemini_provider import GeminiProvider
 from app.providers.litellm_provider import LiteLLMProvider
+from app.providers.mistral_provider import MistralProvider
 from app.providers.openrouter_provider import OpenRouterProvider
 
 
@@ -24,4 +25,6 @@ def get_provider(model: str | None = None):
         return GeminiProvider()
     if model and model.startswith('cerebras/'):
         return CerebrasProvider()
+    if model and model.startswith('mistral/'):
+        return MistralProvider()
     return LiteLLMProvider()

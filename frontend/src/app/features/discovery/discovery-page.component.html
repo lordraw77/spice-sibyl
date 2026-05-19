@@ -44,6 +44,15 @@
   >
     Cerebras
   </button>
+
+  <button
+    type="button"
+    class="submenu-item"
+    [class.active]="activeSource() === 'mistral'"
+    (click)="setSource('mistral')"
+  >
+    Mistral
+  </button>
 </div>
 
   <div class="discovery-header">

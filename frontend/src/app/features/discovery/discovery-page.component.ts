@@ -15,7 +15,7 @@ import { FormsModule } from '@angular/forms';
 import { DiscoveryService, DiscoveryModel } from '../../core/services/discovery.service';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 
-type DiscoverySource = 'cloudflare' | 'openrouter' | 'gemini' | 'groq' | 'cerebras';
+type DiscoverySource = 'cloudflare' | 'openrouter' | 'gemini' | 'groq' | 'cerebras' | 'mistral';
 
 @Component({
   selector: 'app-discovery-page',
@@ -47,6 +47,7 @@ export class DiscoveryPageComponent {
       case 'gemini':     return '✦ Gemini Model Discovery';
       case 'groq':       return '⚡ Groq Model Discovery';
       case 'cerebras':   return '🧠 Cerebras Model Discovery';
+      case 'mistral':    return '🔶 Mistral AI Model Discovery';
     }
   });
 
@@ -62,6 +63,8 @@ export class DiscoveryPageComponent {
         return 'Recupera e visualizza tutti i modelli LLM disponibili sulla piattaforma Groq e genera il blocco YAML per il catalogo.';
       case 'cerebras':
         return 'Recupera e visualizza tutti i modelli LLM disponibili sulla piattaforma Cerebras e genera il blocco YAML per il catalogo.';
+      case 'mistral':
+        return 'Recupera e visualizza tutti i modelli chat disponibili su Mistral AI e genera il blocco YAML per il catalogo.';
     }
   });
 
@@ -93,7 +96,8 @@ export class DiscoveryPageComponent {
       : source === 'openrouter' ? this.discoveryService.runOpenRouterDiscovery()
       : source === 'gemini' ? this.discoveryService.runGeminiDiscovery()
       : source === 'groq' ? this.discoveryService.runGroqDiscovery()
-      : this.discoveryService.runCerebrasDiscovery();
+      : source === 'cerebras' ? this.discoveryService.runCerebrasDiscovery()
+      : this.discoveryService.runMistralDiscovery();
 
     request$.subscribe({
       next: (result) => {

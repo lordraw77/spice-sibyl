@@ -12,6 +12,7 @@ Route map:
   POST /v1/gemini-discovery/run       — fetch Google Gemini model catalog
   POST /v1/groq-discovery/run         — fetch Groq model catalog
   POST /v1/cerebras-discovery/run     — fetch Cerebras model catalog
+  POST /v1/mistral-discovery/run      — fetch Mistral AI model catalog
 """
 
 from fastapi import APIRouter
@@ -23,6 +24,7 @@ from app.api.v1.endpoints import (
     gemini_discovery,
     groq_discovery,
     health,
+    mistral_discovery,
     models,
     openrouter_discovery,
     providers,
@@ -39,3 +41,4 @@ api_router.include_router(openrouter_discovery.router, prefix="/openrouter-disco
 api_router.include_router(gemini_discovery.router, prefix="/gemini-discovery", tags=["gemini-discovery"])
 api_router.include_router(groq_discovery.router, prefix="/groq-discovery", tags=["groq-discovery"])
 api_router.include_router(cerebras_discovery.router, prefix="/cerebras-discovery", tags=["cerebras-discovery"])
+api_router.include_router(mistral_discovery.router, prefix="/mistral-discovery", tags=["mistral-discovery"])
