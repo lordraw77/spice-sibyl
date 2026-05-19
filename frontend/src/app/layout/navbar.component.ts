@@ -67,6 +67,12 @@ import { Router, RouterLink, RouterLinkActive } from '@angular/router';
       background: rgba(214,178,121,.12);
       color: #d6b279;
     }
+    @media (max-width: 575.98px) {
+      .navbar { padding: .6rem 1rem; }
+      .brand-tag { display: none; }
+      .nav-links a { padding: .45rem .65rem; font-size: .85rem; gap: .35rem; }
+      .nav-links a svg { width: 15px; height: 15px; }
+    }
   `]
 })
 export class NavbarComponent {}

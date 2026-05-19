@@ -301,3 +301,77 @@
   background: rgba(214, 178, 121, 0.1);
   border: 1px solid rgba(214, 178, 121, 0.16);
 }
+
+/* ── Responsive ─────────────────────────────────────────────── */
+
+@media (max-width: 767.98px) {
+  .discovery-shell {
+    padding: 1rem;
+    gap: 1.25rem;
+  }
+
+  .discovery-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .85rem;
+  }
+
+  .header-actions {
+    width: 100%;
+  }
+
+  .btn-run {
+    width: 100%;
+    text-align: center;
+  }
+
+  .page-title {
+    font-size: 1.15rem;
+  }
+
+  .result-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(140px, 100%), 1fr));
+  }
+
+  .stat-card {
+    padding: .75rem 1rem;
+    min-width: unset;
+  }
+
+  .stat-num {
+    font-size: 1.6rem;
+  }
+
+  .editor-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: .5rem;
+    padding: .6rem .75rem;
+  }
+
+  .btn-copy {
+    align-self: flex-end;
+  }
+
+  .editor-wrap {
+    min-height: 220px;
+    max-height: 320px;
+  }
+
+  .editor-highlight,
+  .editor-textarea {
+    font-size: .8rem;
+    padding: .75rem;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .discovery-shell {
+    padding: .75rem;
+  }
+
+  .models-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,6 +1,7 @@
 <div class="shell container-fluid">
+  <div class="sidebar-backdrop d-lg-none" *ngIf="sidebarOpen" (click)="toggleSidebar()"></div>
   <div class="row min-vh-100">
-    <aside class="col-12 col-lg-3 sidebar">
+    <aside class="col-12 col-lg-3 sidebar" [class.sidebar-open]="sidebarOpen">
       <div class="panel">
         <label class="form-label">Filtro capacità</label>
         <select class="form-select mb-3" [ngModel]="capabilityFilter()" (ngModelChange)="setCapabilityFilter($event)">
@@ -81,7 +82,12 @@
 
     <main class="col-12 col-lg-9 content">
       <header class="topbar">
-        <h1>Console</h1>
+        <div class="topbar-left">
+          <button class="sidebar-toggle d-lg-none" (click)="toggleSidebar()" [attr.aria-expanded]="sidebarOpen" aria-label="Apri filtri">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <h1>Console</h1>
+        </div>
         <span class="status" [class.live]="!loading">{{ loading ? 'Thinking…' : 'Ready' }}</span>
       </header>
 

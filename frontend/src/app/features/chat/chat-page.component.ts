@@ -94,6 +94,11 @@ export class ChatPageComponent implements OnInit, AfterViewChecked {
   prompt = '';
   model = 'ollama/qwen2.5:7b-instruct';
   loading = false;
+  sidebarOpen = false;
+
+  toggleSidebar(): void {
+    this.sidebarOpen = !this.sidebarOpen;
+  }
   /** When true, the view scrolls to the bottom on the next AfterViewChecked cycle. */
   private shouldAutoScroll = true;
 
