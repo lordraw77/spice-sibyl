@@ -14,5 +14,12 @@ export const routes: Routes = [
         (m) => m.DiscoveryPageComponent
       ),
   },
+  {
+    path: 'providers',
+    loadComponent: () =>
+      import('./features/providers/providers-page.component').then(
+        (m) => m.ProvidersPageComponent
+      ),
+  },
   { path: '**', redirectTo: 'chat' },
 ];

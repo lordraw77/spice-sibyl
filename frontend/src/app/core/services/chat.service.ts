@@ -9,7 +9,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
-import { ChatCompletionRequest, ChatCompletionResponse, ChatModel, ChatStreamEvent, ProviderSummary } from '../models/chat.models';
+import { ChatCompletionRequest, ChatCompletionResponse, ChatModel, ChatStreamEvent, ProviderStatus, ProviderSummary, ProviderTestResult } from '../models/chat.models';
 import { AppConfigService } from '../config/app-config.service';
 
 @Injectable({ providedIn: 'root' })
@@ -104,5 +104,15 @@ export class ChatService {
   /** Fetch the full model list along with a per-provider summary. */
   models(): Observable<{ object: string; data: ChatModel[]; providers: ProviderSummary[] }> {
     return this.http.get<{ object: string; data: ChatModel[]; providers: ProviderSummary[] }>(`${this.apiUrl}/models`);
+  }
+
+  /** Return all providers with live configuration status. */
+  providerStatuses(): Observable<ProviderStatus[]> {
+    return this.http.get<ProviderStatus[]>(`${this.apiUrl}/providers`);
+  }
+
+  /** Test connectivity to a single provider. */
+  testProvider(providerId: string): Observable<ProviderTestResult> {
+    return this.http.post<ProviderTestResult>(`${this.apiUrl}/providers/${providerId}/test`, {});
   }
 }

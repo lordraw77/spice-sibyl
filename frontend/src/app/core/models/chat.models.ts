@@ -82,6 +82,27 @@ export interface ChatModel {
   capabilities?: string[];
 }
 
+/** Full provider status returned by GET /api/v1/providers */
+export interface ProviderStatus {
+  id: string;
+  label: string;
+  enabled: boolean;
+  configured: boolean;
+  key_hint: string | null;
+  model_count: number;
+  capabilities: string[];
+  docs_url: string | null;
+}
+
+/** Result of POST /api/v1/providers/{id}/test */
+export interface ProviderTestResult {
+  provider_id: string;
+  ok: boolean;
+  latency_ms: number | null;
+  model_count: number | null;
+  error: string | null;
+}
+
 /** A single SSE event emitted by the streaming endpoint */
 export interface ChatStreamEvent {
   event: string;

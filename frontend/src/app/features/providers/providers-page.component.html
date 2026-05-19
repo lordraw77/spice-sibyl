@@ -1,0 +1,109 @@
+<div class="providers-shell">
+
+  <header class="page-header">
+    <div>
+      <h1>Provider Management</h1>
+      <p class="subtitle">Monitor and test your AI provider connections.</p>
+    </div>
+    <div class="summary-chips" *ngIf="!loading() && !error()">
+      <span class="chip chip-ok">{{ configuredCount() }} / {{ providers().length }} configured</span>
+      <span class="chip">{{ totalModels() }} models</span>
+    </div>
+  </header>
+
+  <!-- Loading -->
+  <div class="state-banner" *ngIf="loading()">
+    <span class="dot-spin"></span> Loading providers…
+  </div>
+
+  <!-- Error -->
+  <div class="state-banner error" *ngIf="error()">{{ error() }}</div>
+
+  <!-- Provider grid -->
+  <div class="provider-grid" *ngIf="!loading() && !error()">
+
+    <div
+      class="provider-card"
+      *ngFor="let provider of providers()"
+      [class.card-ok]="provider.configured && provider.enabled"
+      [class.card-warn]="!provider.configured && provider.enabled"
+      [class.card-disabled]="!provider.enabled"
+    >
+      <!-- Card header -->
+      <div class="card-header">
+        <div class="card-title-row">
+          <span class="provider-label">{{ provider.label }}</span>
+          <div class="status-row">
+            <span class="status-dot" [class.dot-ok]="provider.configured" [class.dot-warn]="!provider.configured && provider.enabled" [class.dot-dim]="!provider.enabled"></span>
+            <span class="status-text" [class.text-ok]="provider.configured" [class.text-warn]="!provider.configured && provider.enabled" [class.text-dim]="!provider.enabled">
+              {{ provider.configured ? 'configured' : 'not configured' }}
+            </span>
+            <span class="badge-disabled" *ngIf="!provider.enabled">disabled</span>
+          </div>
+        </div>
+
+        <div class="card-stats">
+          <span class="stat-count">{{ provider.model_count }} model{{ provider.model_count !== 1 ? 's' : '' }}</span>
+          <ng-container *ngIf="provider.capabilities.length">
+            <span class="stat-sep">·</span>
+            <span class="cap-list">
+              <span class="cap-chip" *ngFor="let cap of provider.capabilities">{{ cap }}</span>
+            </span>
+          </ng-container>
+        </div>
+      </div>
+
+      <!-- Key hint for unconfigured providers -->
+      <div class="key-hint" *ngIf="!provider.configured && provider.key_hint">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Set <code>{{ provider.key_hint }}</code> to enable.
+        <a *ngIf="provider.docs_url" [href]="provider.docs_url" target="_blank" rel="noopener noreferrer">Get key ↗</a>
+      </div>
+
+      <!-- Card actions -->
+      <div class="card-actions">
+        <button
+          class="btn-test"
+          (click)="testProvider(provider.id)"
+          [disabled]="getTestState(provider.id).testing"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          {{ getTestState(provider.id).testing ? 'Testing…' : 'Test' }}
+        </button>
+
+        <button
+          class="btn-expand"
+          (click)="toggleExpanded(provider.id)"
+          [disabled]="!getModels(provider.id).length"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline *ngIf="isExpanded(provider.id)" points="18 15 12 9 6 15"></polyline>
+            <polyline *ngIf="!isExpanded(provider.id)" points="6 9 12 15 18 9"></polyline>
+          </svg>
+          {{ getModels(provider.id).length }} models
+        </button>
+      </div>
+
+      <!-- Test result inline -->
+      <div class="test-result" *ngIf="getTestState(provider.id).result as res">
+        <span [class.res-ok]="res.ok" [class.res-fail]="!res.ok">
+          {{ res.ok ? '✓ Connected' : '✗ ' + (res.error || 'Failed') }}
+          <span *ngIf="res.latency_ms !== null"> · {{ res.latency_ms }}ms</span>
+          <span *ngIf="res.model_count !== null"> · {{ res.model_count }} live</span>
+        </span>
+      </div>
+
+      <!-- Expandable model list -->
+      <div class="model-list" *ngIf="isExpanded(provider.id)">
+        <div class="model-row" *ngFor="let model of getModels(provider.id)">
+          <span class="model-label">{{ model.label || model.id }}</span>
+          <div class="model-caps">
+            <span class="cap-chip free" *ngIf="model.free">free</span>
+            <span class="cap-chip" *ngFor="let cap of model.capabilities || []">{{ cap }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
