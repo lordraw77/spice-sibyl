@@ -115,4 +115,17 @@ export class ChatService {
   testProvider(providerId: string): Observable<ProviderTestResult> {
     return this.http.post<ProviderTestResult>(`${this.apiUrl}/providers/${providerId}/test`, {});
   }
+
+  /** Enable or disable a provider. */
+  updateProvider(providerId: string, enabled: boolean): Observable<ProviderStatus> {
+    return this.http.patch<ProviderStatus>(`${this.apiUrl}/providers/${providerId}`, { enabled });
+  }
+
+  /** Store an API key override for a provider. */
+  setProviderKey(providerId: string, apiKey: string): Observable<{ ok: boolean; configured: boolean }> {
+    return this.http.put<{ ok: boolean; configured: boolean }>(
+      `${this.apiUrl}/providers/${providerId}/key`,
+      { api_key: apiKey },
+    );
+  }
 }

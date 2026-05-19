@@ -1,17 +1,25 @@
 """
-GET  /v1/providers               — list all providers with live configuration status
-POST /v1/providers/{id}/test     — test connectivity to a provider
+GET    /v1/providers               — list all providers with live configuration status
+POST   /v1/providers/{id}/test     — test connectivity to a provider
+PATCH  /v1/providers/{id}          — enable or disable a provider
+PUT    /v1/providers/{id}/key      — store an API key override for a provider
 """
 
 import time
 import logging
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.core.config import settings
 from app.data.model_catalog import provider_summary_from_catalog
-from app.schemas.providers import ProviderStatus, ProviderTestResult
+from app.data.runtime_config import get_provider_override, set_provider_override
+from app.schemas.providers import (
+    ProviderKeyRequest,
+    ProviderStatus,
+    ProviderTestResult,
+    ProviderUpdateRequest,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -35,7 +43,12 @@ _PLACEHOLDER_KEYS = frozenset({'dummy', 'change-me', ''})
 
 
 def _is_configured(provider_id: str) -> bool:
-    """Return True if the provider has usable credentials."""
+    """Return True if the provider has usable credentials (runtime override takes precedence)."""
+    override = get_provider_override(provider_id)
+    runtime_key = override.get('api_key', '')
+    if runtime_key and runtime_key not in _PLACEHOLDER_KEYS:
+        return True
+
     if provider_id in ('ollama', 'mock'):
         return True
     if provider_id == 'cloudflare':
@@ -54,35 +67,57 @@ def _is_configured(provider_id: str) -> bool:
     return bool(val and val not in _PLACEHOLDER_KEYS)
 
 
+def _is_enabled(provider_id: str, catalog_enabled: bool) -> bool:
+    """Return enabled state, with runtime override taking precedence over catalog."""
+    override = get_provider_override(provider_id)
+    return override.get('enabled', catalog_enabled)
+
+
+def _build_status(entry: dict, pid: str) -> ProviderStatus:
+    meta = _PROVIDER_META.get(pid, {})
+    return ProviderStatus(
+        id=pid,
+        label=entry['label'],
+        enabled=_is_enabled(pid, entry.get('enabled', True)),
+        configured=_is_configured(pid),
+        key_hint=meta.get('key_hint'),
+        model_count=entry['model_count'],
+        capabilities=entry['capabilities'],
+        docs_url=meta.get('docs_url'),
+    )
+
+
 @router.get('')
 async def list_providers() -> list[ProviderStatus]:
     """Return all providers from the catalog with live configuration status."""
     catalog = provider_summary_from_catalog()
-    result: list[ProviderStatus] = []
-    for entry in catalog:
-        pid = entry['id']
-        meta = _PROVIDER_META.get(pid, {})
-        configured = _is_configured(pid)
-        result.append(ProviderStatus(
-            id=pid,
-            label=entry['label'],
-            enabled=entry.get('enabled', True),
-            configured=configured,
-            key_hint=meta.get('key_hint'),
-            model_count=entry['model_count'],
-            capabilities=entry['capabilities'],
-            docs_url=meta.get('docs_url'),
-        ))
-    return result
+    return [_build_status(entry, entry['id']) for entry in catalog]
+
+
+@router.patch('/{provider_id}')
+async def update_provider(provider_id: str, body: ProviderUpdateRequest) -> ProviderStatus:
+    """Enable or disable a provider (persisted in runtime_overrides.json)."""
+    catalog = provider_summary_from_catalog()
+    entry = next((e for e in catalog if e['id'] == provider_id), None)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"Provider '{provider_id}' not found")
+    set_provider_override(provider_id, enabled=body.enabled)
+    return _build_status(entry, provider_id)
+
+
+@router.put('/{provider_id}/key')
+async def set_provider_key(provider_id: str, body: ProviderKeyRequest) -> dict:
+    """Store an API key override for a provider (persisted in runtime_overrides.json)."""
+    if provider_id not in _PROVIDER_META:
+        raise HTTPException(status_code=404, detail=f"Provider '{provider_id}' not found")
+    set_provider_override(provider_id, api_key=body.api_key)
+    configured = bool(body.api_key and body.api_key not in _PLACEHOLDER_KEYS)
+    return {'ok': True, 'configured': configured}
 
 
 @router.post('/{provider_id}/test')
 async def test_provider(provider_id: str) -> ProviderTestResult:
-    """Test connectivity to a provider.
-
-    For Ollama a live HTTP request is made; for cloud providers the check is
-    whether the required credentials are present in the environment.
-    """
+    """Test connectivity to a provider."""
     if provider_id == 'mock':
         return ProviderTestResult(provider_id=provider_id, ok=True, latency_ms=0, model_count=1)
 

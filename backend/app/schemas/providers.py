@@ -20,3 +20,11 @@ class ProviderTestResult(BaseModel):
     latency_ms: int | None = None
     model_count: int | None = None
     error: str | None = None
+
+
+class ProviderUpdateRequest(BaseModel):
+    enabled: bool
+
+
+class ProviderKeyRequest(BaseModel):
+    api_key: str

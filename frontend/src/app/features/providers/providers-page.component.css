@@ -326,6 +326,161 @@
   flex-shrink: 0;
 }
 
+/* ── Header right (status + toggle) ─────────────────────────── */
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+}
+
+/* ── Enable/disable toggle ───────────────────────────────────── */
+
+.toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-track {
+  width: 30px;
+  height: 17px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.15);
+  transition: background .2s, border-color .2s;
+  position: relative;
+  display: block;
+}
+
+.toggle input:checked + .toggle-track {
+  background: rgba(73,132,83,.55);
+  border-color: rgba(73,132,83,.6);
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #9fa8ba;
+  transition: transform .2s, background .2s;
+  display: block;
+}
+
+.toggle input:checked ~ .toggle-track .toggle-thumb,
+.toggle input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(13px);
+  background: #89d39a;
+}
+
+/* ── Add/update key buttons ──────────────────────────────────── */
+
+.btn-add-key,
+.btn-update-key {
+  margin-left: auto;
+  padding: .22rem .6rem;
+  border-radius: .5rem;
+  font-size: .76rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid rgba(214,178,121,.28);
+  background: rgba(214,178,121,.1);
+  color: #d6b279;
+  white-space: nowrap;
+  transition: background .15s;
+}
+
+.btn-add-key:hover,
+.btn-update-key:hover {
+  background: rgba(214,178,121,.2);
+}
+
+.key-update {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ── Inline API key form ─────────────────────────────────────── */
+
+.key-form {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: .75rem;
+  padding: .7rem .9rem;
+}
+
+.key-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: .55rem;
+  padding: .45rem .7rem;
+  font-size: .83rem;
+  color: #f7f3ea;
+  outline: none;
+  transition: border-color .15s;
+}
+
+.key-input:focus {
+  border-color: rgba(214,178,121,.45);
+}
+
+.key-form-actions {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.btn-save-key {
+  padding: .3rem .75rem;
+  border-radius: .5rem;
+  font-size: .8rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(73,132,83,.4);
+  background: rgba(73,132,83,.2);
+  color: #89d39a;
+  transition: background .15s;
+}
+
+.btn-save-key:hover:not(:disabled) { background: rgba(73,132,83,.35); }
+.btn-save-key:disabled { opacity: .45; cursor: not-allowed; }
+
+.btn-cancel-key {
+  padding: .3rem .65rem;
+  border-radius: .5rem;
+  font-size: .8rem;
+  cursor: pointer;
+  border: 1px solid rgba(255,255,255,.1);
+  background: transparent;
+  color: #9fa8ba;
+  transition: background .15s;
+}
+
+.btn-cancel-key:hover { background: rgba(255,255,255,.06); }
+
+.key-form-error {
+  font-size: .78rem;
+  color: #f48c8c;
+  margin-left: .25rem;
+}
+
 /* ── Responsive ──────────────────────────────────────────────── */
 
 @media (max-width: 767.98px) {

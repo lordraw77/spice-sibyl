@@ -1,0 +1,10 @@
+{
+  "providers": {
+    "mock": {
+      "enabled": true
+    },
+    "gemini": {
+      "api_key": "AIzaSyBE3rHma7ioA6NmY9LFPPLyj_B5KCK3k9U"
+    }
+  }
+}

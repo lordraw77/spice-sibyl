@@ -3,7 +3,7 @@
   <header class="page-header">
     <div>
       <h1>Provider Management</h1>
-      <p class="subtitle">Monitor and test your AI provider connections.</p>
+      <p class="subtitle">Monitor, configure, and test your AI provider connections.</p>
     </div>
     <div class="summary-chips" *ngIf="!loading() && !error()">
       <span class="chip chip-ok">{{ configuredCount() }} / {{ providers().length }} configured</span>
@@ -33,12 +33,21 @@
       <div class="card-header">
         <div class="card-title-row">
           <span class="provider-label">{{ provider.label }}</span>
-          <div class="status-row">
-            <span class="status-dot" [class.dot-ok]="provider.configured" [class.dot-warn]="!provider.configured && provider.enabled" [class.dot-dim]="!provider.enabled"></span>
-            <span class="status-text" [class.text-ok]="provider.configured" [class.text-warn]="!provider.configured && provider.enabled" [class.text-dim]="!provider.enabled">
-              {{ provider.configured ? 'configured' : 'not configured' }}
-            </span>
-            <span class="badge-disabled" *ngIf="!provider.enabled">disabled</span>
+          <div class="header-right">
+            <div class="status-row">
+              <span class="status-dot" [class.dot-ok]="provider.configured" [class.dot-warn]="!provider.configured && provider.enabled" [class.dot-dim]="!provider.enabled"></span>
+              <span class="status-text" [class.text-ok]="provider.configured" [class.text-warn]="!provider.configured && provider.enabled" [class.text-dim]="!provider.enabled">
+                {{ provider.configured ? 'configured' : 'not configured' }}
+              </span>
+              <span class="badge-disabled" *ngIf="!provider.enabled">disabled</span>
+            </div>
+            <!-- Enable/disable toggle -->
+            <label class="toggle" [title]="provider.enabled ? 'Disable provider' : 'Enable provider'">
+              <input type="checkbox" [checked]="provider.enabled" (change)="toggleEnabled(provider)" />
+              <span class="toggle-track">
+                <span class="toggle-thumb"></span>
+              </span>
+            </label>
           </div>
         </div>
 
@@ -58,6 +67,33 @@
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         Set <code>{{ provider.key_hint }}</code> to enable.
         <a *ngIf="provider.docs_url" [href]="provider.docs_url" target="_blank" rel="noopener noreferrer">Get key ↗</a>
+        <button class="btn-add-key" (click)="openKeyForm(provider.id)" *ngIf="!getKeyForm(provider.id).open">
+          Add key
+        </button>
+      </div>
+
+      <!-- Inline API key form -->
+      <div class="key-form" *ngIf="getKeyForm(provider.id).open">
+        <input
+          class="key-input"
+          type="password"
+          placeholder="Paste API key…"
+          [value]="getKeyForm(provider.id).value"
+          (input)="setKeyValue(provider.id, $any($event.target).value)"
+          (keydown.enter)="saveKey(provider.id)"
+        />
+        <div class="key-form-actions">
+          <button class="btn-save-key" (click)="saveKey(provider.id)" [disabled]="getKeyForm(provider.id).saving || !getKeyForm(provider.id).value.trim()">
+            {{ getKeyForm(provider.id).saving ? 'Saving…' : 'Save' }}
+          </button>
+          <button class="btn-cancel-key" (click)="closeKeyForm(provider.id)">Cancel</button>
+          <span class="key-form-error" *ngIf="getKeyForm(provider.id).error">{{ getKeyForm(provider.id).error }}</span>
+        </div>
+      </div>
+
+      <!-- Update key for already-configured providers -->
+      <div class="key-update" *ngIf="provider.configured && provider.key_hint && !getKeyForm(provider.id).open">
+        <button class="btn-update-key" (click)="openKeyForm(provider.id)">Update key</button>
       </div>
 
       <!-- Card actions -->
