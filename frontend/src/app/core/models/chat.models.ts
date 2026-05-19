@@ -119,6 +119,13 @@ export interface ProviderSummary {
   capabilities: string[];
 }
 
+/** A named profile — no password, just an identity stored in localStorage */
+export interface Profile {
+  id: string;
+  name: string;
+  created_at: number;
+}
+
 /** Conversation metadata returned by GET /api/v1/conversations */
 export interface ConversationSummary {
   id: string;

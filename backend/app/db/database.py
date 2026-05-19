@@ -5,12 +5,19 @@ _SCHEMA = """
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
 
+CREATE TABLE IF NOT EXISTS profiles (
+    id         TEXT    PRIMARY KEY,
+    name       TEXT    NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS conversations (
-    id          TEXT    PRIMARY KEY,
-    title       TEXT    NOT NULL,
-    model       TEXT    NOT NULL,
-    created_at  INTEGER NOT NULL,
-    updated_at  INTEGER NOT NULL
+    id         TEXT    PRIMARY KEY,
+    profile_id TEXT    NOT NULL DEFAULT 'default',
+    title      TEXT    NOT NULL,
+    model      TEXT    NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS api_keys (
@@ -41,11 +48,23 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 """
 
+_MIGRATIONS = [
+    # Add profile_id to conversations if upgrading from an older DB
+    "ALTER TABLE conversations ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+]
+
 
 async def init_db() -> None:
     async with aiosqlite.connect(settings.db_path) as db:
         await db.executescript(_SCHEMA)
         await db.commit()
+        # Apply migrations idempotently (ignore errors = column already exists)
+        for stmt in _MIGRATIONS:
+            try:
+                await db.execute(stmt)
+                await db.commit()
+            except Exception:
+                pass
 
 
 async def get_db():

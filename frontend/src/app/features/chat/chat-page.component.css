@@ -81,6 +81,50 @@
   color: #6b7485;
 }
 
+/* ── Profile chip ───────────────────────────────────────────── */
+.profile-chip {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  width: 100%;
+  padding: .5rem .7rem;
+  border-radius: .7rem;
+  border: 1px solid rgba(255,255,255,.07);
+  background: rgba(255,255,255,.02);
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+  text-align: left;
+  color: #c4c9d4;
+}
+
+.profile-chip:hover {
+  background: rgba(255,255,255,.05);
+  border-color: rgba(214,178,121,.18);
+}
+
+.profile-chip-avatar {
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: .45rem;
+  background: rgba(214,178,121,.12);
+  border: 1px solid rgba(214,178,121,.2);
+  color: #d6b279;
+  font-size: .78rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.profile-chip-name {
+  flex: 1;
+  font-size: .84rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Conversations ──────────────────────────────────────────── */
 .btn-new-chat {
   display: inline-flex;

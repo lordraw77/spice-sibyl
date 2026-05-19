@@ -1,7 +1,7 @@
 # SpiceSibyl — Developer Guide
 
-> **Version:** 0.3.0  
-> **Stack:** Python 3.11 · FastAPI · LiteLLM · Angular 18 · Docker Compose
+> **Version:** 0.4.0  
+> **Stack:** Python 3.11 · FastAPI · LiteLLM · aiosqlite · cryptography · Angular 18 · Docker Compose
 
 ---
 
@@ -10,24 +10,27 @@
 1. [Project Overview](#1-project-overview)
 2. [Repository Layout](#2-repository-layout)
 3. [Backend](#3-backend)
-   - [Entry Point](#31-entry-point)
+   - [Entry Point & Lifespan](#31-entry-point--lifespan)
    - [Settings](#32-settings)
    - [API Router](#33-api-router)
    - [Schemas](#34-schemas)
    - [Provider System](#35-provider-system)
-   - [Model Catalog](#36-model-catalog)
-   - [Provider Factory Dependency](#37-provider-factory-dependency)
-   - [Endpoint Reference](#38-endpoint-reference)
-   - [Discovery Endpoints](#39-discovery-endpoints)
+   - [Key Resolver & Vault](#36-key-resolver--vault)
+   - [Database Layer](#37-database-layer)
+   - [Model Catalog](#38-model-catalog)
+   - [Provider Factory Dependency](#39-provider-factory-dependency)
+   - [Endpoint Reference](#310-endpoint-reference)
 4. [Frontend](#4-frontend)
    - [Application Bootstrap](#41-application-bootstrap)
    - [Runtime Configuration](#42-runtime-configuration)
    - [Domain Models](#43-domain-models)
    - [Services](#44-services)
-   - [Error Handling & Notifications](#45-error-handling--notifications)
-   - [Chat Page](#46-chat-page)
-   - [Discovery Page](#47-discovery-page)
-   - [Routing](#48-routing)
+   - [HTTP Interceptors](#45-http-interceptors)
+   - [Error Handling & Notifications](#46-error-handling--notifications)
+   - [Chat Page](#47-chat-page)
+   - [Profile Modal](#48-profile-modal)
+   - [Discovery Page](#49-discovery-page)
+   - [Routing](#410-routing)
 5. [Shared Configuration](#5-shared-configuration)
 6. [Docker & Infrastructure](#6-docker--infrastructure)
 7. [Adding a New Provider](#7-adding-a-new-provider)
@@ -36,21 +39,14 @@
 
 ## 1. Project Overview
 
-SpiceSibyl is an **OpenAI-compatible multi-provider AI gateway** with a built-in Angular web console. A single `POST /api/v1/chat/completions` endpoint routes chat requests to any of the supported backends — local Ollama models, Groq, OpenRouter, Cloudflare Workers AI, Google Gemini, Mistral, Together AI, Fireworks AI, and HuggingFace — without requiring the frontend to know which provider is being used.
+SpiceSibyl is an **OpenAI-compatible multi-provider AI gateway** with a built-in Angular web console. A single `POST /api/v1/chat/completions` endpoint routes chat requests to any of the supported backends without requiring the frontend to know which provider is being used.
 
-The provider is selected automatically at request time by inspecting the **model-ID prefix** (e.g. `cloudflare/…`, `openrouter/…`, `gemini/…`, `groq/…`). Every response is enriched with a `metrics` block (latency, token throughput, cost) so the UI can display real-time performance telemetry.
+The provider is selected at request time by inspecting the **model-ID prefix** (e.g. `cloudflare/…`, `gemini/…`, `groq/…`). Every response is enriched with a `metrics` block (latency, token throughput, cost).
 
-```
-Browser (Angular SPA)
-        │  HTTP / REST + SSE
-        ▼
-FastAPI gateway  /api/v1
-        │
-        ├── GeminiProvider     ──► Google Generative AI
-        ├── LiteLLMProvider    ──► Ollama · Groq · Mistral · Together · Fireworks · HuggingFace
-        ├── OpenRouterProvider ──► OpenRouter
-        └── CloudflareProvider ──► Cloudflare Workers AI
-```
+Beyond routing, the gateway also provides:
+- **Conversation persistence** — full history stored in SQLite, scoped per profile
+- **API key vault** — provider keys encrypted with Fernet and cached in-memory
+- **Profile system** — named identities stored client-side (localStorage) + server-side (SQLite)
 
 ---
 
@@ -61,36 +57,50 @@ spice-sibyl/
 ├── backend/
 │   ├── app/
 │   │   ├── api/v1/
-│   │   │   ├── router.py                    # Aggregates all sub-routers under /v1
+│   │   │   ├── router.py
 │   │   │   └── endpoints/
-│   │   │       ├── chat.py                  # POST /chat/completions
-│   │   │       ├── health.py                # GET  /health
-│   │   │       ├── models.py                # GET  /models
-│   │   │       ├── providers.py             # GET  /providers · POST /providers/{id}/test
-│   │   │       ├── cloudflare_discovery.py  # POST /cloudflare-discovery/run
-│   │   │       ├── openrouter_discovery.py  # POST /openrouter-discovery/run
-│   │   │       ├── gemini_discovery.py      # POST /gemini-discovery/run
-│   │   │       └── groq_discovery.py        # POST /groq-discovery/run
+│   │   │       ├── chat.py
+│   │   │       ├── conversations.py
+│   │   │       ├── health.py
+│   │   │       ├── models.py
+│   │   │       ├── profiles.py
+│   │   │       ├── providers.py
+│   │   │       ├── cloudflare_discovery.py
+│   │   │       ├── openrouter_discovery.py
+│   │   │       ├── gemini_discovery.py
+│   │   │       ├── groq_discovery.py
+│   │   │       ├── cerebras_discovery.py
+│   │   │       └── mistral_discovery.py
 │   │   ├── core/
-│   │   │   └── config.py                    # Pydantic-settings (env vars / .env)
+│   │   │   └── config.py
 │   │   ├── data/
-│   │   │   ├── model_catalog.py             # YAML catalog loader + merger
-│   │   │   └── provider_models.yaml         # Bundled fallback model catalog
+│   │   │   ├── model_catalog.py
+│   │   │   └── provider_models.yaml
+│   │   ├── db/
+│   │   │   ├── database.py              # Schema, init_db(), get_db()
+│   │   │   ├── conversation_repository.py
+│   │   │   ├── profile_repository.py
+│   │   │   └── vault_repository.py
 │   │   ├── dependencies/
-│   │   │   └── provider_factory.py          # FastAPI dependency: resolves provider from model prefix
+│   │   │   └── provider_factory.py
 │   │   ├── providers/
-│   │   │   ├── base.py                      # Abstract BaseProvider
-│   │   │   ├── litellm_provider.py          # LiteLLM adapter (Ollama, Groq, Mistral, …)
-│   │   │   ├── gemini_provider.py           # Google Gemini adapter (LiteLLM via Generative AI)
-│   │   │   ├── openrouter_provider.py       # OpenRouter adapter
-│   │   │   ├── cloudflare_provider.py       # Cloudflare Workers AI adapter (direct HTTP)
-│   │   │   └── mock_provider.py             # Mock adapter for testing
+│   │   │   ├── base.py
+│   │   │   ├── litellm_provider.py
+│   │   │   ├── gemini_provider.py
+│   │   │   ├── openrouter_provider.py
+│   │   │   ├── cloudflare_provider.py
+│   │   │   ├── cerebras_provider.py
+│   │   │   ├── mistral_provider.py
+│   │   │   └── mock_provider.py
 │   │   ├── schemas/
-│   │   │   └── chat.py                      # Pydantic request / response models
+│   │   │   ├── chat.py
+│   │   │   ├── conversations.py
+│   │   │   └── profiles.py
 │   │   ├── services/
-│   │   │   ├── chat_service.py              # SSE orchestration + error event emission
-│   │   │   └── provider_factory.py          # Legacy factory (kept for ChatService compat)
-│   │   └── main.py                          # FastAPI app + CORS + router mount
+│   │   │   ├── chat_service.py
+│   │   │   ├── key_resolver.py
+│   │   │   └── vault_service.py
+│   │   └── main.py
 │   ├── tests/
 │   ├── .env.example
 │   ├── Dockerfile
@@ -99,25 +109,26 @@ spice-sibyl/
 │   └── src/app/
 │       ├── core/
 │       │   ├── config/
-│       │   │   ├── app-config.model.ts      # AppConfig interface
-│       │   │   └── app-config.service.ts    # Loads app-config.json at startup
+│       │   │   ├── app-config.model.ts
+│       │   │   └── app-config.service.ts
 │       │   ├── interceptors/
-│       │   │   └── error.interceptor.ts     # Global HTTP error → NotificationService
+│       │   │   ├── error.interceptor.ts
+│       │   │   └── profile.interceptor.ts
 │       │   ├── models/
-│       │   │   └── chat.models.ts           # TypeScript mirrors of backend Pydantic schemas
+│       │   │   └── chat.models.ts
 │       │   └── services/
-│       │       ├── chat.service.ts          # HTTP client: /chat/completions (SSE) + /models
-│       │       ├── discovery.service.ts     # HTTP client: all four discovery endpoints
-│       │       └── notification.service.ts  # Signal-based toast notification service
+│       │       ├── chat.service.ts
+│       │       ├── conversation.service.ts
+│       │       ├── discovery.service.ts
+│       │       ├── notification.service.ts
+│       │       └── profile.service.ts
 │       ├── features/
-│       │   ├── chat/                        # Main chat UI (chat-page.component)
-│       │   └── discovery/                   # Model discovery UI (discovery-page.component)
-│       ├── shared/
-│       │   └── toast-container/             # ToastContainerComponent (global, in AppComponent)
-│       └── layout/
-│           └── navbar.component.ts          # Top navigation bar
-├── shared-config/
-│   └── provider_models.yaml                 # Live catalog — mounted into both services
+│       │   ├── chat/
+│       │   ├── profile/
+│       │   └── discovery/
+│       ├── shared/toast-container/
+│       └── layout/navbar.component.ts
+├── shared-config/provider_models.yaml
 ├── docker-compose.yml
 ├── Makefile
 └── README.md
@@ -127,530 +138,427 @@ spice-sibyl/
 
 ## 3. Backend
 
-### 3.1 Entry Point
+### 3.1 Entry Point & Lifespan
 
-**File:** [backend/app/main.py](../backend/app/main.py)
+**File:** `backend/app/main.py`
 
-The FastAPI application is created here. It:
-
-- Reads `cors_origins` from settings and configures `CORSMiddleware`
-- Mounts the versioned router at `/api`
-- Exposes a root `GET /` endpoint that returns basic service metadata
+The FastAPI application is created with an `asynccontextmanager` lifespan that runs at startup:
 
 ```python
-app = FastAPI(title=settings.app_name, version='0.3.0')
-app.add_middleware(CORSMiddleware, allow_origins=origins, ...)
-app.include_router(api_router, prefix='/api')
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    await init_db()                    # create tables, run migrations
+    async for db in get_db():
+        await vault_repository.load_all(db)  # decrypt keys → warm in-memory cache
+    yield
 ```
 
-The app is started by Uvicorn:
-
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
+On every boot: tables are created (idempotently), migrations applied, vault keys decrypted and cached.
 
 ---
 
 ### 3.2 Settings
 
-**File:** [backend/app/core/config.py](../backend/app/core/config.py)
-
-All configuration is managed by `pydantic-settings`. Values are read from environment variables or `backend/.env`.
-
-```python
-class Settings(BaseSettings):
-    app_name: str = 'SpiceSibyl API'
-    default_model: str = 'ollama/qwen2.5:7b-instruct'
-    groq_api_key: str | None = None
-    gemini_api_key: str | None = None
-    cloudflare_api_key: str | None = None
-    # …
-```
-
-The `settings` singleton is created once via `@lru_cache` and shared across the application.
-
-**Full variable reference:**
+**File:** `backend/app/core/config.py`
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `APP_NAME` | `SpiceSibyl API` | Shown in API responses and docs |
+| `APP_NAME` | `SpiceSibyl API` | Shown in API responses |
 | `APP_ENV` | `development` | Environment tag |
-| `API_KEY` | `change-me` | Bearer token for API authentication |
-| `CORS_ORIGINS` | `http://localhost:4200,...` | Comma-separated allowed CORS origins |
-| `DEFAULT_MODEL` | `ollama/qwen2.5:7b-instruct` | Fallback model when none specified |
-| `LITELLM_PROVIDER` | `litellm` | Set to `mock` to use `MockProvider` globally |
-| `OLLAMA_API_BASE` | `http://host.docker.internal:11434` | Ollama REST API base URL |
-| `OPENAI_API_KEY` | `dummy` | OpenAI API key (default for unprefixed models) |
+| `API_KEY` | `change-me` | Bearer token |
+| `CORS_ORIGINS` | `http://localhost:4200,...` | Comma-separated allowed origins |
+| `DEFAULT_MODEL` | `ollama/qwen2.5:7b-instruct` | Fallback model |
+| `LITELLM_PROVIDER` | `litellm` | Set `mock` for testing |
+| `OLLAMA_API_BASE` | `http://host.docker.internal:11434` | Ollama URL |
+| `DB_PATH` | `spice_sibyl.db` | SQLite file path |
+| `VAULT_SECRET_KEY` | `change-me-in-production` | Master secret for key encryption |
+| `OPENAI_API_KEY` | `dummy` | OpenAI (default for unprefixed models) |
 | `GROQ_API_KEY` | — | Groq Cloud |
 | `OPENROUTER_API_KEY` | — | OpenRouter |
 | `GEMINI_API_KEY` | — | Google Gemini |
-| `CLOUDFLARE_API_KEY` | — | Cloudflare Workers AI token |
-| `CLOUDFLARE_ACCOUNT_ID` | — | Cloudflare account identifier |
+| `CLOUDFLARE_API_KEY` | — | Cloudflare Workers AI |
+| `CLOUDFLARE_ACCOUNT_ID` | — | Cloudflare account |
 | `TOGETHER_API_KEY` | — | Together AI |
 | `FIREWORKS_API_KEY` | — | Fireworks AI |
 | `MISTRAL_API_KEY` | — | Mistral AI |
-| `HF_TOKEN` | — | HuggingFace Inference API |
-| `MODEL_CATALOG_PATH` | — | Explicit path override for `provider_models.yaml` |
+| `CEREBRAS_API_KEY` | — | Cerebras Cloud |
+| `HF_TOKEN` | — | HuggingFace |
+| `MODEL_CATALOG_PATH` | — | Explicit YAML path override |
 
 ---
 
 ### 3.3 API Router
 
-**File:** [backend/app/api/v1/router.py](../backend/app/api/v1/router.py)
-
-Aggregates all endpoint routers under the `/v1` prefix:
+**File:** `backend/app/api/v1/router.py`
 
 ```
-GET  /api/v1/health
-GET  /api/v1/models
-GET  /api/v1/providers
-POST /api/v1/providers/{id}/test
-POST /api/v1/chat/completions
-POST /api/v1/cloudflare-discovery/run
-POST /api/v1/openrouter-discovery/run
-POST /api/v1/gemini-discovery/run
-POST /api/v1/groq-discovery/run
+GET    /api/v1/health
+GET    /api/v1/models
+GET    /api/v1/providers
+PATCH  /api/v1/providers/{id}
+PUT    /api/v1/providers/{id}/key
+DELETE /api/v1/providers/{id}/key
+POST   /api/v1/providers/{id}/test
+POST   /api/v1/chat/completions
+GET    /api/v1/profiles
+POST   /api/v1/profiles
+DELETE /api/v1/profiles/{id}
+GET    /api/v1/conversations?profile_id=<uuid>
+POST   /api/v1/conversations
+GET    /api/v1/conversations/{id}
+PATCH  /api/v1/conversations/{id}
+DELETE /api/v1/conversations/{id}
+POST   /api/v1/conversations/{id}/messages
+POST   /api/v1/{cloudflare|openrouter|gemini|groq|cerebras|mistral}-discovery/run
 ```
 
 ---
 
 ### 3.4 Schemas
 
-**File:** [backend/app/schemas/chat.py](../backend/app/schemas/chat.py)
+**`backend/app/schemas/chat.py`** — `ChatMessage`, `ChatCompletionRequest`, `ChatCompletionResponse`, `ChatMetrics`, `ChatUsage`
 
-Pydantic models that define the request/response contract. `ChatMessage` is extended beyond the OpenAI spec to carry per-message telemetry.
+**`backend/app/schemas/conversations.py`** — `ConversationCreate`, `ConversationUpdate`, `ConversationSummary`, `Conversation`, `AppendMessagesRequest`
 
-| Schema | Description |
-|---|---|
-| `ChatMessage` | A conversation turn. Assistant messages carry `latency_ms`, `first_token_ms`, `tokens_per_second`, token counts, `estimated_cost`, `capabilities`, and `free`. |
-| `ChatCompletionRequest` | Incoming request: `model`, `messages`, `stream`, `temperature`, `max_tokens`. |
-| `ChatCompletionResponse` | Full response envelope: `id`, `object`, `created`, `model`, `choices`, `usage`, `metrics`. |
-| `ChatMetrics` | Gateway-level performance metrics attached to every response. |
-| `ChatUsage` | Token consumption (`prompt_tokens`, `completion_tokens`, `total_tokens`). |
+**`backend/app/schemas/profiles.py`** — `ProfileCreate`, `Profile`
 
 ---
 
 ### 3.5 Provider System
 
-**File:** [backend/app/providers/base.py](../backend/app/providers/base.py)
+All adapters extend `BaseProvider` (`complete`, `stream`, `list_models`).
 
-All provider adapters inherit from `BaseProvider`:
+| Adapter | File | Transport | Notes |
+|---|---|---|---|
+| `LiteLLMProvider` | `litellm_provider.py` | LiteLLM | Ollama, Groq, Together, Fireworks, HF, OpenAI |
+| `GeminiProvider` | `gemini_provider.py` | LiteLLM | Google Generative AI |
+| `OpenRouterProvider` | `openrouter_provider.py` | LiteLLM | OpenRouter |
+| `CloudflareProvider` | `cloudflare_provider.py` | direct httpx | Streaming emulated |
+| `CerebrasProvider` | `cerebras_provider.py` | direct httpx | `time_info` for accurate telemetry |
+| `MistralProvider` | `mistral_provider.py` | direct httpx | — |
+| `MockProvider` | `mock_provider.py` | — | Echo, 80 ms inter-token delay |
 
-```python
-class BaseProvider(ABC):
-    async def complete(self, request: ChatCompletionRequest): ...
-    async def stream(self, request: ChatCompletionRequest): ...   # async generator
-    async def list_models(self): ...
-```
-
-| Method | Contract |
-|---|---|
-| `complete` | Returns a full `chat.completion` dict with a `metrics` key. |
-| `stream` | Async generator yielding `chat.completion.chunk` dicts. The final chunk should have `object == 'chat.completion.meta'` with aggregate telemetry. |
-| `list_models` | Returns a list of model dicts. May return `[]` if discovery is handled separately. |
-
-#### GeminiProvider
-
-**File:** [backend/app/providers/gemini_provider.py](../backend/app/providers/gemini_provider.py)
-
-Dedicated adapter for Google Gemini. Routes requests through LiteLLM using the `gemini/` model prefix and injects `GEMINI_API_KEY` directly into the LiteLLM call kwargs.
-
-Requires `GEMINI_API_KEY`.
-
-#### LiteLLMProvider
-
-**File:** [backend/app/providers/litellm_provider.py](../backend/app/providers/litellm_provider.py)
-
-The default adapter. Routes requests to any LiteLLM-supported backend based on model prefix:
-
-| Prefix | Routed to | API Key setting |
-|---|---|---|
-| `ollama/` | Local Ollama instance | No key required |
-| `groq/` | Groq Cloud | `GROQ_API_KEY` |
-| `together_ai/` | Together AI | `TOGETHER_API_KEY` |
-| `fireworks_ai/` | Fireworks AI | `FIREWORKS_API_KEY` |
-| `mistral/` | Mistral AI | `MISTRAL_API_KEY` |
-| `huggingface/` | HuggingFace Inference | `HF_TOKEN` |
-| *(no prefix)* | OpenAI | `OPENAI_API_KEY` |
-
-`list_models()` merges live Ollama models with the static YAML catalog. Ollama failures are swallowed so the rest of the catalog is still returned.
-
-For streaming, the provider emits a final `chat.completion.meta` chunk containing aggregated telemetry for the frontend to render after the stream ends.
-
-#### CloudflareProvider
-
-**File:** [backend/app/providers/cloudflare_provider.py](../backend/app/providers/cloudflare_provider.py)
-
-Calls the Cloudflare Workers AI REST API directly (no LiteLLM). Streaming is **emulated**: the full response is fetched, then yielded as two chunks (content delta + `chat.completion.meta`).
-
-Requires `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_KEY`.
-
-#### OpenRouterProvider
-
-**File:** [backend/app/providers/openrouter_provider.py](../backend/app/providers/openrouter_provider.py)
-
-Thin wrapper around LiteLLM for OpenRouter. Requires `OPENROUTER_API_KEY`. Model discovery is delegated to the `/openrouter-discovery/run` endpoint.
-
-#### MockProvider
-
-**File:** [backend/app/providers/mock_provider.py](../backend/app/providers/mock_provider.py)
-
-Deterministic echo provider for local development and tests. Activated by model prefix `mock/` or env var `LITELLM_PROVIDER=mock`. Introduces an 80 ms inter-token delay for realistic SSE simulation.
+All providers resolve their API key via `key_resolver.resolve(provider_id)` — never from `settings` directly.
 
 ---
 
-### 3.6 Model Catalog
+### 3.6 Key Resolver & Vault
 
-**File:** [backend/app/data/model_catalog.py](../backend/app/data/model_catalog.py)
+**`backend/app/services/vault_service.py`**
 
-Reads and merges static model definitions from `provider_models.yaml`.
+In-memory cache + Fernet encrypt/decrypt:
+```python
+encrypt(plaintext, secret) -> ciphertext
+decrypt(ciphertext, secret) -> plaintext | None
+get(provider_id) -> str | None          # read from cache
+put(provider_id, plaintext)             # write to cache
+evict(provider_id)                      # remove from cache
+warm_cache(dict[str, str])              # bulk load at boot
+```
 
-**Catalog lookup order:**
+**`backend/app/services/key_resolver.py`**
+
+```python
+resolve(provider_id) -> str | None
+# 1. vault_service.get(provider_id)    — in-memory, O(1)
+# 2. settings.*_api_key fallback
+
+is_configured(provider_id) -> bool
+# True for ollama/mock always
+# For cloudflare: needs both key and account_id
+# For others: resolve(id) is not None
+```
+
+**`backend/app/db/vault_repository.py`**
+
+```python
+store_key(db, provider_id, plaintext)  # encrypt → INSERT OR REPLACE + warm cache
+delete_key(db, provider_id)            # DELETE + evict cache
+load_all(db)                           # decrypt all rows → warm_cache (called at startup)
+```
+
+---
+
+### 3.7 Database Layer
+
+**File:** `backend/app/db/database.py`
+
+```python
+async def init_db() -> None:
+    # executescript(_SCHEMA) — creates tables if not exist
+    # applies _MIGRATIONS idempotently (ALTER TABLE ADD COLUMN, etc.)
+
+async def get_db():  # FastAPI dependency
+    # yields aiosqlite.Connection with row_factory=Row and foreign_keys=ON
+```
+
+**Repositories:**
+
+| Module | Key functions |
+|---|---|
+| `conversation_repository` | `list_conversations(db, profile_id)`, `get_conversation(db, id)`, `create_conversation(db, title, model, profile_id)`, `update_title`, `delete_conversation`, `append_messages` |
+| `profile_repository` | `list_profiles(db)`, `get_profile(db, id)`, `create_profile(db, name)`, `delete_profile(db, id)` |
+| `vault_repository` | `store_key`, `delete_key`, `load_all` |
+
+---
+
+### 3.8 Model Catalog
+
+**File:** `backend/app/data/model_catalog.py`
+
+Lookup order:
 1. `MODEL_CATALOG_PATH` env var
-2. `/config/provider_models.yaml` (Docker volume — production)
-3. `backend/app/data/provider_models.yaml` (bundled fallback — bare-metal dev)
+2. `/config/provider_models.yaml` (Docker volume)
+3. `backend/app/data/provider_models.yaml` (bundled fallback)
 
-| Function | Description |
+---
+
+### 3.9 Provider Factory Dependency
+
+**File:** `backend/app/dependencies/provider_factory.py`
+
+Routing rules evaluated in order on the model-ID prefix:
+
+| Prefix | Adapter |
 |---|---|
-| `load_model_catalog()` | Parse the YAML file and return the raw dict. |
-| `iter_configured_models()` | Yield normalized model dicts for all enabled providers. |
-| `get_model_metadata(model_id)` | Look up a model by ID; return safe defaults if not found. |
-| `merge_provider_summary(models)` | Merge catalog summary with live model list for `GET /models`. |
+| `cloudflare/` | `CloudflareProvider` |
+| `openrouter/` | `OpenRouterProvider` |
+| `gemini/` | `GeminiProvider` |
+| `cerebras/` | `CerebrasProvider` |
+| `mistral/` | `MistralProvider` |
+| *(anything else)* | `LiteLLMProvider` |
 
 ---
 
-### 3.7 Provider Factory Dependency
-
-**File:** [backend/app/dependencies/provider_factory.py](../backend/app/dependencies/provider_factory.py)
-
-FastAPI dependency that resolves the correct provider adapter. Routing rules evaluated in order:
-
-```python
-def get_provider(model: str | None = None):
-    if model and model.startswith('cloudflare/'):
-        return CloudflareProvider()
-    if model and model.startswith('openrouter/'):
-        return OpenRouterProvider()
-    if model and model.startswith('gemini/'):
-        return GeminiProvider()
-    return LiteLLMProvider()
-```
-
----
-
-### 3.8 Endpoint Reference
-
-#### `GET /api/v1/health`
-Liveness probe — `{"status": "ok"}`.
-
-#### `GET /api/v1/models`
-Full model list merged with per-provider summary (see README for response shape).
-
-#### `GET /api/v1/providers`
-Returns all providers with live configuration status (key present/absent).
-
-#### `POST /api/v1/providers/{id}/test`
-Tests connectivity for the given provider ID.
+### 3.10 Endpoint Reference
 
 #### `POST /api/v1/chat/completions`
+Supports both streaming (`stream: true` → SSE) and non-streaming. Errors map to `429` (rate limit) or `500`.
 
-**File:** [backend/app/api/v1/endpoints/chat.py](../backend/app/api/v1/endpoints/chat.py)
+#### `PUT /api/v1/providers/{id}/key`
+Encrypts the supplied key with Fernet and stores it in `api_keys`. Updates the in-memory vault cache immediately. Returns `{ ok, configured, vaulted }`.
 
-Handles both streaming (`stream: true`) and non-streaming requests.
+#### `DELETE /api/v1/providers/{id}/key`
+Removes the vaulted key; provider falls back to env var.
 
-**Error mapping:**
+#### `GET /api/v1/conversations?profile_id=<uuid>`
+Returns conversations belonging to the given profile, newest first.
 
-| Exception | HTTP status | When |
-|---|---|---|
-| `litellm.RateLimitError` | `429` | Provider quota exceeded |
-| Any other exception | `500` | Generic provider or network error |
+#### `POST /api/v1/conversations`
+Body: `{ title: str, model: str, profile_id: str }`. Creates and returns a `ConversationSummary`.
 
-For streaming, errors raised inside the SSE generator (after `200 OK` is already sent) cannot be caught by the endpoint try/except. Instead, `ChatService.event_generator()` catches them and emits an `event: error` SSE frame with `data: {"message": "..."}` before closing the stream.
+#### `POST /api/v1/conversations/{id}/messages`
+Body: `{ messages: ChatMessage[] }`. Appends messages and bumps `updated_at`.
 
----
-
-### 3.9 Discovery Endpoints
-
-All discovery endpoints share the same response shape:
-
-```jsonc
-{
-  "model_count": 12,
-  "yaml": "groq:\n  enabled: true\n  ...",
-  "models": [
-    { "id": "groq/llama-3.3-70b-versatile", "name": "llama-3.3-70b-versatile",
-      "label": "Groq · Llama 3.3 70B Versatile", "free": false,
-      "capabilities": ["chat", "tools", "json"] }
-  ]
-}
-```
-
-#### `POST /api/v1/cloudflare-discovery/run`
-Queries `https://api.cloudflare.com/…/ai/models/search`, filters to `Text Generation` task.  
-Capabilities derived from model properties: `function_calling`, `json_mode`, `reasoning`, `vision`, `streaming`.  
-Requires `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_KEY`.
-
-#### `POST /api/v1/openrouter-discovery/run`
-Queries `https://openrouter.ai/api/v1/models`, filters to text-in/text-out models.  
-Capabilities derived from `architecture.input_modalities` and `supported_parameters`.  
-`free: true` when both prompt and completion pricing are `0.0`.  
-Requires `OPENROUTER_API_KEY`.
-
-#### `POST /api/v1/gemini-discovery/run`
-Queries `https://generativelanguage.googleapis.com/v1beta/models`, filters to models supporting `generateContent`.  
-Capabilities inferred from model name (Gemini 1.5+/2.x → vision, audio, tools, json; thinking models → reasoning).  
-`free: true` for models available on the free tier (flash, gemini-1.0-pro).  
-Requires `GEMINI_API_KEY`.
-
-#### `POST /api/v1/groq-discovery/run`
-Queries `https://api.groq.com/openai/v1/models` (OpenAI-compatible), excludes Whisper, TTS, guard, and PlayAI models.  
-Capabilities inferred from model name (LLaVA/Scout/Maverick → vision; Llama-3/Mixtral/Qwen → tools+json; DeepSeek-R1 → reasoning).  
-All models `free: false` (Groq is paid after free-tier limits).  
-Requires `GROQ_API_KEY`.
+#### `GET /api/v1/profiles` / `POST /api/v1/profiles` / `DELETE /api/v1/profiles/{id}`
+CRUD for profiles. DELETE cascades to conversations (messages are deleted via FK cascade).
 
 ---
 
 ## 4. Frontend
 
-The frontend is an **Angular 18 standalone-component application** using signals for reactive state. It communicates with the backend exclusively over HTTP.
-
 ### 4.1 Application Bootstrap
 
-**File:** [frontend/src/main.ts](../frontend/src/main.ts)  
-**Config:** [frontend/src/app/app.config.ts](../frontend/src/app/app.config.ts)
+**File:** `frontend/src/app/app.config.ts`
 
-`app.config.ts` registers:
-- `provideRouter(routes)` — client-side routing
-- `provideHttpClient(withFetch(), withInterceptors([errorInterceptor]))` — HTTP module with global error interceptor
-- `APP_INITIALIZER` that calls `AppConfigService.load()` before any component renders
+```typescript
+provideHttpClient(withFetch(), withInterceptors([profileInterceptor, errorInterceptor]))
+```
+
+Two interceptors registered in order:
+1. `profileInterceptor` — injects `X-Profile-ID` header from `ProfileService.currentId`
+2. `errorInterceptor` — catches HTTP errors → `NotificationService`
 
 ---
 
 ### 4.2 Runtime Configuration
 
-**Files:** [frontend/src/app/core/config/](../frontend/src/app/core/config/)
-
-`AppConfigService` fetches `public/app-config.json` at startup and exposes `apiUrl`. In Docker, `frontend/docker/entrypoint.sh` substitutes `API_URL` into `app-config.template.json` before starting the dev server.
-
-```json
-{ "apiUrl": "http://192.168.0.215:8000/api/v1" }
-```
+`AppConfigService` fetches `public/app-config.json` before any component renders and exposes `apiUrl`.
 
 ---
 
 ### 4.3 Domain Models
 
-**File:** [frontend/src/app/core/models/chat.models.ts](../frontend/src/app/core/models/chat.models.ts)
+**File:** `frontend/src/app/core/models/chat.models.ts`
 
-| Interface | Mirrors |
+| Interface | Description |
 |---|---|
-| `ChatMessage` | `ChatMessage` (Pydantic) — includes telemetry fields |
-| `ChatCompletionRequest` | `ChatCompletionRequest` |
-| `ChatCompletionResponse` | `ChatCompletionResponse` |
-| `ChatUsage` | `ChatUsage` |
-| `ChatMetrics` | `ChatMetrics` |
+| `ChatMessage` | Conversation turn with optional telemetry fields |
+| `ChatCompletionRequest/Response` | OpenAI-compatible request/response envelope |
 | `ChatModel` | Model entry from `GET /models` |
-| `ProviderSummary` | Provider entry from `GET /models` |
+| `ProviderSummary` | Per-provider summary |
+| `Profile` | `{ id, name, created_at }` |
+| `ConversationSummary` | `{ id, title, model, created_at, updated_at }` |
+| `Conversation` | `ConversationSummary & { messages: ChatMessage[] }` |
 
 ---
 
 ### 4.4 Services
 
 #### ChatService
+Wraps `POST /chat/completions`. Streaming uses raw `fetch` + `ReadableStream` (not `HttpClient`) to avoid buffering. Emits `{ event, data }` observables.
 
-**File:** [frontend/src/app/core/services/chat.service.ts](../frontend/src/app/core/services/chat.service.ts)
-
-Wraps the backend chat and models endpoints. Streaming uses raw `fetch` + `ReadableStream` (not Angular `HttpClient`) to avoid buffering.
-
-**SSE parsing:**
-- Lines starting with `event:` set the current event type
-- `data: [DONE]` → `subscriber.complete()`
-- `event: error` frames → parse `{"message": "..."}` → `subscriber.error(new Error(msg))`
-- All other `data:` lines → `subscriber.next({ event, data })`
-
-When `response.ok` is `false`, the response body is read as JSON to extract the FastAPI `detail` field before emitting `subscriber.error`.
+#### ConversationService
+HTTP client for all conversation endpoints.
 
 ```typescript
-stream(payload): Observable<{ event: string; data: Record<string, unknown> }>
-models(): Observable<{ object: string; data: ChatModel[]; providers: ProviderSummary[] }>
+list(profileId: string): Observable<ConversationSummary[]>  // GET ?profile_id=
+create(title, model, profileId): Observable<ConversationSummary>  // POST with profile_id in body
+get(id): Observable<Conversation>
+rename(id, title): Observable<ConversationSummary>
+delete(id): Observable<void>
+appendMessages(id, messages): Observable<void>
 ```
 
-#### DiscoveryService
-
-**File:** [frontend/src/app/core/services/discovery.service.ts](../frontend/src/app/core/services/discovery.service.ts)
-
-HTTP client for the four discovery endpoints:
+#### ProfileService
+Manages active profile. Persists to `localStorage` under key `spicesibyl_profile`.
 
 ```typescript
-runCloudflareDiscovery(): Observable<DiscoveryResult>
-runOpenRouterDiscovery():  Observable<DiscoveryResult>
-runGeminiDiscovery():      Observable<DiscoveryResult>
-runGroqDiscovery():        Observable<DiscoveryResult>
+current = signal<Profile | null>(...)  // loaded from localStorage on init
+currentId: string        // current()?.id ?? 'default'
+list(): Observable<Profile[]>
+create(name): Observable<Profile>  // also calls select()
+delete(id): Observable<void>
+select(profile): void   // updates signal + localStorage
+clear(): void           // sets signal to null, removes from localStorage
 ```
-
-`DiscoveryResult`: `{ model_count: number; yaml: string; models: DiscoveryModel[] }`
 
 #### NotificationService
-
-**File:** [frontend/src/app/core/services/notification.service.ts](../frontend/src/app/core/services/notification.service.ts)
-
-Signal-based service that manages a list of active toast notifications.
-
-```typescript
-toasts = signal<Toast[]>([])
-add(type: ToastType, title: string, detail?: string, durationMs = 6000): void
-dismiss(id: string): void
-```
-
-`Toast`: `{ id: string; type: 'error' | 'warning' | 'info'; title: string; detail?: string }`
-
-Toasts auto-dismiss after `durationMs` milliseconds via `window.setTimeout`.
+Signal-based toast queue. `add(type, title, detail?, durationMs?)` — auto-dismiss via `setTimeout`.
 
 ---
 
-### 4.5 Error Handling & Notifications
+### 4.5 HTTP Interceptors
 
-#### HTTP Interceptor
+#### profileInterceptor
+**File:** `frontend/src/app/core/interceptors/profile.interceptor.ts`
 
-**File:** [frontend/src/app/core/interceptors/error.interceptor.ts](../frontend/src/app/core/interceptors/error.interceptor.ts)
+Reads `ProfileService.currentId`. If it's not `'default'`, clones the request adding `X-Profile-ID: <uuid>`. Skipped for unauthenticated (default) sessions.
 
-`HttpInterceptorFn` that catches all `HttpErrorResponse` events, extracts the FastAPI `detail` field, and calls `NotificationService.add('error', ...)`. The error is re-thrown so component-level handlers still fire if needed.
+#### errorInterceptor
+**File:** `frontend/src/app/core/interceptors/error.interceptor.ts`
 
-**FastAPI error shape extraction (in order):**
-1. `body.detail` (string)
-2. `body.detail.message` (string)
-3. `body.message` (string)
-4. `err.message` fallback
-
-**Status → title mapping:**
-
-| Status | Toast title |
-|---|---|
-| 429 | Rate limit exceeded |
-| 400 | Bad request |
-| 401 / 403 | Unauthorized |
-| 404 | Not found |
-| 502 / 503 | Backend unavailable |
-| 5xx | Server error |
-
-#### ToastContainerComponent
-
-**File:** [frontend/src/app/shared/toast-container/](../frontend/src/app/shared/toast-container/)
-
-Fixed top-right overlay rendered once in `AppComponent`. Iterates `NotificationService.toasts` signal and renders each toast with icon, title, optional detail, and dismiss button. Three visual variants: error (pink/magenta), warning (gold), info (blue).
-
-#### Streaming error flow
-
-Errors inside the SSE generator that occur **after** the `200 OK` response is sent are signalled as `event: error` SSE frames by `ChatService.event_generator()`. The frontend `ChatService` parser calls `subscriber.error(new Error(message))`, which triggers the chat page error handler that:
-1. Calls `NotificationService.add('error', 'Chat request failed', detail)` → toast
-2. Updates the placeholder message to `⚠ <detail>` in the conversation
+Catches `HttpErrorResponse`, extracts the FastAPI `detail` field, calls `NotificationService.add('error', ...)`, re-throws.
 
 ---
 
-### 4.6 Chat Page
+### 4.6 Error Handling & Notifications
 
-**File:** [frontend/src/app/features/chat/chat-page.component.ts](../frontend/src/app/features/chat/chat-page.component.ts)
+Toast variants: `error` (pink), `warning` (gold), `info` (blue). Rendered in `ToastContainerComponent` (fixed top-right, mounted in `AppComponent`).
 
-**State signals:**
+Streaming errors arrive as `event: error` SSE frames → parsed by `ChatService` → `subscriber.error()` → chat page error handler → toast + inline `⚠` bubble.
+
+---
+
+### 4.7 Chat Page
+
+**File:** `frontend/src/app/features/chat/chat-page.component.ts`
+
+#### Signals
 
 | Signal | Type | Description |
 |---|---|---|
-| `messages` | `ChatMessage[]` | Full conversation history including telemetry |
-| `models` | `ChatModel[]` | All models returned by `GET /models` |
+| `messages` | `ChatMessage[]` | Full conversation including telemetry |
+| `conversations` | `ConversationSummary[]` | Sidebar list for the active profile |
+| `models` | `ChatModel[]` | All models from `GET /models` |
 | `providers` | `ProviderSummary[]` | Per-provider summaries |
 | `capabilityFilter` | `string` | Active capability filter |
-| `availabilityFilter` | `'all' \| 'free'` | Filters models to free-only or all |
-| `selectedProviders` | `string[]` | Provider IDs currently active in the sidebar |
+| `availabilityFilter` | `'all'\|'free'` | Free-only toggle |
+| `selectedProviders` | `string[]` | Provider IDs in the sidebar filter |
 
-**Computed signals:**
+#### Computed
 
 | Signal | Description |
 |---|---|
-| `availableCapabilities` | Sorted list of all distinct capabilities across loaded models |
-| `filteredModels` | Models passing all three active filters |
+| `availableCapabilities` | Distinct capabilities across loaded models |
+| `filteredModels` | Models passing provider + capability + availability filters |
+| `showProfileModal` | `true` when `profileService.current()` is null |
 
-**Key methods:**
+#### Key methods
 
 | Method | Description |
 |---|---|
-| `send()` | Appends user message, starts SSE stream, updates messages signal on each chunk |
-| `renderedContent(message)` | Markdown → `marked` → `DOMPurify` → `DomSanitizer.bypassSecurityTrustHtml` |
-| `toggleProvider(id)` | Adds or removes a provider from the active filter set |
-| `mapAssistantMessage(response)` | Transforms raw API response into `ChatMessage` with telemetry |
-| `onMessagesScroll()` | Pauses auto-scroll when user is >80 px above the bottom |
+| `send()` | Appends user message, starts SSE stream, updates messages on each chunk |
+| `onEnter(event)` | Enter sends, Shift+Enter inserts newline |
+| `selectConversation(id)` | GET conversation → `messages.set(conv.messages)`, closes sidebar on mobile |
+| `newConversation()` | Resets to welcome state, closes sidebar on mobile |
+| `deleteConversation(id, event)` | Delete + refresh list |
+| `switchProfile()` | Calls `profileService.clear()` → modal reappears |
+| `persistExchange(userMsg, assistantIdx)` | After stream: create conversation if new, then append messages |
+| `loadConversationList()` | GET `/conversations?profile_id=<current>` → updates `conversations` signal |
 
-**XSS safety:** All assistant HTML is parsed by `marked` and sanitized by `DOMPurify` before being trusted via Angular's `DomSanitizer`. User messages are HTML-escaped with `<br>` for newlines.
+#### Effect (constructor)
+```typescript
+effect(() => {
+  const profile = this.profileService.current();
+  if (profile) {
+    this.currentConversationId = null;
+    this.loadConversationList();
+    this.newConversation();
+  }
+}, { allowSignalWrites: true });
+```
+Fires when the active profile changes. `allowSignalWrites: true` is required because `newConversation()` writes to the `messages` signal.
 
----
-
-### 4.7 Discovery Page
-
-**File:** [frontend/src/app/features/discovery/discovery-page.component.ts](../frontend/src/app/features/discovery/discovery-page.component.ts)
-
-Allows fetching the live model catalog from any of the four supported providers and copying the generated YAML block into `provider_models.yaml`.
-
-**Source tabs:** `'cloudflare' | 'openrouter' | 'gemini' | 'groq'`
-
-**State signals:**
-
-| Signal | Description |
-|---|---|
-| `activeSource` | Currently selected provider tab |
-| `loading` | Discovery request in flight |
-| `modelCount` | Number of models returned by the last run |
-| `yamlContent` | Editable YAML string |
-| `models` | Structured model list |
-| `highlightedYaml` | Syntax-highlighted `SafeHtml` for the overlay layer |
-| `copyState` | `'idle' \| 'success' \| 'error'` for the copy button |
-
-Errors from failed discovery requests are handled globally by `ErrorInterceptor` → `NotificationService` → toast. The component error handler only stops the loading state.
-
-**YAML editor:** A `<textarea>` overlaid with a read-only syntax-highlighted `<div>` that scrolls in sync. Highlighting uses lightweight regex-based span injection in `highlightYaml()` — no external library.
-
-**Copy-to-clipboard** uses `navigator.clipboard.writeText` with a `execCommand('copy')` fallback.
+#### XSS safety
+Assistant HTML: `marked` → `DOMPurify` → `DomSanitizer.bypassSecurityTrustHtml`.  
+User messages: HTML-escaped + newlines → `<br>`.
 
 ---
 
-### 4.8 Routing
+### 4.8 Profile Modal
 
-**File:** [frontend/src/app/app.routes.ts](../frontend/src/app/app.routes.ts)
+**File:** `frontend/src/app/features/profile/profile-modal.component.ts`
+
+Standalone component, no external modal library. Shown as a full-screen overlay when `showProfileModal()` is true.
+
+- Loads profile list from `GET /profiles` on init
+- Click a profile → `profileService.select(profile)` → modal closes (computed `showProfileModal` becomes false)
+- "Nuovo profilo" form → `profileService.create(name)` → adds to list and selects
+- Delete button (×) on each profile item → `profileService.delete(id)` + removes from list
+
+---
+
+### 4.9 Discovery Page
+
+**File:** `frontend/src/app/features/discovery/discovery-page.component.ts`
+
+Tabs: `cloudflare | openrouter | gemini | groq | cerebras | mistral`. Each tab calls the corresponding `*-discovery/run` endpoint and renders a YAML editor with syntax highlighting.
+
+---
+
+### 4.10 Routing
 
 ```
 /           → ChatPageComponent      (lazy-loaded)
 /discovery  → DiscoveryPageComponent (lazy-loaded)
+/providers  → ProvidersPageComponent (lazy-loaded)
 ```
 
 ---
 
 ## 5. Shared Configuration
 
-**File:** [shared-config/provider_models.yaml](../shared-config/provider_models.yaml)
+**File:** `shared-config/provider_models.yaml`
 
-The authoritative static model catalog. Mounted into the backend container at `/config/provider_models.yaml`. Edits take effect on the next `GET /models` request — no restart required.
-
-**YAML structure:**
+Mounted into the backend container at `/config/provider_models.yaml`. Changes take effect on the next `GET /models` request — no restart required.
 
 ```yaml
 providers:
   <provider_key>:
-    label: Human-readable provider name
+    label: Human-readable name
     enabled: true
-    configured: false       # set to true once the API key is in .env
     models:
       - id: <prefix>/<model-id>
         label: Display name
         default: false
         free: true | false
-        capabilities: [chat, tools, vision, reasoning, code, json, audio]
+        capabilities: [chat, tools, vision, reasoning, code, json, audio, fast]
 ```
-
-The `id` **must** start with the prefix used by `ProviderFactory` (`gemini/`, `groq/`, `cloudflare/`, etc.).
 
 ---
 
 ## 6. Docker & Infrastructure
-
-**File:** [docker-compose.yml](../docker-compose.yml)
 
 ```yaml
 services:
@@ -661,16 +569,12 @@ services:
     volumes:
       - ./backend:/app:z
       - ./shared-config:/config:z
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
     build: ./frontend
     environment:
       API_URL: ${FRONTEND_API_URL:-http://192.168.0.215:8000/api/v1}
     ports: ["4200:4200"]
-    volumes:
-      - ./frontend:/workspace:z
-      - /workspace/node_modules
     depends_on: [backend]
 ```
 
@@ -680,173 +584,84 @@ services:
 
 ## 7. Adding a New Provider
 
-This section walks through every file that must change when wiring in a new AI provider (example: **Cohere**). For providers that need live model discovery, an additional discovery endpoint is also covered.
+### Step 1 — Settings
 
-### Step 1 — Add the API key to Settings
-
-**File:** [backend/app/core/config.py](../backend/app/core/config.py)
-
+**`backend/app/core/config.py`**
 ```python
-class Settings(BaseSettings):
-    cohere_api_key: str | None = None
+cohere_api_key: str | None = None
 ```
 
-Add to [backend/.env.example](../backend/.env.example):
-
-```dotenv
-COHERE_API_KEY=
+Add to `backend/.env.example` and to `key_resolver._from_settings`:
+```python
+"cohere": settings.cohere_api_key,
 ```
 
----
+Add to `providers.py` `_PROVIDER_META`:
+```python
+'cohere': {'key_hint': 'COHERE_API_KEY', 'docs_url': 'https://cohere.com'},
+```
 
-### Step 2 — Create the provider adapter
+### Step 2 — Provider adapter
 
-Create **[backend/app/providers/cohere_provider.py](../backend/app/providers/cohere_provider.py)**:
+**`backend/app/providers/cohere_provider.py`**
 
 ```python
-import time
-from litellm import acompletion
-from app.core.config import settings
 from app.providers.base import BaseProvider
 from app.schemas.chat import ChatCompletionRequest
-
+from app.services import key_resolver
 
 class CohereProvider(BaseProvider):
-
     def _build_kwargs(self, request: ChatCompletionRequest) -> dict:
-        if not settings.cohere_api_key:
+        api_key = key_resolver.resolve('cohere')
+        if not api_key:
             raise ValueError('COHERE_API_KEY is not configured.')
         return {
             'model': request.model,
             'messages': [{'role': m.role, 'content': m.content} for m in request.messages],
             'max_tokens': request.max_tokens,
-            'temperature': request.temperature if request.temperature is not None else 0.7,
-            'api_key': settings.cohere_api_key,
+            'temperature': request.temperature or 0.7,
+            'api_key': api_key,
         }
-
-    async def complete(self, request: ChatCompletionRequest):
-        started_at = time.perf_counter()
-        response = await acompletion(**self._build_kwargs(request))
-        payload = response.model_dump()
-        latency_ms = int((time.perf_counter() - started_at) * 1000)
-        usage = payload.get('usage') or {}
-        completion_tokens = usage.get('completion_tokens') or 0
-        payload['metrics'] = {
-            'latency_ms': latency_ms,
-            'first_token_ms': latency_ms,
-            'tokens_per_second': round(completion_tokens / (latency_ms / 1000), 2) if latency_ms and completion_tokens else None,
-            'provider': 'cohere',
-            'estimated_cost': None,
-        }
-        return payload
-
-    async def stream(self, request: ChatCompletionRequest):
-        kwargs = self._build_kwargs(request)
-        kwargs['stream'] = True
-        response = await acompletion(**kwargs)
-        async for chunk in response:
-            yield chunk.model_dump()
-
-    async def list_models(self):
-        return []
+    # implement complete(), stream(), list_models()
 ```
 
----
+### Step 3 — Factory
 
-### Step 3 — Register the provider in the factory
-
-**File:** [backend/app/dependencies/provider_factory.py](../backend/app/dependencies/provider_factory.py)
-
+**`backend/app/dependencies/provider_factory.py`**
 ```python
-from app.providers.cohere_provider import CohereProvider
-
-def get_provider(model: str | None = None):
-    if model and model.startswith('cloudflare/'):
-        return CloudflareProvider()
-    if model and model.startswith('openrouter/'):
-        return OpenRouterProvider()
-    if model and model.startswith('gemini/'):
-        return GeminiProvider()
-    if model and model.startswith('cohere/'):        # add this
-        return CohereProvider()
-    return LiteLLMProvider()
+if model and model.startswith('cohere/'):
+    return CohereProvider()
 ```
 
----
+### Step 4 — Catalog
 
-### Step 4 — Add models to the catalog
-
-**File:** [shared-config/provider_models.yaml](../shared-config/provider_models.yaml)
-
+**`shared-config/provider_models.yaml`**
 ```yaml
-providers:
-  cohere:
-    label: Cohere
-    enabled: true
-    configured: false
-    models:
-      - id: cohere/command-r-plus
-        label: Command R+
-        default: false
-        free: false
-        capabilities: [chat, tools]
+cohere:
+  label: Cohere
+  enabled: true
+  models:
+    - id: cohere/command-r-plus
+      label: Command R+
+      free: false
+      capabilities: [chat, tools]
 ```
 
----
+### Step 5 — (Optional) Discovery endpoint
 
-### Step 5 — (Optional) Add a discovery endpoint
+Follow the pattern of `groq_discovery.py`. Register in `router.py`. Add tab to the Angular discovery page.
 
-If the provider exposes a model-listing API, follow the pattern of the existing discovery endpoints.
+### Checklist
 
-Create **[backend/app/api/v1/endpoints/cohere_discovery.py](../backend/app/api/v1/endpoints/cohere_discovery.py)**:
-
-```python
-import httpx
-from fastapi import APIRouter, HTTPException
-from app.core.config import settings
-
-router = APIRouter()
-
-@router.post("/run")
-async def run_cohere_discovery():
-    if not settings.cohere_api_key:
-        raise HTTPException(status_code=400, detail="COHERE_API_KEY is not configured.")
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        resp = await client.get(
-            "https://api.cohere.com/v1/models",
-            headers={"Authorization": f"Bearer {settings.cohere_api_key}"},
-        )
-        resp.raise_for_status()
-    # … filter, build yaml block, return { model_count, yaml, models }
-```
-
-Register in [backend/app/api/v1/router.py](../backend/app/api/v1/router.py):
-
-```python
-from app.api.v1.endpoints import cohere_discovery
-api_router.include_router(cohere_discovery.router, prefix="/cohere-discovery", tags=["cohere-discovery"])
-```
-
-Then on the **frontend**:
-
-1. Add `runCohereDiscovery()` to `DiscoveryService`
-2. Extend `DiscoverySource` to include `'cohere'`
-3. Add the tab button to `discovery-page.component.html`
-4. Update `pageTitle`, `pageSubtitle`, and the `run()` dispatch in `discovery-page.component.ts`
-
----
-
-### Summary Checklist
-
-| # | File | What to add |
+| # | File | Change |
 |---|---|---|
-| 1 | `backend/app/core/config.py` | New `*_api_key` field on `Settings` |
-| 1 | `backend/.env.example` | New env var |
-| 2 | `backend/app/providers/<name>_provider.py` | New class extending `BaseProvider` |
-| 3 | `backend/app/dependencies/provider_factory.py` | New `startswith` branch in `get_provider()` |
-| 4 | `shared-config/provider_models.yaml` | New provider block with model entries |
-| 5 | `backend/app/api/v1/endpoints/<name>_discovery.py` | (Optional) Discovery endpoint |
-| 5 | `backend/app/api/v1/router.py` | (Optional) Register discovery router |
-| 5 | `frontend/src/app/core/services/discovery.service.ts` | (Optional) `run*Discovery()` method |
-| 5 | `frontend/src/app/features/discovery/discovery-page.component.ts` | (Optional) Extend `DiscoverySource`, update `pageTitle`/`pageSubtitle`/`run()` |
-| 5 | `frontend/src/app/features/discovery/discovery-page.component.html` | (Optional) New tab button |
+| 1 | `core/config.py` | Add `*_api_key` field |
+| 1 | `.env.example` | Add env var |
+| 1 | `services/key_resolver.py` | Add to `_from_settings` map |
+| 1 | `api/v1/endpoints/providers.py` | Add to `_PROVIDER_META` |
+| 2 | `providers/<name>_provider.py` | New class, use `key_resolver.resolve()` |
+| 3 | `dependencies/provider_factory.py` | Add `startswith` branch |
+| 4 | `shared-config/provider_models.yaml` | New provider block |
+| 5 | `api/v1/endpoints/<name>_discovery.py` | (Optional) Discovery endpoint |
+| 5 | `api/v1/router.py` | (Optional) Register router |
+| 5 | Frontend discovery | (Optional) Add tab |

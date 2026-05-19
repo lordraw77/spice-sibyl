@@ -1,6 +1,6 @@
 # SpiceSibyl — One gateway, many minds
 
-SpiceSibyl is an OpenAI-compatible multi-provider AI gateway with a built-in Angular web console.  A single API endpoint routes chat completion requests to any supported backend — local Ollama models, Groq, OpenRouter, Cloudflare Workers AI, Google Gemini, Mistral, Together AI, Fireworks AI, and HuggingFace — without changing the client code.
+SpiceSibyl is an OpenAI-compatible multi-provider AI gateway with a built-in Angular web console.  A single API endpoint routes chat completion requests to any supported backend — local Ollama models, Groq, OpenRouter, Cloudflare Workers AI, Google Gemini, Mistral, Cerebras, Together AI, Fireworks AI, and HuggingFace — without changing the client code.
 
 ---
 
@@ -10,14 +10,15 @@ SpiceSibyl is an OpenAI-compatible multi-provider AI gateway with a built-in Ang
 2. [Tech stack](#tech-stack)
 3. [Project structure](#project-structure)
 4. [Getting started](#getting-started)
-   - [Docker Compose](#docker-compose-recommended)
-   - [Local development](#local-development)
 5. [Configuration](#configuration)
 6. [API reference](#api-reference)
-7. [Provider catalog](#provider-catalog)
-8. [Model discovery](#model-discovery)
-9. [Error handling](#error-handling)
-10. [Running tests](#running-tests)
+7. [Conversation persistence](#conversation-persistence)
+8. [API key vault](#api-key-vault)
+9. [Profiles](#profiles)
+10. [Provider catalog](#provider-catalog)
+11. [Model discovery](#model-discovery)
+12. [Error handling](#error-handling)
+13. [Running tests](#running-tests)
 
 ---
 
@@ -30,25 +31,28 @@ Browser (Angular)
       ▼
 FastAPI gateway  (/api/v1)
       │
-      ├── GeminiProvider    ──► Google Generative AI
-      ├── LiteLLMProvider   ──► Ollama, Groq, Mistral, Together, Fireworks, HuggingFace
+      ├── GeminiProvider     ──► Google Generative AI
+      ├── LiteLLMProvider    ──► Ollama, Groq, Mistral, Together, Fireworks, HuggingFace
       ├── OpenRouterProvider ──► OpenRouter
-      └── CloudflareProvider ──► Cloudflare Workers AI
+      ├── CloudflareProvider ──► Cloudflare Workers AI
+      ├── CerebrasProvider   ──► Cerebras Cloud
+      └── MistralProvider    ──► Mistral AI
+      │
+      └── SQLite (aiosqlite)
+            ├── conversations + messages  (history per profile)
+            ├── profiles                  (named identities)
+            └── api_keys                  (Fernet-encrypted)
 ```
-
-The gateway selects the correct provider adapter based on the model-ID prefix
-(e.g. `cloudflare/…`, `openrouter/…`, `gemini/…`, `groq/…`).  All providers implement
-the same `BaseProvider` interface (`complete`, `stream`, `list_models`).
 
 ---
 
 ## Tech stack
 
-| Layer     | Technology                                      |
-|-----------|-------------------------------------------------|
-| Backend   | Python 3.11 · FastAPI · LiteLLM · httpx · SSE  |
-| Frontend  | Angular 18 · signals · marked · DOMPurify       |
-| Dev env   | Docker Compose · Makefile                       |
+| Layer     | Technology                                                       |
+|-----------|------------------------------------------------------------------|
+| Backend   | Python 3.11 · FastAPI · LiteLLM · httpx · aiosqlite · cryptography |
+| Frontend  | Angular 18 · signals · marked · DOMPurify                        |
+| Dev env   | Docker Compose · Makefile                                        |
 
 ---
 
@@ -58,13 +62,14 @@ the same `BaseProvider` interface (`complete`, `stream`, `list_models`).
 spice-sibyl/
 ├── backend/
 │   ├── app/
-│   │   ├── api/v1/endpoints/   # Route handlers (chat, models, providers, discovery)
+│   │   ├── api/v1/endpoints/   # chat, conversations, profiles, providers, discovery ×6
 │   │   ├── core/               # Settings (pydantic-settings)
 │   │   ├── data/               # Model catalog loader (YAML)
+│   │   ├── db/                 # SQLite: schema, repositories (conversation, profile, vault)
 │   │   ├── dependencies/       # FastAPI provider factory dependency
 │   │   ├── providers/          # BaseProvider + concrete adapters
 │   │   ├── schemas/            # Pydantic request/response models
-│   │   └── services/           # ChatService orchestration layer
+│   │   └── services/           # ChatService · VaultService · KeyResolver
 │   ├── tests/
 │   ├── .env.example
 │   └── requirements.txt
@@ -72,14 +77,15 @@ spice-sibyl/
 │   └── src/app/
 │       ├── core/
 │       │   ├── config/         # Runtime config (app-config.json)
-│       │   ├── interceptors/   # Global HTTP error interceptor
+│       │   ├── interceptors/   # error.interceptor · profile.interceptor
 │       │   ├── models/         # TypeScript domain models
-│       │   └── services/       # ChatService, DiscoveryService, NotificationService
+│       │   └── services/       # ChatService · ConversationService · ProfileService · …
 │       ├── features/
-│       │   ├── chat/           # Chat page component
-│       │   └── discovery/      # Provider discovery page component
+│       │   ├── chat/           # Chat page (sidebar + messages + composer)
+│       │   ├── profile/        # Profile selector modal
+│       │   └── discovery/      # Model discovery page
 │       ├── shared/
-│       │   └── toast-container/ # Global toast notification component
+│       │   └── toast-container/
 │       └── layout/             # Navbar
 ├── shared-config/
 │   └── provider_models.yaml    # Static model catalog (shared volume)
@@ -94,25 +100,21 @@ spice-sibyl/
 ### Docker Compose (recommended)
 
 ```bash
-# Copy and edit the backend environment file
 cp backend/.env.example backend/.env
-
-# Start all services (backend on :8000, frontend on :4200)
+# edit backend/.env — set at least one provider key and VAULT_SECRET_KEY
 docker compose up --build
 ```
 
-The Angular app is served at **http://localhost:4200**.  
-The API is available at **http://localhost:8000/api/v1**.  
-Interactive API docs: **http://localhost:8000/docs**
+- Angular app: **http://localhost:4200**
+- API: **http://localhost:8000/api/v1**
+- Interactive docs: **http://localhost:8000/docs**
 
 ### Local development
 
 ```bash
-# Install dependencies
-make install-backend   # creates a venv and installs requirements.txt
-make install-frontend  # runs npm install in frontend/
+make install-backend   # venv + requirements.txt
+make install-frontend  # npm install
 
-# Start services individually
 make backend    # uvicorn on :8000 with hot-reload
 make frontend   # ng serve on :4200
 ```
@@ -123,25 +125,28 @@ make frontend   # ng serve on :4200
 
 All backend settings are read from environment variables or `backend/.env`.
 
-| Variable                | Default                              | Description                                 |
-|-------------------------|--------------------------------------|---------------------------------------------|
-| `APP_NAME`              | `SpiceSibyl API`                     | Service name shown in API responses         |
-| `APP_ENV`               | `development`                        | Environment tag                             |
-| `API_KEY`               | `change-me`                          | Bearer token for incoming requests          |
-| `CORS_ORIGINS`          | `http://localhost:4200,...`          | Comma-separated allowed origins             |
-| `DEFAULT_MODEL`         | `ollama/qwen2.5:7b-instruct`         | Model used when none is specified           |
-| `LITELLM_PROVIDER`      | `litellm`                            | Set to `mock` to skip real API calls        |
-| `OLLAMA_API_BASE`       | `http://host.docker.internal:11434`  | Ollama instance base URL                    |
-| `GROQ_API_KEY`          | —                                    | Groq Cloud API key                          |
-| `OPENROUTER_API_KEY`    | —                                    | OpenRouter API key                          |
-| `GEMINI_API_KEY`        | —                                    | Google Gemini API key                       |
-| `CLOUDFLARE_API_KEY`    | —                                    | Cloudflare Workers AI API token             |
-| `CLOUDFLARE_ACCOUNT_ID` | —                                    | Cloudflare account ID                       |
-| `TOGETHER_API_KEY`      | —                                    | Together AI API key                         |
-| `FIREWORKS_API_KEY`     | —                                    | Fireworks AI API key                        |
-| `MISTRAL_API_KEY`       | —                                    | Mistral AI API key                          |
-| `HF_TOKEN`              | —                                    | HuggingFace API token                       |
-| `MODEL_CATALOG_PATH`    | —                                    | Override path for `provider_models.yaml`    |
+| Variable                | Default                              | Description                                          |
+|-------------------------|--------------------------------------|------------------------------------------------------|
+| `APP_NAME`              | `SpiceSibyl API`                     | Service name                                         |
+| `APP_ENV`               | `development`                        | Environment tag                                      |
+| `API_KEY`               | `change-me`                          | Bearer token for incoming requests                   |
+| `CORS_ORIGINS`          | `http://localhost:4200,...`          | Comma-separated allowed origins                      |
+| `DEFAULT_MODEL`         | `ollama/qwen2.5:7b-instruct`         | Model used when none is specified                    |
+| `LITELLM_PROVIDER`      | `litellm`                            | Set to `mock` to skip real API calls                 |
+| `OLLAMA_API_BASE`       | `http://host.docker.internal:11434`  | Ollama instance base URL                             |
+| `DB_PATH`               | `spice_sibyl.db`                     | SQLite database file path                            |
+| `VAULT_SECRET_KEY`      | `change-me-in-production`            | Master secret for API key encryption — **change this** |
+| `GROQ_API_KEY`          | —                                    | Groq Cloud API key                                   |
+| `OPENROUTER_API_KEY`    | —                                    | OpenRouter API key                                   |
+| `GEMINI_API_KEY`        | —                                    | Google Gemini API key                                |
+| `CLOUDFLARE_API_KEY`    | —                                    | Cloudflare Workers AI API token                      |
+| `CLOUDFLARE_ACCOUNT_ID` | —                                    | Cloudflare account ID                                |
+| `TOGETHER_API_KEY`      | —                                    | Together AI API key                                  |
+| `FIREWORKS_API_KEY`     | —                                    | Fireworks AI API key                                 |
+| `MISTRAL_API_KEY`       | —                                    | Mistral AI API key                                   |
+| `CEREBRAS_API_KEY`      | —                                    | Cerebras Cloud API key                               |
+| `HF_TOKEN`              | —                                    | HuggingFace API token                                |
+| `MODEL_CATALOG_PATH`    | —                                    | Override path for `provider_models.yaml`             |
 
 ---
 
@@ -155,35 +160,32 @@ Liveness probe. Returns `{"status": "ok"}`.
 ### `GET /models`
 Returns the full model list and a per-provider summary.
 
+### `GET /providers`
+Returns all providers with live configuration status (API key present/absent, whether key is vaulted).
+
+### `PATCH /providers/{id}`
+Enable or disable a provider.
+
+### `PUT /providers/{id}/key`
+Encrypt and store an API key in the vault. The key is immediately active for all subsequent requests.
+
 ```jsonc
-{
-  "object": "list",
-  "data": [
-    {
-      "id": "gemini/gemini-2.0-flash",
-      "label": "Gemini · Gemini 2.0 Flash",
-      "provider": "gemini",
-      "configured": true,
-      "free": true,
-      "capabilities": ["chat", "vision", "tools", "json"]
-    }
-  ],
-  "providers": [
-    { "id": "gemini", "label": "Gemini", "enabled": true, "configured": true, "model_count": 6 }
-  ]
-}
+// Request
+{ "api_key": "sk-..." }
+
+// Response
+{ "ok": true, "configured": true, "vaulted": true }
 ```
 
-### `GET /providers`
-Returns all providers with live configuration status (API key present/absent).
+### `DELETE /providers/{id}/key`
+Remove a vaulted key. The provider falls back to the env variable.
 
 ### `POST /providers/{id}/test`
-Tests connectivity for the given provider and returns a pass/fail result.
+Tests connectivity to a provider.
 
 ### `POST /chat/completions`
-OpenAI-compatible chat completion. Supports both regular and streaming (`stream: true`) responses.
+OpenAI-compatible chat completion (streaming or non-streaming).
 
-**Request body:**
 ```jsonc
 {
   "model": "groq/llama-3.3-70b-versatile",
@@ -194,80 +196,123 @@ OpenAI-compatible chat completion. Supports both regular and streaming (`stream:
 }
 ```
 
-**Error responses:**
-- `429` — rate limit exceeded (e.g. Gemini free-tier quota)
-- `500` — generic backend error; `detail.message` contains the provider error string
+### `GET /profiles`
+List all profiles.
 
-For streaming requests, errors that occur after the SSE connection is established are sent as an `event: error` SSE event with `data: {"message": "..."}` before the stream closes.
+### `POST /profiles`
+Create a new profile. Returns `{ id, name, created_at }`.
 
-### `POST /cloudflare-discovery/run`
-Fetch the Cloudflare Workers AI Text Generation model catalog.  
-Requires `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_KEY`.
+### `DELETE /profiles/{id}`
+Delete a profile and all its conversations.
 
-### `POST /openrouter-discovery/run`
-Fetch the OpenRouter chat model catalog.  
-Requires `OPENROUTER_API_KEY`.
+### `GET /conversations?profile_id=<uuid>`
+List conversations for a profile (newest first).
 
-### `POST /gemini-discovery/run`
-Fetch the Google Gemini model catalog (all models supporting `generateContent`).  
-Requires `GEMINI_API_KEY`.
+### `POST /conversations`
+Create a new conversation. Body: `{ title, model, profile_id }`.
 
-### `POST /groq-discovery/run`
-Fetch the Groq LLM model catalog (excludes Whisper, TTS, and guard models).  
-Requires `GROQ_API_KEY`.
+### `GET /conversations/{id}`
+Get a conversation with its full message history.
+
+### `PATCH /conversations/{id}`
+Rename a conversation.
+
+### `DELETE /conversations/{id}`
+Delete a conversation and all its messages.
+
+### `POST /conversations/{id}/messages`
+Append messages to an existing conversation.
+
+### Discovery endpoints
+`POST /{cloudflare|openrouter|gemini|groq|cerebras|mistral}-discovery/run`  
+Each returns `{ model_count, yaml, models[] }`.
+
+---
+
+## Conversation persistence
+
+Every chat exchange is automatically saved to SQLite after the stream completes:
+
+1. On the **first message** of a new chat, a conversation record is created (title = first 60 chars of the user message).
+2. After each stream, the user + assistant message pair is appended to the conversation.
+3. The conversation list in the sidebar updates immediately.
+4. Clicking a conversation loads its full message history including all telemetry fields.
+
+Conversations are **scoped to a profile** — switching profiles shows only that profile's history.
+
+---
+
+## API key vault
+
+API keys set via the Providers page are encrypted before being written to the database.
+
+**Encryption:** Fernet symmetric encryption (AES-128-CBC + HMAC-SHA256). The Fernet key is derived from `VAULT_SECRET_KEY` via SHA-256, so any string works as the env var value.
+
+**Runtime resolution order for every provider request:**
+1. In-memory cache (populated at startup from the vault)
+2. Environment variable / `.env` file
+
+Keys set via the UI survive container restarts. Setting `VAULT_SECRET_KEY` to a stable value in `.env` ensures keys are readable across restarts.
+
+---
+
+## Profiles
+
+SpiceSibyl supports named **profiles** — lightweight identities with no passwords. They separate conversation history without requiring authentication.
+
+- On first visit a modal asks "Chi sei?" (Who are you?)
+- Select an existing profile or create a new one (name only)
+- The active profile is stored in `localStorage`
+- All conversations are tagged with the profile UUID
+- Switch profiles at any time via the sidebar chip — the conversation list refreshes instantly
+
+Profiles are stored in the database and survive page refreshes. Deleting a profile removes all its conversations.
 
 ---
 
 ## Provider catalog
 
-Static model definitions live in `shared-config/provider_models.yaml` (mounted
-at `/config/provider_models.yaml` inside the container).  Example entry:
+Static model definitions live in `shared-config/provider_models.yaml`. Example entry:
 
 ```yaml
 providers:
   gemini:
     enabled: true
-    configured: true
     models:
       - id: gemini/gemini-2.0-flash
         label: Gemini · Gemini 2.0 Flash
-        default: false
         free: true
         capabilities: [chat, vision, tools, json]
 ```
 
-**Catalog lookup order at runtime:**
-1. `MODEL_CATALOG_PATH` env var (explicit override)
-2. `/config/provider_models.yaml` (Docker volume mount)
+Catalog lookup order:
+1. `MODEL_CATALOG_PATH` env var
+2. `/config/provider_models.yaml` (Docker volume)
 3. `backend/app/data/provider_models.yaml` (bundled fallback)
 
 ---
 
 ## Model discovery
 
-The **Discovery** page (frontend) and the four `*-discovery/run` endpoints let you
-fetch the live model catalog from a provider and generate a ready-to-paste YAML block
-for `provider_models.yaml`.
+The **Discovery** page fetches the live model catalog from a provider and generates a paste-ready YAML block.
 
-| Provider   | Endpoint                        | Auth required                                   |
-|------------|---------------------------------|-------------------------------------------------|
-| Cloudflare | `POST /cloudflare-discovery/run` | `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_KEY` |
-| OpenRouter | `POST /openrouter-discovery/run` | `OPENROUTER_API_KEY`                           |
-| Gemini     | `POST /gemini-discovery/run`     | `GEMINI_API_KEY`                               |
-| Groq       | `POST /groq-discovery/run`       | `GROQ_API_KEY`                                 |
-
-Each endpoint returns `model_count`, `yaml` (paste-ready YAML string), and `models` (structured list).
+| Provider   | Endpoint                         | Auth required                                   |
+|------------|----------------------------------|-------------------------------------------------|
+| Cloudflare | `POST /cloudflare-discovery/run` | `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_KEY`  |
+| OpenRouter | `POST /openrouter-discovery/run` | `OPENROUTER_API_KEY`                            |
+| Gemini     | `POST /gemini-discovery/run`     | `GEMINI_API_KEY`                                |
+| Groq       | `POST /groq-discovery/run`       | `GROQ_API_KEY`                                  |
+| Cerebras   | `POST /cerebras-discovery/run`   | `CEREBRAS_API_KEY`                              |
+| Mistral    | `POST /mistral-discovery/run`    | `MISTRAL_API_KEY`                               |
 
 ---
 
 ## Error handling
 
-Backend errors are surfaced to the user via a global toast notification system:
+- **HTTP errors** are caught by `ErrorInterceptor` and shown as dismissible toast notifications.
+- **Streaming SSE errors** are signalled by an `event: error` frame. The frontend shows the error both as a toast and inline in the chat bubble.
 
-- **HTTP errors** (from `HttpClient`-based calls — discovery, model loading, providers) are intercepted globally by `ErrorInterceptor` and displayed as dismissible toast notifications in the top-right corner.
-- **Streaming SSE errors** (chat completions) are signalled by the backend with an `event: error` SSE frame before the stream closes. The frontend parses the error message and shows it both in the chat bubble and as a toast notification.
-
-Toast types: `error` (pink), `warning` (gold), `info` (blue). All toasts auto-dismiss after 6 seconds.
+Toast types: `error` (pink), `warning` (gold), `info` (blue). Auto-dismiss after 6 s.
 
 ---
 
@@ -278,5 +323,4 @@ cd backend
 pytest tests/ -v
 ```
 
-Tests use `pytest` and `httpx.AsyncClient` against the FastAPI app directly.
-No external services are required — the mock provider handles all AI calls.
+Tests use `pytest` and `httpx.AsyncClient` against the FastAPI app directly. The mock provider handles all AI calls — no external services required.

@@ -6,6 +6,7 @@ from app.schemas.chat import ChatMessage
 class ConversationCreate(BaseModel):
     title: str
     model: str
+    profile_id: str | None = None
 
 
 class ConversationUpdate(BaseModel):

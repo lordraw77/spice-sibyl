@@ -20,6 +20,7 @@ import {
   OnInit,
   ViewChild,
   computed,
+  effect,
   inject,
   signal,
 } from '@angular/core';
@@ -28,6 +29,8 @@ import { FormsModule } from '@angular/forms';
 
 import { ChatService } from '../../core/services/chat.service';
 import { ConversationService } from '../../core/services/conversation.service';
+import { ProfileService } from '../../core/services/profile.service';
+import { ProfileModalComponent } from '../profile/profile-modal.component';
 import { ChatCompletionResponse, ChatMessage, ChatModel, ConversationSummary, ProviderSummary } from '../../core/models/chat.models';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked } from 'marked';
@@ -37,22 +40,39 @@ import { NotificationService } from '../../core/services/notification.service';
 @Component({
   selector: 'app-chat-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe],
+  imports: [CommonModule, FormsModule, DatePipe, ProfileModalComponent],
   templateUrl: './chat-page.component.html',
   styleUrl: './chat-page.component.css',
 })
 export class ChatPageComponent implements OnInit, AfterViewChecked {
   private readonly chatService = inject(ChatService);
   private readonly conversationService = inject(ConversationService);
+  readonly profileService = inject(ProfileService);
   private readonly sanitizer = inject(DomSanitizer);
   private readonly notifications = inject(NotificationService);
   readonly availabilityFilter = signal<'all' | 'free'>('all');
+
+  constructor() {
+    // Reload conversation list and reset messages whenever the active profile changes.
+    // allowSignalWrites is required because newConversation() writes to this.messages.
+    effect(() => {
+      const profile = this.profileService.current();
+      if (profile) {
+        this.currentConversationId = null;
+        this.loadConversationList();
+        this.newConversation();
+      }
+    }, { allowSignalWrites: true });
+  }
 
   @ViewChild('messagesContainer')
   private messagesContainer?: ElementRef<HTMLDivElement>;
 
   readonly conversations = signal<ConversationSummary[]>([]);
   currentConversationId: string | null = null;
+
+  /** Show profile selector modal when no profile is active */
+  readonly showProfileModal = computed(() => !this.profileService.current());
 
   readonly messages = signal<ChatMessage[]>([
     {
@@ -288,7 +308,8 @@ export class ChatPageComponent implements OnInit, AfterViewChecked {
       saveMessages();
     } else {
       const title = userMessage.content.slice(0, 60);
-      this.conversationService.create(title, this.model).subscribe({
+      const profileId = this.profileService.currentId;
+      this.conversationService.create(title, this.model, profileId).subscribe({
         next: (conv) => {
           this.currentConversationId = conv.id;
           saveMessages();
@@ -297,9 +318,15 @@ export class ChatPageComponent implements OnInit, AfterViewChecked {
     }
   }
 
-  /** Load conversation list from backend. */
+  /** Open the profile selector (clears current profile so the modal reappears). */
+  switchProfile(): void {
+    this.profileService.clear();
+  }
+
+  /** Load conversation list from backend for the active profile. */
   loadConversationList(): void {
-    this.conversationService.list().subscribe({
+    const profileId = this.profileService.currentId;
+    this.conversationService.list(profileId).subscribe({
       next: (list) => this.conversations.set(list),
       error: () => {},
     });
@@ -317,16 +344,31 @@ export class ChatPageComponent implements OnInit, AfterViewChecked {
       },
     ]);
     this.queueScrollToBottom(true);
+    if (window.innerWidth < 992) {
+      this.sidebarOpen = false;
+    }
   }
 
   /** Load an existing conversation from the backend and display it. */
   selectConversation(id: string): void {
+    if (id === this.currentConversationId) return;
     this.conversationService.get(id).subscribe({
       next: (conv) => {
         this.currentConversationId = conv.id;
         this.model = conv.model;
-        this.messages.set(conv.messages);
+        this.messages.set(
+          conv.messages.length ? conv.messages : [{
+            role: 'assistant' as const,
+            content: 'Nessun messaggio in questa conversazione.',
+            model: 'SpiceSibyl',
+            created_at: Math.floor(Date.now() / 1000),
+          }]
+        );
         this.queueScrollToBottom(true);
+        // On mobile the sidebar is an overlay — close it so the chat is visible
+        if (window.innerWidth < 992) {
+          this.sidebarOpen = false;
+        }
       },
       error: () => this.notifications.add('error', 'Errore', 'Impossibile caricare la conversazione.'),
     });

@@ -28,6 +28,7 @@ from app.api.v1.endpoints import (
     mistral_discovery,
     models,
     openrouter_discovery,
+    profiles,
     providers,
 )
 
@@ -44,3 +45,4 @@ api_router.include_router(groq_discovery.router, prefix="/groq-discovery", tags=
 api_router.include_router(cerebras_discovery.router, prefix="/cerebras-discovery", tags=["cerebras-discovery"])
 api_router.include_router(mistral_discovery.router, prefix="/mistral-discovery", tags=["mistral-discovery"])
 api_router.include_router(conversations.router, prefix="/conversations", tags=["conversations"])
+api_router.include_router(profiles.router, prefix="/profiles", tags=["profiles"])

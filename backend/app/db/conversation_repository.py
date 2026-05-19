@@ -40,9 +40,12 @@ def _row_to_message(row: aiosqlite.Row) -> ChatMessage:
     )
 
 
-async def list_conversations(db: aiosqlite.Connection) -> list[ConversationSummary]:
+async def list_conversations(
+    db: aiosqlite.Connection, profile_id: str
+) -> list[ConversationSummary]:
     async with db.execute(
-        "SELECT * FROM conversations ORDER BY updated_at DESC"
+        "SELECT * FROM conversations WHERE profile_id = ? ORDER BY updated_at DESC",
+        (profile_id,),
     ) as cursor:
         rows = await cursor.fetchall()
     return [_row_to_summary(r) for r in rows]
@@ -69,13 +72,13 @@ async def get_conversation(
 
 
 async def create_conversation(
-    db: aiosqlite.Connection, title: str, model: str
+    db: aiosqlite.Connection, title: str, model: str, profile_id: str
 ) -> ConversationSummary:
     conversation_id = str(uuid.uuid4())
     now = int(time.time())
     await db.execute(
-        "INSERT INTO conversations (id, title, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        (conversation_id, title, model, now, now),
+        "INSERT INTO conversations (id, profile_id, title, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (conversation_id, profile_id, title, model, now, now),
     )
     await db.commit()
     return ConversationSummary(

@@ -14,12 +14,14 @@ export class ConversationService {
     return `${this.config.apiUrl}/conversations`;
   }
 
-  list(): Observable<ConversationSummary[]> {
-    return this.http.get<ConversationSummary[]>(this.baseUrl);
+  list(profileId: string): Observable<ConversationSummary[]> {
+    return this.http.get<ConversationSummary[]>(this.baseUrl, {
+      params: { profile_id: profileId },
+    });
   }
 
-  create(title: string, model: string): Observable<ConversationSummary> {
-    return this.http.post<ConversationSummary>(this.baseUrl, { title, model });
+  create(title: string, model: string, profileId: string): Observable<ConversationSummary> {
+    return this.http.post<ConversationSummary>(this.baseUrl, { title, model, profile_id: profileId });
   }
 
   get(id: string): Observable<Conversation> {
