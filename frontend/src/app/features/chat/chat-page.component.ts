@@ -31,6 +31,7 @@ import { ChatCompletionResponse, ChatMessage, ChatModel, ProviderSummary } from 
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { NotificationService } from '../../core/services/notification.service';
 
 @Component({
   selector: 'app-chat-page',
@@ -42,6 +43,7 @@ import DOMPurify from 'dompurify';
 export class ChatPageComponent implements OnInit, AfterViewChecked {
   private readonly chatService = inject(ChatService);
   private readonly sanitizer = inject(DomSanitizer);
+  private readonly notifications = inject(NotificationService);
   readonly availabilityFilter = signal<'all' | 'free'>('all');
 
   @ViewChild('messagesContainer')
@@ -231,11 +233,13 @@ export class ChatPageComponent implements OnInit, AfterViewChecked {
           this.queueScrollToBottom();
         }
       },
-      error: () => {
+      error: (err: Error) => {
+        const detail = err?.message || 'Backend request failed.';
+        this.notifications.add('error', 'Chat request failed', detail);
         this.messages.update(items =>
           items.map((m, i) =>
             i === streamingIdx && !m.content
-              ? { ...m, content: 'Backend request failed.' }
+              ? { ...m, content: `⚠ ${detail}` }
               : m
           )
         );

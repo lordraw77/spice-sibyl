@@ -49,7 +49,13 @@ export class ChatService {
       })
         .then(response => {
           if (!response.ok) {
-            subscriber.error(new Error(`HTTP ${response.status}`));
+            response.json()
+              .then(body => {
+                const msg =
+                  body?.detail?.message ?? body?.detail ?? `HTTP ${response.status}`;
+                subscriber.error(new Error(typeof msg === 'string' ? msg : JSON.stringify(msg)));
+              })
+              .catch(() => subscriber.error(new Error(`HTTP ${response.status}`)));
             return;
           }
 
@@ -76,6 +82,15 @@ export class ChatService {
                   const raw = line.slice(5).trim();
                   if (raw === '[DONE]') {
                     subscriber.complete();
+                    return;
+                  }
+                  if (currentEvent === 'error') {
+                    try {
+                      const body = JSON.parse(raw);
+                      subscriber.error(new Error(body?.message || raw));
+                    } catch {
+                      subscriber.error(new Error(raw));
+                    }
                     return;
                   }
                   try {

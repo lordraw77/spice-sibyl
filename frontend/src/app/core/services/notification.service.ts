@@ -1,0 +1,25 @@
+import { Injectable, signal } from '@angular/core';
+
+export type ToastType = 'error' | 'warning' | 'info';
+
+export interface Toast {
+  id: string;
+  type: ToastType;
+  title: string;
+  detail?: string;
+}
+
+@Injectable({ providedIn: 'root' })
+export class NotificationService {
+  readonly toasts = signal<Toast[]>([]);
+
+  add(type: ToastType, title: string, detail?: string, durationMs = 6000): void {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    this.toasts.update(list => [...list, { id, type, title, detail }]);
+    window.setTimeout(() => this.dismiss(id), durationMs);
+  }
+
+  dismiss(id: string): void {
+    this.toasts.update(list => list.filter(t => t.id !== id));
+  }
+}

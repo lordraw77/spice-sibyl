@@ -24,10 +24,12 @@ class ChatService:
         provider = ProviderFactory.get_provider(request.model)
 
         async def event_generator():
-            async for chunk in provider.stream(request):
-                yield {"event": "message", "data": json.dumps(chunk)}
-            # Signal end-of-stream to SSE clients following the OpenAI convention
-            yield {"event": "done", "data": "[DONE]"}
+            try:
+                async for chunk in provider.stream(request):
+                    yield {"event": "message", "data": json.dumps(chunk)}
+                yield {"event": "done", "data": "[DONE]"}
+            except Exception as exc:
+                yield {"event": "error", "data": json.dumps({"message": str(exc)})}
 
         return EventSourceResponse(event_generator())
 

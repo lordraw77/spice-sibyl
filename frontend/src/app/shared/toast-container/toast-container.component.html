@@ -1,0 +1,16 @@
+<div class="toast-stack" aria-live="assertive" aria-atomic="false">
+  <div
+    *ngFor="let t of notifications.toasts(); trackBy: trackById"
+    class="toast"
+    [class.toast-error]="t.type === 'error'"
+    [class.toast-warning]="t.type === 'warning'"
+    [class.toast-info]="t.type === 'info'"
+  >
+    <span class="toast-icon">{{ icon(t.type) }}</span>
+    <div class="toast-body">
+      <span class="toast-title">{{ t.title }}</span>
+      <span class="toast-detail" *ngIf="t.detail">{{ t.detail }}</span>
+    </div>
+    <button class="toast-close" (click)="dismiss(t.id)" aria-label="Chiudi">✕</button>
+  </div>
+</div>

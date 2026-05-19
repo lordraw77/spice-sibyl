@@ -36,7 +36,6 @@ export class DiscoveryPageComponent {
   modelCount = signal<number | null>(null);
   yamlContent = signal('');
   models = signal<DiscoveryModel[]>([]);
-  error = signal('');
   highlightedYaml = signal<SafeHtml>('');
   /** 'idle' | 'success' | 'error' — drives the copy-button label and color */
   copyState = signal<'idle' | 'success' | 'error'>('idle');
@@ -76,7 +75,6 @@ export class DiscoveryPageComponent {
   /** Trigger the discovery API call for the active source. */
   run(): void {
     this.loading.set(true);
-    this.error.set('');
     this.yamlContent.set('');
     this.highlightedYaml.set('');
     this.models.set([]);
@@ -99,9 +97,7 @@ export class DiscoveryPageComponent {
         // Sync the highlight layer scroll after the DOM has updated
         queueMicrotask(() => this.syncEditorScroll(true));
       },
-      error: (err) => {
-        const providerName = { cloudflare: 'Cloudflare', openrouter: 'OpenRouter', gemini: 'Gemini' }[this.activeSource()];
-        this.error.set(err?.error?.detail || `Discovery failed for ${providerName}.`);
+      error: () => {
         this.loading.set(false);
       },
     });
@@ -174,7 +170,6 @@ export class DiscoveryPageComponent {
     this.modelCount.set(null);
     this.yamlContent.set('');
     this.models.set([]);
-    this.error.set('');
     this.highlightedYaml.set('');
     this.copyState.set('idle');
   }
