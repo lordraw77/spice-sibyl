@@ -7,6 +7,7 @@ Routing rules (evaluated in order):
   gemini/<model>      → GeminiProvider      (LiteLLM via Google Generative AI)
   *                   → LiteLLMProvider     (all other prefixes: ollama, groq, …)
 """
+from app.providers.cerebras_provider import CerebrasProvider
 from app.providers.cloudflare_provider import CloudflareProvider
 from app.providers.gemini_provider import GeminiProvider
 from app.providers.litellm_provider import LiteLLMProvider
@@ -21,4 +22,6 @@ def get_provider(model: str | None = None):
         return OpenRouterProvider()
     if model and model.startswith('gemini/'):
         return GeminiProvider()
+    if model and model.startswith('cerebras/'):
+        return CerebrasProvider()
     return LiteLLMProvider()

@@ -15,7 +15,7 @@ import { FormsModule } from '@angular/forms';
 import { DiscoveryService, DiscoveryModel } from '../../core/services/discovery.service';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 
-type DiscoverySource = 'cloudflare' | 'openrouter' | 'gemini' | 'groq';
+type DiscoverySource = 'cloudflare' | 'openrouter' | 'gemini' | 'groq' | 'cerebras';
 
 @Component({
   selector: 'app-discovery-page',
@@ -46,6 +46,7 @@ export class DiscoveryPageComponent {
       case 'openrouter': return '🧭 OpenRouter Model Discovery';
       case 'gemini':     return '✦ Gemini Model Discovery';
       case 'groq':       return '⚡ Groq Model Discovery';
+      case 'cerebras':   return '🧠 Cerebras Model Discovery';
     }
   });
 
@@ -59,6 +60,8 @@ export class DiscoveryPageComponent {
         return 'Recupera e visualizza tutti i modelli generateContent disponibili tramite la Google Generative AI API.';
       case 'groq':
         return 'Recupera e visualizza tutti i modelli LLM disponibili sulla piattaforma Groq e genera il blocco YAML per il catalogo.';
+      case 'cerebras':
+        return 'Recupera e visualizza tutti i modelli LLM disponibili sulla piattaforma Cerebras e genera il blocco YAML per il catalogo.';
     }
   });
 
@@ -89,7 +92,8 @@ export class DiscoveryPageComponent {
       source === 'cloudflare' ? this.discoveryService.runCloudflareDiscovery()
       : source === 'openrouter' ? this.discoveryService.runOpenRouterDiscovery()
       : source === 'gemini' ? this.discoveryService.runGeminiDiscovery()
-      : this.discoveryService.runGroqDiscovery();
+      : source === 'groq' ? this.discoveryService.runGroqDiscovery()
+      : this.discoveryService.runCerebrasDiscovery();
 
     request$.subscribe({
       next: (result) => {

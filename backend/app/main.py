@@ -5,11 +5,22 @@ Registers CORS middleware, mounts the v1 API router, and exposes a root
 health/info endpoint.  All provider-specific logic lives under app/providers/.
 """
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s %(levelname)-8s %(name)s — %(message)s',
+)
+# Keep noisy third-party loggers at WARNING
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('httpcore').setLevel(logging.WARNING)
+logging.getLogger('litellm').setLevel(logging.WARNING)
 
 # Parse comma-separated origins from settings (supports env override)
 origins = [item.strip() for item in settings.cors_origins.split(',') if item.strip()]

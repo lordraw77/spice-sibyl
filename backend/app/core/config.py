@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     fireworks_api_key: str | None = None
     mistral_api_key: str | None = None
     hf_token: str | None = None
+    cerebras_api_key: str | None = None
 
     # Optional override for the provider_models.yaml catalog path
     model_catalog_path: str | None = None

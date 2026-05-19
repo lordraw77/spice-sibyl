@@ -36,6 +36,7 @@ _PROVIDER_META: dict[str, dict] = {
     'mistral':      {'key_hint': 'MISTRAL_API_KEY',     'docs_url': 'https://console.mistral.ai'},
     'huggingface':  {'key_hint': 'HF_TOKEN',            'docs_url': 'https://huggingface.co/settings/tokens'},
     'openai':       {'key_hint': 'OPENAI_API_KEY',      'docs_url': 'https://platform.openai.com/api-keys'},
+    'cerebras':     {'key_hint': 'CEREBRAS_API_KEY',    'docs_url': 'https://cloud.cerebras.ai'},
     'mock':         {'key_hint': None,                  'docs_url': None},
 }
 
@@ -62,6 +63,7 @@ def _is_configured(provider_id: str) -> bool:
         'mistral':      settings.mistral_api_key,
         'huggingface':  settings.hf_token,
         'openai':       settings.openai_api_key,
+        'cerebras':     settings.cerebras_api_key,
     }
     val = key_map.get(provider_id)
     return bool(val and val not in _PLACEHOLDER_KEYS)

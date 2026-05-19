@@ -1,19 +1,18 @@
 """
-Legacy service-layer factory — kept for backward compatibility with ChatService.
+Service-layer provider factory — delegates to the canonical dependency factory.
 
-New code should use app.dependencies.provider_factory.get_provider(), which
-also routes cloudflare/ and openrouter/ prefixes to their dedicated adapters.
+ChatService uses this module; keeping it as a thin wrapper ensures a single
+routing table in app.dependencies.provider_factory.
 """
 
 from app.core.config import settings
-from app.providers.litellm_provider import LiteLLMProvider
+from app.dependencies.provider_factory import get_provider
 from app.providers.mock_provider import MockProvider
 
 
 class ProviderFactory:
     @staticmethod
     def get_provider(model: str):
-        """Return MockProvider when the model prefix is 'mock/' or the global override is set."""
-        if model.startswith("mock/") or settings.litellm_provider == "mock":
+        if model.startswith('mock/') or settings.litellm_provider == 'mock':
             return MockProvider()
-        return LiteLLMProvider()
+        return get_provider(model)

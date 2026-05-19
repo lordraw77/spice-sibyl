@@ -35,6 +35,15 @@
   >
     Groq
   </button>
+
+  <button
+    type="button"
+    class="submenu-item"
+    [class.active]="activeSource() === 'cerebras'"
+    (click)="setSource('cerebras')"
+  >
+    Cerebras
+  </button>
 </div>
 
   <div class="discovery-header">

@@ -11,11 +11,13 @@ Route map:
   POST /v1/openrouter-discovery/run   — fetch OpenRouter model catalog
   POST /v1/gemini-discovery/run       — fetch Google Gemini model catalog
   POST /v1/groq-discovery/run         — fetch Groq model catalog
+  POST /v1/cerebras-discovery/run     — fetch Cerebras model catalog
 """
 
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    cerebras_discovery,
     chat,
     cloudflare_discovery,
     gemini_discovery,
@@ -36,3 +38,4 @@ api_router.include_router(cloudflare_discovery.router, prefix="/cloudflare-disco
 api_router.include_router(openrouter_discovery.router, prefix="/openrouter-discovery", tags=["openrouter-discovery"])
 api_router.include_router(gemini_discovery.router, prefix="/gemini-discovery", tags=["gemini-discovery"])
 api_router.include_router(groq_discovery.router, prefix="/groq-discovery", tags=["groq-discovery"])
+api_router.include_router(cerebras_discovery.router, prefix="/cerebras-discovery", tags=["cerebras-discovery"])

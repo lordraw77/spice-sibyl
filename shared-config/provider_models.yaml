@@ -78,6 +78,31 @@ providers:
         default: false
         free: false
         capabilities: [chat, tools, json]
+
+  cerebras:
+    enabled: true
+    configured: false
+    models:
+      - id: cerebras/gpt-oss-120b
+        label: Cerebras · GPT OSS 120b
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: cerebras/llama3.1-8b
+        label: Cerebras · Llama3 1 8b
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: cerebras/qwen-3-235b-a22b-instruct-2507
+        label: Cerebras · Qwen 3 235b A22b Instruct 2507
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
+      - id: cerebras/zai-glm-4.7
+        label: Cerebras · ZAI GLM 4 7
+        default: false
+        free: false
+        capabilities: [chat, tools, json]
         
   openrouter:
     enabled: true

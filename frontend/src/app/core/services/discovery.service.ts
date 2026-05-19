@@ -63,4 +63,12 @@ export class DiscoveryService {
       {}
     );
   }
+
+  /** Trigger a Cerebras model catalog fetch on the backend. */
+  runCerebrasDiscovery(): Observable<DiscoveryResult> {
+    return this.http.post<DiscoveryResult>(
+      `${this.config.apiUrl}/cerebras-discovery/run`,
+      {}
+    );
+  }
 }
