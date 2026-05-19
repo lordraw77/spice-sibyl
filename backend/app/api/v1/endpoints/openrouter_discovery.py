@@ -1,7 +1,17 @@
-import json
+"""
+POST /v1/openrouter-discovery/run — fetch the OpenRouter model catalog.
+
+Queries the OpenRouter /models API, filters to text-in/text-out models,
+and returns:
+  - a ready-to-paste YAML block for provider_models.yaml
+  - a structured model list with capabilities and pricing info
+
+Requires OPENROUTER_API_KEY in the environment.
+"""
+
 import logging
-import sys
-from urllib.request import Request, urlopen
+import json
+import httpx
 
 from fastapi import APIRouter, HTTPException
 
@@ -14,10 +24,12 @@ URL = "https://openrouter.ai/api/v1/models"
 
 
 def pretty_label(name: str) -> str:
-    return f"OpenRouter · {name.replace(":"," · ")}"
+    """Convert 'provider/model-name' to 'OpenRouter · Provider · Model-name'."""
+    return f"OpenRouter · {name.replace(':', ' · ')}"
 
 
 def is_free(model: dict) -> bool:
+    """Return True when both prompt and completion prices are zero."""
     pricing = model.get("pricing") or {}
     try:
         prompt_price = float(pricing.get("prompt", 0) or 0)
@@ -28,6 +40,11 @@ def is_free(model: dict) -> bool:
 
 
 def capabilities_from_model(model: dict) -> list[str]:
+    """
+    Derive a capability list from the model's architecture and supported_parameters.
+
+    Recognized capabilities: chat, vision, audio, tools, json, reasoning, image_generation.
+    """
     arch = model.get("architecture") or {}
     params = model.get("supported_parameters") or []
     input_modalities = arch.get("input_modalities") or []
@@ -50,11 +67,13 @@ def capabilities_from_model(model: dict) -> list[str]:
     if "image" in output_modalities:
         caps.append("image_generation")
 
+    # Deduplicate while preserving insertion order
     seen = set()
     return [c for c in caps if not (c in seen or seen.add(c))]
 
 
 def build_yaml_block(chat_models: list[dict]) -> str:
+    """Render a YAML snippet ready to paste into the openrouter section of provider_models.yaml."""
     lines = [
         "openrouter:",
         "  enabled: true",
@@ -85,28 +104,30 @@ def build_yaml_block(chat_models: list[dict]) -> str:
 
 @router.post("/run")
 async def run_openrouter_discovery():
+    """Fetch all chat models from the OpenRouter catalog and generate the YAML config block."""
     token = settings.openrouter_api_key
 
     if not token:
         raise HTTPException(
             status_code=400,
-            detail="OPENROUTER_API_KEY non configurata nel .env del backend.",
+            detail="OPENROUTER_API_KEY is not configured in the backend .env.",
         )
 
     try:
-        req = Request(
-            URL,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-                "User-Agent": "spice-sibyl-openrouter-discovery/1.0",
-            },
-        )
-        with urlopen(req, timeout=20) as r:
-            data = json.load(r)
+        with httpx.Client(timeout=20.0) as client:
+            resp = client.get(
+                URL,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "spice-sibyl-openrouter-discovery/1.0",
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
     except Exception as exc:
         logger.exception("OpenRouter API call failed")
-        raise HTTPException(status_code=502, detail=f"Errore chiamata OpenRouter API: {exc}") from exc
+        raise HTTPException(status_code=502, detail=f"OpenRouter API error: {exc}") from exc
 
     models = data.get("data") or []
     chat_models = [

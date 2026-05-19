@@ -1,3 +1,16 @@
+"""
+Model catalog — reads and merges the provider_models.yaml static configuration.
+
+Catalog lookup order:
+  1. MODEL_CATALOG_PATH env var (explicit override)
+  2. /config/provider_models.yaml (Docker volume mount)
+  3. provider_models.yaml next to this file (bundled fallback)
+
+The merge_provider_summary function combines static catalog data with the
+dynamic model list returned by providers (e.g. live Ollama models) so the
+frontend sees a single, consistent provider summary.
+"""
+
 from pathlib import Path
 from typing import Any
 import os
@@ -8,6 +21,7 @@ FALLBACK_CATALOG_PATH = Path(__file__).with_name('provider_models.yaml')
 
 
 def get_catalog_path() -> Path:
+    """Resolve the active catalog path following the three-step lookup order."""
     override = os.getenv('MODEL_CATALOG_PATH')
     if override:
         return Path(override)
@@ -17,6 +31,7 @@ def get_catalog_path() -> Path:
 
 
 def load_model_catalog() -> dict[str, Any]:
+    """Parse and return the YAML catalog as a dict."""
     path = get_catalog_path()
     with path.open('r', encoding='utf-8') as fh:
         data = yaml.safe_load(fh) or {}
@@ -24,6 +39,7 @@ def load_model_catalog() -> dict[str, Any]:
 
 
 def provider_summary_from_catalog() -> list[dict[str, Any]]:
+    """Build a per-provider summary from the static YAML catalog."""
     catalog = load_model_catalog()
     providers = catalog.get('providers', {})
     output: list[dict[str, Any]] = []
@@ -36,6 +52,7 @@ def provider_summary_from_catalog() -> list[dict[str, Any]]:
                 'enabled': provider.get('enabled', True),
                 'configured': provider.get('configured', False),
                 'model_count': len(models),
+                # Aggregate all unique capabilities across models for this provider
                 'capabilities': sorted({cap for model in models for cap in model.get('capabilities', [])}),
             }
         )
@@ -43,12 +60,14 @@ def provider_summary_from_catalog() -> list[dict[str, Any]]:
 
 
 def iter_configured_models() -> list[dict[str, Any]]:
+    """Yield normalized model dicts for all enabled providers in the catalog."""
     catalog = load_model_catalog()
     providers = catalog.get('providers', {})
     output: list[dict[str, Any]] = []
     for provider_key, provider in providers.items():
         if not provider.get('enabled', True):
             continue
+        # Map provider keys to canonical owner names for the 'owned_by' field
         owner = 'google' if provider_key == 'gemini' else provider_key
         if provider_key == 'mock':
             owner = 'spice-sibyl'
@@ -71,6 +90,7 @@ def iter_configured_models() -> list[dict[str, Any]]:
 
 
 def get_model_metadata(model_id: str) -> dict[str, Any]:
+    """Look up catalog metadata for a model by ID; return safe defaults if not found."""
     for item in iter_configured_models():
         if item['id'] == model_id:
             return item
@@ -85,6 +105,14 @@ def get_model_metadata(model_id: str) -> dict[str, Any]:
 
 
 def merge_provider_summary(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Merge the static catalog provider summary with a dynamic runtime model list.
+
+    For each provider the resulting entry carries:
+      - label and enabled flag from the catalog (authoritative)
+      - model_count and configured from the dynamic list (live data)
+      - capabilities as the union of static + dynamic sets
+    """
     catalog_summary = {item['id']: item for item in provider_summary_from_catalog()}
     dynamic_summary: dict[str, dict[str, Any]] = {}
 

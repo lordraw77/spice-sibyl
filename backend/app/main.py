@@ -1,9 +1,17 @@
+"""
+SpiceSibyl API — FastAPI application entry point.
+
+Registers CORS middleware, mounts the v1 API router, and exposes a root
+health/info endpoint.  All provider-specific logic lives under app/providers/.
+"""
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import settings
 
+# Parse comma-separated origins from settings (supports env override)
 origins = [item.strip() for item in settings.cors_origins.split(',') if item.strip()]
 
 app = FastAPI(
@@ -25,6 +33,7 @@ app.include_router(api_router, prefix='/api')
 
 @app.get('/')
 async def root():
+    """Return basic service metadata — useful for quick health checks."""
     return {
         'name': settings.app_name,
         'environment': settings.app_env,

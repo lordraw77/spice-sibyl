@@ -1,3 +1,21 @@
+"""
+LiteLLM provider adapter — routes requests to any LiteLLM-supported backend.
+
+Supported model prefixes and their mapped providers:
+  ollama/       — local Ollama instance (api_base from settings)
+  groq/         — Groq Cloud
+  gemini/       — Google Gemini
+  together_ai/  — Together AI
+  fireworks_ai/ — Fireworks AI
+  mistral/      — Mistral AI
+  huggingface/  — HuggingFace Inference API
+  openrouter/   — OpenRouter (fallback via LiteLLM; prefer OpenRouterProvider)
+  *             — OpenAI (default)
+
+Cloudflare env vars are forwarded to the process environment so LiteLLM can
+pick them up when a cloudflare/ model is used through this adapter.
+"""
+
 import os
 import logging
 import time
@@ -12,6 +30,7 @@ from app.schemas.chat import ChatCompletionRequest
 
 logger = logging.getLogger(__name__)
 
+# LiteLLM reads Cloudflare credentials from the environment, not from kwargs
 if settings.cloudflare_account_id:
     os.environ.setdefault('CLOUDFLARE_ACCOUNT_ID', settings.cloudflare_account_id)
 if settings.cloudflare_api_key:
@@ -20,6 +39,7 @@ if settings.cloudflare_api_key:
 
 class LiteLLMProvider(BaseProvider):
     def _resolve_api_key(self, model: str) -> str | None:
+        """Return the API key for the provider inferred from the model prefix."""
         if model.startswith('groq/'):
             return settings.groq_api_key
         if model.startswith('openrouter/'):
@@ -35,13 +55,16 @@ class LiteLLMProvider(BaseProvider):
         if model.startswith('huggingface/'):
             return settings.hf_token
         if model.startswith('ollama/'):
+            # Ollama does not require an API key
             return None
         return settings.openai_api_key
 
     def _serialize_messages(self, messages) -> list[dict]:
+        """Convert Pydantic message objects to plain dicts for LiteLLM."""
         return [{'role': m.role, 'content': m.content} for m in messages]
 
     def _build_call_kwargs(self, request: ChatCompletionRequest) -> dict:
+        """Assemble the keyword arguments dict passed to litellm.acompletion."""
         model = request.model
 
         kwargs: dict = {
@@ -63,6 +86,7 @@ class LiteLLMProvider(BaseProvider):
         return kwargs
 
     async def complete(self, request: ChatCompletionRequest):
+        """Execute a non-streaming completion and attach gateway metrics to the payload."""
         started_at = time.perf_counter()
         kwargs = self._build_call_kwargs(request)
 
@@ -85,6 +109,7 @@ class LiteLLMProvider(BaseProvider):
             else None
         )
 
+        # LiteLLM exposes cost data in _hidden_params, not in the standard payload
         hidden = getattr(response, '_hidden_params', {}) or {}
 
         payload['metrics'] = {
@@ -97,6 +122,12 @@ class LiteLLMProvider(BaseProvider):
         return payload
 
     async def stream(self, request: ChatCompletionRequest):
+        """
+        Yield SSE-compatible chunks followed by a final 'chat.completion.meta' object.
+
+        The meta object carries aggregated telemetry (latency, token counts, cost)
+        so the frontend can display performance stats after the stream ends.
+        """
         started_at = time.perf_counter()
         first_token_ms = None
         final_usage: dict = {}
@@ -105,6 +136,7 @@ class LiteLLMProvider(BaseProvider):
 
         kwargs = self._build_call_kwargs(request)
         kwargs['stream'] = True
+        # Request usage stats in the final chunk so we can compute tokens/s
         kwargs['stream_options'] = {'include_usage': True}
 
         response = await acompletion(**kwargs)
@@ -118,6 +150,7 @@ class LiteLLMProvider(BaseProvider):
                 if content:
                     final_content_parts.append(content)
                     if first_token_ms is None:
+                        # Record time-to-first-token on the first non-empty delta
                         first_token_ms = int((time.perf_counter() - started_at) * 1000)
                 if choices[0].get('finish_reason'):
                     final_finish_reason = choices[0]['finish_reason']
@@ -134,6 +167,7 @@ class LiteLLMProvider(BaseProvider):
         )
         model_meta = get_model_metadata(request.model)
 
+        # Emit a non-standard 'chat.completion.meta' event as the final chunk
         yield {
             'id': f'meta-{int(time.time())}',
             'object': 'chat.completion.meta',
@@ -172,6 +206,13 @@ class LiteLLMProvider(BaseProvider):
         }
 
     async def list_models(self):
+        """
+        Return a merged model list from Ollama (live) and provider_models.yaml (static).
+
+        Ollama is queried via its /api/tags HTTP endpoint; failures are swallowed so the
+        rest of the catalog is still returned.  Duplicate IDs are deduplicated while
+        preserving insertion order.
+        """
         models = []
         url = f"{settings.ollama_api_base.rstrip('/')}/api/tags"
         logger.warning('Fetching Ollama models from %s', url)
@@ -208,8 +249,10 @@ class LiteLLMProvider(BaseProvider):
         except Exception as exc:
             logger.exception('Unable to load Ollama models: %s', exc)
 
+        # Append static models from the YAML catalog
         models.extend(iter_configured_models())
 
+        # Deduplicate by model ID, preserving the first occurrence
         seen: set = set()
         unique_models = []
         for m in models:

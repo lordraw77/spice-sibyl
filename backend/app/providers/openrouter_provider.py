@@ -1,3 +1,14 @@
+"""
+OpenRouter provider adapter — routes chat completions through OpenRouter via LiteLLM.
+
+The model string must carry the 'openrouter/' prefix so the dependency factory
+directs the request here.  The special 'openrouter/openrouter/free' virtual model
+lets callers reach OpenRouter's free tier without specifying a model explicitly.
+
+list_models() returns an empty list because model discovery for OpenRouter is
+handled by the dedicated openrouter_discovery endpoint.
+"""
+
 import time
 
 from litellm import acompletion
@@ -9,8 +20,9 @@ from app.schemas.chat import ChatCompletionRequest
 
 class OpenRouterProvider(BaseProvider):
     def _build_call_kwargs(self, request: ChatCompletionRequest) -> dict:
+        """Build LiteLLM kwargs, injecting the OpenRouter API key."""
         if not settings.openrouter_api_key:
-            raise ValueError('OPENROUTER_API_KEY non configurata nel backend.')
+            raise ValueError('OPENROUTER_API_KEY is not configured in the backend.')
 
         model = request.model
 
@@ -23,9 +35,11 @@ class OpenRouterProvider(BaseProvider):
         }
 
     def _serialize_messages(self, messages) -> list[dict]:
+        """Convert Pydantic message objects to plain dicts for LiteLLM."""
         return [{'role': m.role, 'content': m.content} for m in messages]
 
     async def complete(self, request: ChatCompletionRequest):
+        """Execute a non-streaming completion and attach gateway metrics."""
         started_at = time.perf_counter()
         response = await acompletion(**self._build_call_kwargs(request))
         payload = response.model_dump()
@@ -50,11 +64,13 @@ class OpenRouterProvider(BaseProvider):
         return payload
 
     async def stream(self, request: ChatCompletionRequest):
+        """Yield raw LiteLLM chunk dicts for SSE streaming."""
         kwargs = self._build_call_kwargs(request)
         kwargs['stream'] = True
         response = await acompletion(**kwargs)
         async for chunk in response:
             yield chunk.model_dump()
-            
+
     async def list_models(self):
+        """Model discovery is handled by the openrouter_discovery endpoint."""
         return []

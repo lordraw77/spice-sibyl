@@ -1,3 +1,14 @@
+"""
+v1 API router — aggregates all endpoint sub-routers under the /v1 prefix.
+
+Route map:
+  GET  /v1/health                     — liveness probe
+  GET  /v1/models                     — list available models
+  POST /v1/chat/completions           — chat completion (non-streaming)
+  POST /v1/cloudflare-discovery/run   — fetch Cloudflare Workers AI model catalog
+  POST /v1/openrouter-discovery/run   — fetch OpenRouter model catalog
+"""
+
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (

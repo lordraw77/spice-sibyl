@@ -1,3 +1,12 @@
+"""
+GET /v1/models — return all available models and a per-provider summary.
+
+The response merges:
+  - dynamic models discovered at runtime (e.g. Ollama /api/tags)
+  - static models declared in provider_models.yaml
+  - a deduplicated provider summary with aggregate capability lists
+"""
+
 import logging
 
 from fastapi import APIRouter, HTTPException
@@ -12,6 +21,7 @@ logger = logging.getLogger(__name__)
 @router.get('')
 @router.get('/')
 async def list_models():
+    """Return the full model list and a provider-level summary."""
     try:
         provider = get_provider()
         data = await provider.list_models()

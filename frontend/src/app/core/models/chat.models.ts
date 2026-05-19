@@ -1,9 +1,21 @@
+/**
+ * Core domain types for the SpiceSibyl chat API.
+ *
+ * These interfaces mirror the backend Pydantic schemas so that HTTP responses
+ * deserialize with full type safety.  ChatMessage is intentionally extended with
+ * telemetry fields (latency, token counts, cost) that the backend attaches to
+ * every assistant message.
+ */
+
+/** A single conversation turn.  Extra fields are populated only on assistant replies. */
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
   model?: string;
   provider?: string;
+  /** Total round-trip latency in milliseconds */
   latency_ms?: number;
+  /** Time to first token in milliseconds */
   first_token_ms?: number;
   prompt_tokens?: number;
   completion_tokens?: number;
@@ -11,11 +23,13 @@ export interface ChatMessage {
   tokens_per_second?: number;
   finish_reason?: string;
   estimated_cost?: number;
+  /** Unix timestamp (seconds) when the message was created */
   created_at?: number;
   capabilities?: string[];
   free?: boolean;
 }
 
+/** Body sent to POST /api/v1/chat/completions */
 export interface ChatCompletionRequest {
   model: string;
   messages: ChatMessage[];
@@ -23,12 +37,14 @@ export interface ChatCompletionRequest {
   temperature?: number;
 }
 
+/** Token consumption reported by the provider */
 export interface ChatUsage {
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
 }
 
+/** Gateway-level performance metrics returned alongside every completion */
 export interface ChatMetrics {
   latency_ms?: number;
   first_token_ms?: number;
@@ -37,9 +53,11 @@ export interface ChatMetrics {
   estimated_cost?: number;
 }
 
+/** Full response envelope from POST /api/v1/chat/completions */
 export interface ChatCompletionResponse {
   id: string;
   object: string;
+  /** Unix timestamp (seconds) */
   created: number;
   model: string;
   choices: Array<{
@@ -51,6 +69,7 @@ export interface ChatCompletionResponse {
   metrics?: ChatMetrics;
 }
 
+/** Model entry returned by GET /api/v1/models */
 export interface ChatModel {
   id: string;
   object: string;
@@ -63,6 +82,7 @@ export interface ChatModel {
   capabilities?: string[];
 }
 
+/** Per-provider summary included in the GET /api/v1/models response */
 export interface ProviderSummary {
   id: string;
   label: string;

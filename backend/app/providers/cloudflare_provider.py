@@ -1,3 +1,15 @@
+"""
+Cloudflare Workers AI provider adapter.
+
+Calls the Cloudflare REST API directly (no LiteLLM) because Workers AI uses a
+non-standard response envelope.  The _extract_text helper handles the several
+response shapes emitted by different model families (chat, completion, legacy).
+
+Streaming is emulated: the full response is fetched, then yielded as two chunks —
+a content delta and a terminal 'chat.completion.meta' object — so the frontend
+SSE handler sees the same event sequence as with real streaming providers.
+"""
+
 import json
 import time
 from typing import AsyncGenerator
@@ -12,20 +24,24 @@ from app.schemas.chat import ChatCompletionRequest
 
 class CloudflareProvider(BaseProvider):
     def _require_config(self):
+        """Raise if mandatory Cloudflare credentials are absent."""
         if not settings.cloudflare_account_id:
-            raise ValueError('CLOUDFLARE_ACCOUNT_ID non configurato nel backend.')
+            raise ValueError('CLOUDFLARE_ACCOUNT_ID is not configured in the backend.')
         if not settings.cloudflare_api_key:
-            raise ValueError('CLOUDFLARE_API_KEY non configurato nel backend.')
+            raise ValueError('CLOUDFLARE_API_KEY is not configured in the backend.')
 
     def _extract_model_name(self, model: str) -> str:
+        """Strip the 'cloudflare/' prefix to get the raw Workers AI model name."""
         if model.startswith('cloudflare/'):
             return model.split('/', 1)[1]
         return model
 
     def _serialize_messages(self, messages) -> list[dict]:
+        """Convert Pydantic message objects to plain dicts for the HTTP body."""
         return [{'role': m.role, 'content': m.content} for m in messages]
 
     def _build_url(self, model: str) -> str:
+        """Build the Workers AI run endpoint URL for the given model."""
         model_name = self._extract_model_name(model)
         return (
             f'https://api.cloudflare.com/client/v4/accounts/'
@@ -33,6 +49,7 @@ class CloudflareProvider(BaseProvider):
         )
 
     def _build_headers(self, stream: bool = False) -> dict[str, str]:
+        """Return the HTTP headers required by the Cloudflare API."""
         headers = {
             'Authorization': f'Bearer {settings.cloudflare_api_key}',
             'Content-Type': 'application/json',
@@ -42,9 +59,17 @@ class CloudflareProvider(BaseProvider):
         return headers
 
     def _extract_text(self, payload: dict) -> str:
+        """
+        Extract the assistant text from a Cloudflare response payload.
+
+        Workers AI models return text under different keys depending on the model
+        family.  This method tries each known location in preference order and
+        raises ValueError if none match.
+        """
         result = payload.get('result') or {}
 
         if isinstance(result, dict):
+            # OpenAI-compatible response shape (newer chat models)
             choices = result.get('choices')
             if isinstance(choices, list) and choices:
                 first = choices[0]
@@ -57,6 +82,7 @@ class CloudflareProvider(BaseProvider):
                     if isinstance(delta, dict) and isinstance(delta.get('content'), str):
                         return delta['content']
 
+            # Legacy / non-chat model response shapes
             if isinstance(result.get('response'), str):
                 return result['response']
             if isinstance(result.get('text'), str):
@@ -81,7 +107,7 @@ class CloudflareProvider(BaseProvider):
             return result
 
         raise ValueError(
-            f'Risposta Cloudflare non riconosciuta: {json.dumps(payload)[:1200]}'
+            f'Unrecognized Cloudflare response shape: {json.dumps(payload)[:1200]}'
         )
 
     async def complete(self, request: ChatCompletionRequest):

@@ -1,3 +1,18 @@
+/**
+ * ChatPageComponent — main chat interface.
+ *
+ * Responsibilities:
+ *  - Load the model list from the backend and populate the sidebar selectors
+ *  - Send user prompts via ChatService and render assistant replies as Markdown
+ *  - Display per-message telemetry (latency, token counts, cost)
+ *  - Manage auto-scroll: keeps the view pinned to the bottom unless the user
+ *    scrolls up, at which point auto-scroll is paused until they return to
+ *    within 80 px of the bottom
+ *
+ * XSS safety: all assistant HTML is parsed by marked then sanitized by
+ * DOMPurify before being trusted via Angular's DomSanitizer.  User messages
+ * are HTML-escaped and newlines are converted to <br> tags.
+ */
 import {
   AfterViewChecked,
   Component,
@@ -35,7 +50,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked {
   readonly messages = signal<ChatMessage[]>([
     {
       role: 'assistant',
-      content: 'Benvenuto in SpiceSibyl. Seleziona un modello e inizia a chattare.',
+      content: 'Welcome to SpiceSibyl. Select a model and start chatting.',
       model: 'SpiceSibyl',
       created_at: Math.floor(Date.now() / 1000),
     },
@@ -45,6 +60,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked {
   readonly capabilityFilter = signal<string>('all');
   readonly selectedProviders = signal<string[]>([]);
 
+  /** Sorted list of all capabilities present across loaded models, prefixed with 'all'. */
   readonly availableCapabilities = computed(() => {
     const caps = new Set<string>();
     for (const model of this.models()) {
@@ -55,46 +71,52 @@ export class ChatPageComponent implements OnInit, AfterViewChecked {
     return ['all', ...Array.from(caps).sort()];
   });
 
-readonly filteredModels = computed(() => {
-  const capability = this.capabilityFilter();
-  const availability = this.availabilityFilter();
-  const enabledProviders = new Set(this.selectedProviders());
+  /** Models visible in the selector after applying provider, capability, and availability filters. */
+  readonly filteredModels = computed(() => {
+    const capability = this.capabilityFilter();
+    const availability = this.availabilityFilter();
+    const enabledProviders = new Set(this.selectedProviders());
 
-  return this.models().filter((model) => {
-    const providerOk =
-      enabledProviders.size === 0 || enabledProviders.has(model.provider || '');
+    return this.models().filter((model) => {
+      const providerOk =
+        enabledProviders.size === 0 || enabledProviders.has(model.provider || '');
 
-    const capabilityOk =
-      capability === 'all' || (model.capabilities || []).includes(capability);
+      const capabilityOk =
+        capability === 'all' || (model.capabilities || []).includes(capability);
 
-    const availabilityOk =
-      availability === 'all' || !!model.free;
+      const availabilityOk =
+        availability === 'all' || !!model.free;
 
-    return providerOk && capabilityOk && availabilityOk;
+      return providerOk && capabilityOk && availabilityOk;
+    });
   });
-});
 
   prompt = '';
   model = 'ollama/qwen2.5:7b-instruct';
   loading = false;
+  /** When true, the view scrolls to the bottom on the next AfterViewChecked cycle. */
   private shouldAutoScroll = true;
+
   setAvailabilityFilter(value: 'all' | 'free'): void {
     this.availabilityFilter.set(value);
     this.ensureValidSelectedModel();
   }
   ngOnInit(): void {
+    // Enable GitHub-Flavoured Markdown with soft line breaks
     marked.setOptions({ breaks: true, gfm: true });
 
     this.chatService.models().subscribe({
       next: (response) => {
         this.models.set(response.data);
         this.providers.set(response.providers || []);
+        // Pre-select all enabled providers so the model list is fully visible on load
         this.selectedProviders.set(
           (response.providers || [])
             .filter((provider) => provider.enabled)
             .map((provider) => provider.id)
         );
 
+        // Keep the current model if it exists; otherwise fall back to the default / first
         const preferred = response.data.find((item) => item.id === this.model);
         if (!preferred && response.data.length > 0) {
           this.model = response.data.find((item) => item.default)?.id || response.data[0].id;
@@ -108,7 +130,7 @@ readonly filteredModels = computed(() => {
           ...items,
           {
             role: 'assistant',
-            content: 'Impossibile caricare i modelli dal backend.',
+            content: 'Could not load models from the backend.',
             model: 'system',
             created_at: Math.floor(Date.now() / 1000),
           },
@@ -157,7 +179,7 @@ readonly filteredModels = computed(() => {
           ...items,
           {
             role: 'assistant',
-            content: 'Errore nella chiamata al backend.',
+            content: 'Backend request failed.',
             model: this.model,
             created_at: Math.floor(Date.now() / 1000),
           },
@@ -172,17 +194,26 @@ readonly filteredModels = computed(() => {
     this.prompt = '';
   }
 
+  /** Return the display label shown in the message header for a given turn. */
   roleLabel(message: ChatMessage): string {
     if (message.role === 'assistant') {
+      // Strip the provider prefix (e.g. 'ollama/qwen2.5:7b' → 'QWEN2.5:7B')
       return (message.model || 'assistant').replace(/^.*\//, '').toUpperCase();
     }
     return message.role;
   }
 
+  /** Return the ChatModel metadata for the currently selected model, if available. */
   selectedModelMeta(): ChatModel | undefined {
     return this.models().find((item) => item.id === this.model);
   }
 
+  /**
+   * Return sanitized HTML for rendering a message bubble.
+   *
+   * Assistant messages: Markdown → HTML via marked, then DOMPurify sanitization.
+   * User messages: plain-text HTML escape with newline-to-<br> conversion.
+   */
   renderedContent(message: ChatMessage): SafeHtml {
     if (message.role !== 'assistant') {
       return this.sanitizer.bypassSecurityTrustHtml(this.escapeHtml(message.content).replace(/\n/g, '<br>'));
@@ -214,6 +245,7 @@ readonly filteredModels = computed(() => {
     return this.selectedProviders().includes(providerId);
   }
 
+  /** Pause auto-scroll when the user scrolls more than 80 px above the bottom. */
   onMessagesScroll(): void {
     const container = this.messagesContainer?.nativeElement;
     if (!container) {
@@ -224,6 +256,7 @@ readonly filteredModels = computed(() => {
     this.shouldAutoScroll = distanceFromBottom <= threshold;
   }
 
+  /** If the currently selected model is no longer in filteredModels, pick the first available one. */
   private ensureValidSelectedModel(): void {
     const filtered = this.filteredModels();
     if (!filtered.length) {
@@ -250,6 +283,7 @@ readonly filteredModels = computed(() => {
     container.scrollTop = container.scrollHeight;
   }
 
+  /** Map a raw API response to a ChatMessage with telemetry fields populated. */
   private mapAssistantMessage(response: ChatCompletionResponse): ChatMessage | null {
     const choice = response?.choices?.[0];
     const message = choice?.message;
@@ -278,6 +312,7 @@ readonly filteredModels = computed(() => {
     };
   }
 
+  /** Escape special HTML characters to prevent XSS in user messages. */
   private escapeHtml(value: string): string {
     return value
       .replace(/&/g, '&amp;')
