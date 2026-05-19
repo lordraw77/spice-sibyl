@@ -22,7 +22,24 @@ async def lifespan(application: FastAPI):
     await init_db()
     async for db in get_db():
         await vault_repository.load_all(db)
+
+    # Start Telegram bot if a token is configured
+    tg_app = None
+    if settings.telegram_bot_token:
+        from app.telegram.bot import build_application
+        tg_app = build_application()
+        await tg_app.initialize()
+        await tg_app.start()
+        await tg_app.updater.start_polling(drop_pending_updates=True)
+        logging.getLogger(__name__).info("Telegram bot started (polling)")
+
     yield
+
+    if tg_app:
+        await tg_app.updater.stop()
+        await tg_app.stop()
+        await tg_app.shutdown()
+        logging.getLogger(__name__).info("Telegram bot stopped")
 
 
 logging.basicConfig(

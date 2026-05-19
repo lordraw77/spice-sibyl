@@ -1,0 +1,25 @@
+services:
+  backend:
+    image: lordraw77/spice-sibyl-backend:latest
+    container_name: spice-sibyl-backend
+    env_file: ./backend/.env
+    ports:
+      - "8000:8000"
+    volumes:
+      - spice-sibyl-db:/data
+      - ./shared-config:/config:ro
+    restart: unless-stopped
+
+  frontend:
+    image: lordraw77/spice-sibyl-frontend:latest
+    container_name: spice-sibyl-frontend
+    environment:
+      API_URL: ${FRONTEND_API_URL:-http://localhost:8000/api/v1}
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  spice-sibyl-db:

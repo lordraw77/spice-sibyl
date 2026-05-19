@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     # SQLite database path for conversation persistence
     db_path: str = "spice_sibyl.db"
 
+    # Telegram bot — leave empty to disable
+    telegram_bot_token: str | None = None
+    # Comma-separated Telegram user IDs allowed to use the bot (empty = everyone)
+    telegram_allowed_users: str | None = None
+    # Default model used by the Telegram bot (falls back to default_model)
+    telegram_default_model: str | None = None
+
     # Master secret used to derive the Fernet encryption key for vaulted API keys.
     # Override with VAULT_SECRET_KEY env var in production.
     vault_secret_key: str = "change-me-in-production"

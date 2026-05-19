@@ -22,7 +22,11 @@
 - **API key vaulting** — Fernet (AES-128-CBC + HMAC-SHA256) encryption; keys stored in SQLite; in-memory cache; vault→env fallback in all providers; PUT + DELETE /providers/{id}/key
 - **Profile system** — named local profiles (no passwords); profile UUID stored in localStorage; per-profile conversation history; profile selector modal on first visit; profile switcher in sidebar
 
-## Phase 4
+## Phase 4 ✓
+- **Telegram bot** — polling-based; per-chat conversation history; streaming replies with live edit; `/start`, `/new`, `/model`, `/models`; optional user allowlist (`TELEGRAM_ALLOWED_USERS`)
+
+## Phase 5
+- **Usage telemetry** — per-message token counts + latency; provider-reported cost estimates;
 - Usage stats / cost tracking dashboard
 - Plugin / tool calling
 - Multi-modal support (image input)
