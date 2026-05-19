@@ -10,6 +10,7 @@ Route map:
   POST /v1/cloudflare-discovery/run   — fetch Cloudflare Workers AI model catalog
   POST /v1/openrouter-discovery/run   — fetch OpenRouter model catalog
   POST /v1/gemini-discovery/run       — fetch Google Gemini model catalog
+  POST /v1/groq-discovery/run         — fetch Groq model catalog
 """
 
 from fastapi import APIRouter
@@ -18,6 +19,7 @@ from app.api.v1.endpoints import (
     chat,
     cloudflare_discovery,
     gemini_discovery,
+    groq_discovery,
     health,
     models,
     openrouter_discovery,
@@ -33,3 +35,4 @@ api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(cloudflare_discovery.router, prefix="/cloudflare-discovery", tags=["cloudflare-discovery"])
 api_router.include_router(openrouter_discovery.router, prefix="/openrouter-discovery", tags=["openrouter-discovery"])
 api_router.include_router(gemini_discovery.router, prefix="/gemini-discovery", tags=["gemini-discovery"])
+api_router.include_router(groq_discovery.router, prefix="/groq-discovery", tags=["groq-discovery"])

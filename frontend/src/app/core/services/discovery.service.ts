@@ -55,4 +55,12 @@ export class DiscoveryService {
       {}
     );
   }
+
+  /** Trigger a Groq model catalog fetch on the backend. */
+  runGroqDiscovery(): Observable<DiscoveryResult> {
+    return this.http.post<DiscoveryResult>(
+      `${this.config.apiUrl}/groq-discovery/run`,
+      {}
+    );
+  }
 }

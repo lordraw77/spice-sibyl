@@ -26,6 +26,15 @@
   >
     Gemini
   </button>
+
+  <button
+    type="button"
+    class="submenu-item"
+    [class.active]="activeSource() === 'groq'"
+    (click)="setSource('groq')"
+  >
+    Groq
+  </button>
 </div>
 
   <div class="discovery-header">
