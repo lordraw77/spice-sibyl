@@ -13,6 +13,12 @@ CREATE TABLE IF NOT EXISTS conversations (
     updated_at  INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS api_keys (
+    provider_id   TEXT    PRIMARY KEY,
+    encrypted_key TEXT    NOT NULL,
+    updated_at    INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS messages (
     id                  TEXT    PRIMARY KEY,
     conversation_id     TEXT    NOT NULL,

@@ -14,11 +14,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import settings
-from app.db.database import init_db
+from app.db.database import get_db, init_db
+from app.db import vault_repository
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     await init_db()
+    async for db in get_db():
+        await vault_repository.load_all(db)
     yield
 
 

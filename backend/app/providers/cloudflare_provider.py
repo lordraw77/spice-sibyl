@@ -20,38 +20,39 @@ from app.core.config import settings
 from app.data.model_catalog import get_model_metadata
 from app.providers.base import BaseProvider
 from app.schemas.chat import ChatCompletionRequest
+from app.services import key_resolver
 
 
 class CloudflareProvider(BaseProvider):
-    def _require_config(self):
-        """Raise if mandatory Cloudflare credentials are absent."""
+    def _require_config(self) -> tuple[str, str]:
+        """Return (account_id, api_key), raising if either is absent."""
         if not settings.cloudflare_account_id:
             raise ValueError('CLOUDFLARE_ACCOUNT_ID is not configured in the backend.')
-        if not settings.cloudflare_api_key:
+        api_key = key_resolver.resolve('cloudflare')
+        if not api_key:
             raise ValueError('CLOUDFLARE_API_KEY is not configured in the backend.')
+        return settings.cloudflare_account_id, api_key
 
     def _extract_model_name(self, model: str) -> str:
-        """Strip the 'cloudflare/' prefix to get the raw Workers AI model name."""
         if model.startswith('cloudflare/'):
             return model.split('/', 1)[1]
         return model
 
     def _serialize_messages(self, messages) -> list[dict]:
-        """Convert Pydantic message objects to plain dicts for the HTTP body."""
         return [{'role': m.role, 'content': m.content} for m in messages]
 
     def _build_url(self, model: str) -> str:
-        """Build the Workers AI run endpoint URL for the given model."""
+        account_id, _ = self._require_config()
         model_name = self._extract_model_name(model)
         return (
             f'https://api.cloudflare.com/client/v4/accounts/'
-            f'{settings.cloudflare_account_id}/ai/run/{model_name}'
+            f'{account_id}/ai/run/{model_name}'
         )
 
     def _build_headers(self, stream: bool = False) -> dict[str, str]:
-        """Return the HTTP headers required by the Cloudflare API."""
+        _, api_key = self._require_config()
         headers = {
-            'Authorization': f'Bearer {settings.cloudflare_api_key}',
+            'Authorization': f'Bearer {api_key}',
             'Content-Type': 'application/json',
         }
         if stream:

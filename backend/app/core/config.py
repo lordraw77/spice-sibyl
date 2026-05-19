@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     # SQLite database path for conversation persistence
     db_path: str = "spice_sibyl.db"
 
+    # Master secret used to derive the Fernet encryption key for vaulted API keys.
+    # Override with VAULT_SECRET_KEY env var in production.
+    vault_secret_key: str = "change-me-in-production"
+
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
 
 

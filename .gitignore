@@ -21,3 +21,6 @@ coverage/
 .env.*
 !.env.example
 **/.env
+
+*.db
+**/*.db

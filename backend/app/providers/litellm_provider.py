@@ -27,6 +27,7 @@ from app.core.config import settings
 from app.data.model_catalog import get_model_metadata, iter_configured_models
 from app.providers.base import BaseProvider
 from app.schemas.chat import ChatCompletionRequest
+from app.services import key_resolver
 
 logger = logging.getLogger(__name__)
 
@@ -36,28 +37,29 @@ if settings.cloudflare_account_id:
 if settings.cloudflare_api_key:
     os.environ.setdefault('CLOUDFLARE_API_KEY', settings.cloudflare_api_key)
 
+# Map model prefix → provider_id used by key_resolver
+_PREFIX_TO_PROVIDER = {
+    'groq/':         'groq',
+    'openrouter/':   'openrouter',
+    'gemini/':       'gemini',
+    'together_ai/':  'together_ai',
+    'fireworks_ai/': 'fireworks_ai',
+    'mistral/':      'mistral',
+    'huggingface/':  'huggingface',
+    'openai/':       'openai',
+}
+
 
 class LiteLLMProvider(BaseProvider):
     def _resolve_api_key(self, model: str) -> str | None:
-        """Return the API key for the provider inferred from the model prefix."""
-        if model.startswith('groq/'):
-            return settings.groq_api_key
-        if model.startswith('openrouter/'):
-            return settings.openrouter_api_key
-        if model.startswith('gemini/'):
-            return settings.gemini_api_key
-        if model.startswith('together_ai/'):
-            return settings.together_api_key
-        if model.startswith('fireworks_ai/'):
-            return settings.fireworks_api_key
-        if model.startswith('mistral/'):
-            return settings.mistral_api_key
-        if model.startswith('huggingface/'):
-            return settings.hf_token
+        """Return the API key for the provider inferred from the model prefix.
+        Vault takes priority over environment variables."""
         if model.startswith('ollama/'):
-            # Ollama does not require an API key
             return None
-        return settings.openai_api_key
+        for prefix, provider_id in _PREFIX_TO_PROVIDER.items():
+            if model.startswith(prefix):
+                return key_resolver.resolve(provider_id)
+        return key_resolver.resolve('openai')
 
     def _serialize_messages(self, messages) -> list[dict]:
         """Convert Pydantic message objects to plain dicts for LiteLLM."""

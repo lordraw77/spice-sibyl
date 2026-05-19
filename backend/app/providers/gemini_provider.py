@@ -14,16 +14,16 @@ import time
 
 from litellm import acompletion
 
-from app.core.config import settings
 from app.data.model_catalog import get_model_metadata
 from app.providers.base import BaseProvider
 from app.schemas.chat import ChatCompletionRequest
+from app.services import key_resolver
 
 
 class GeminiProvider(BaseProvider):
     def _build_call_kwargs(self, request: ChatCompletionRequest) -> dict:
-        """Build LiteLLM kwargs, injecting the Gemini API key."""
-        if not settings.gemini_api_key:
+        api_key = key_resolver.resolve('gemini')
+        if not api_key:
             raise ValueError('GEMINI_API_KEY is not configured in the backend.')
 
         return {
@@ -31,7 +31,7 @@ class GeminiProvider(BaseProvider):
             'messages': self._serialize_messages(request.messages),
             'max_tokens': request.max_tokens,
             'temperature': request.temperature if request.temperature is not None else 0.7,
-            'api_key': settings.gemini_api_key,
+            'api_key': api_key,
         }
 
     def _serialize_messages(self, messages) -> list[dict]:

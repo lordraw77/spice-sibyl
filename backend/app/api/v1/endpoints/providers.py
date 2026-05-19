@@ -2,18 +2,23 @@
 GET    /v1/providers               — list all providers with live configuration status
 POST   /v1/providers/{id}/test     — test connectivity to a provider
 PATCH  /v1/providers/{id}          — enable or disable a provider
-PUT    /v1/providers/{id}/key      — store an API key override for a provider
+PUT    /v1/providers/{id}/key      — encrypt and vault an API key for a provider
+DELETE /v1/providers/{id}/key      — remove a vaulted key
 """
 
 import time
 import logging
 
+import aiosqlite
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.config import settings
 from app.data.model_catalog import provider_summary_from_catalog
 from app.data.runtime_config import get_provider_override, set_provider_override
+from app.db.database import get_db
+from app.db import vault_repository
+from app.services import key_resolver
 from app.schemas.providers import (
     ProviderKeyRequest,
     ProviderStatus,
@@ -24,7 +29,6 @@ from app.schemas.providers import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Static metadata: which env var holds the key and where to get one
 _PROVIDER_META: dict[str, dict] = {
     'ollama':       {'key_hint': None,                  'docs_url': 'https://ollama.com'},
     'groq':         {'key_hint': 'GROQ_API_KEY',        'docs_url': 'https://console.groq.com'},
@@ -40,37 +44,8 @@ _PROVIDER_META: dict[str, dict] = {
     'mock':         {'key_hint': None,                  'docs_url': None},
 }
 
-_PLACEHOLDER_KEYS = frozenset({'dummy', 'change-me', ''})
-
-
-def _is_configured(provider_id: str) -> bool:
-    """Return True if the provider has usable credentials (runtime override takes precedence)."""
-    override = get_provider_override(provider_id)
-    runtime_key = override.get('api_key', '')
-    if runtime_key and runtime_key not in _PLACEHOLDER_KEYS:
-        return True
-
-    if provider_id in ('ollama', 'mock'):
-        return True
-    if provider_id == 'cloudflare':
-        return bool(settings.cloudflare_api_key and settings.cloudflare_account_id)
-    key_map: dict[str, str | None] = {
-        'groq':         settings.groq_api_key,
-        'openrouter':   settings.openrouter_api_key,
-        'gemini':       settings.gemini_api_key,
-        'together_ai':  settings.together_api_key,
-        'fireworks_ai': settings.fireworks_api_key,
-        'mistral':      settings.mistral_api_key,
-        'huggingface':  settings.hf_token,
-        'openai':       settings.openai_api_key,
-        'cerebras':     settings.cerebras_api_key,
-    }
-    val = key_map.get(provider_id)
-    return bool(val and val not in _PLACEHOLDER_KEYS)
-
 
 def _is_enabled(provider_id: str, catalog_enabled: bool) -> bool:
-    """Return enabled state, with runtime override taking precedence over catalog."""
     override = get_provider_override(provider_id)
     return override.get('enabled', catalog_enabled)
 
@@ -81,7 +56,7 @@ def _build_status(entry: dict, pid: str) -> ProviderStatus:
         id=pid,
         label=entry['label'],
         enabled=_is_enabled(pid, entry.get('enabled', True)),
-        configured=_is_configured(pid),
+        configured=key_resolver.is_configured(pid),
         key_hint=meta.get('key_hint'),
         model_count=entry['model_count'],
         capabilities=entry['capabilities'],
@@ -91,14 +66,12 @@ def _build_status(entry: dict, pid: str) -> ProviderStatus:
 
 @router.get('')
 async def list_providers() -> list[ProviderStatus]:
-    """Return all providers from the catalog with live configuration status."""
     catalog = provider_summary_from_catalog()
     return [_build_status(entry, entry['id']) for entry in catalog]
 
 
 @router.patch('/{provider_id}')
 async def update_provider(provider_id: str, body: ProviderUpdateRequest) -> ProviderStatus:
-    """Enable or disable a provider (persisted in runtime_overrides.json)."""
     catalog = provider_summary_from_catalog()
     entry = next((e for e in catalog if e['id'] == provider_id), None)
     if entry is None:
@@ -108,18 +81,35 @@ async def update_provider(provider_id: str, body: ProviderUpdateRequest) -> Prov
 
 
 @router.put('/{provider_id}/key')
-async def set_provider_key(provider_id: str, body: ProviderKeyRequest) -> dict:
-    """Store an API key override for a provider (persisted in runtime_overrides.json)."""
+async def set_provider_key(
+    provider_id: str,
+    body: ProviderKeyRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+) -> dict:
+    """Encrypt and store the API key in the vault (SQLite, AES via Fernet)."""
     if provider_id not in _PROVIDER_META:
         raise HTTPException(status_code=404, detail=f"Provider '{provider_id}' not found")
-    set_provider_override(provider_id, api_key=body.api_key)
-    configured = bool(body.api_key and body.api_key not in _PLACEHOLDER_KEYS)
-    return {'ok': True, 'configured': configured}
+    if not body.api_key or body.api_key in {'dummy', 'change-me', ''}:
+        raise HTTPException(status_code=422, detail="api_key must not be empty or a placeholder")
+    await vault_repository.store_key(db, provider_id, body.api_key)
+    logger.info("vault: stored key for provider '%s'", provider_id)
+    return {'ok': True, 'configured': True, 'vaulted': True}
+
+
+@router.delete('/{provider_id}/key', status_code=204)
+async def delete_provider_key(
+    provider_id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+) -> None:
+    """Remove a vaulted key; provider will fall back to the env variable."""
+    if provider_id not in _PROVIDER_META:
+        raise HTTPException(status_code=404, detail=f"Provider '{provider_id}' not found")
+    await vault_repository.delete_key(db, provider_id)
+    logger.info("vault: deleted key for provider '%s'", provider_id)
 
 
 @router.post('/{provider_id}/test')
 async def test_provider(provider_id: str) -> ProviderTestResult:
-    """Test connectivity to a provider."""
     if provider_id == 'mock':
         return ProviderTestResult(provider_id=provider_id, ok=True, latency_ms=0, model_count=1)
 
@@ -141,20 +131,11 @@ async def test_provider(provider_id: str) -> ProviderTestResult:
         except Exception as exc:
             latency_ms = int((time.perf_counter() - started) * 1000)
             logger.warning('Ollama test failed: %s', exc)
-            return ProviderTestResult(
-                provider_id=provider_id,
-                ok=False,
-                latency_ms=latency_ms,
-                error=str(exc),
-            )
+            return ProviderTestResult(provider_id=provider_id, ok=False, latency_ms=latency_ms, error=str(exc))
 
-    if not _is_configured(provider_id):
+    if not key_resolver.is_configured(provider_id):
         meta = _PROVIDER_META.get(provider_id, {})
         hint = meta.get('key_hint') or 'API_KEY'
-        return ProviderTestResult(
-            provider_id=provider_id,
-            ok=False,
-            error=f'{hint} is not set',
-        )
+        return ProviderTestResult(provider_id=provider_id, ok=False, error=f'{hint} is not set')
 
     return ProviderTestResult(provider_id=provider_id, ok=True)

@@ -15,20 +15,21 @@ import time
 
 import httpx
 
-from app.core.config import settings
-
-logger = logging.getLogger(__name__)
 from app.data.model_catalog import get_model_metadata
 from app.providers.base import BaseProvider
 from app.schemas.chat import ChatCompletionRequest
+from app.services import key_resolver
+
+logger = logging.getLogger(__name__)
 
 _BASE_URL = 'https://api.cerebras.ai/v1'
 
 
 def _require_key() -> str:
-    if not settings.cerebras_api_key:
+    key = key_resolver.resolve('cerebras')
+    if not key:
         raise ValueError('CEREBRAS_API_KEY is not configured in the backend.')
-    return settings.cerebras_api_key
+    return key
 
 
 def _strip_prefix(model: str) -> str:

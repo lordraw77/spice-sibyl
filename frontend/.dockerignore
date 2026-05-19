@@ -6,3 +6,4 @@ dist
 Dockerfile
 npm-debug.log
 coverage
+*.db
