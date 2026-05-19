@@ -92,7 +92,7 @@
       </header>
 
 <div class="messages" #messagesContainer>
-  <div class="message" *ngFor="let message of messages()" [class.user]="message.role === 'user'">
+  <div class="message" *ngFor="let message of messages(); let last = last" [class.user]="message.role === 'user'" [class.streaming]="streaming && last && message.role === 'assistant'">
     <div class="role">{{ roleLabel(message) }}</div>
     <div class="bubble markdown-body" [innerHTML]="renderedContent(message)"></div>
 
@@ -118,7 +118,7 @@
     </div>
   </div>
 
-  <div class="message typing-indicator" *ngIf="loading">
+  <div class="message typing-indicator" *ngIf="loading && !streaming">
     <div class="role">{{ model.split('/').pop()?.toUpperCase() }}</div>
     <div class="bubble typing-bubble">
       <span class="dot"></span>

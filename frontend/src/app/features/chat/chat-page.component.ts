@@ -94,6 +94,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked {
   prompt = '';
   model = 'ollama/qwen2.5:7b-instruct';
   loading = false;
+  streaming = false;
   sidebarOpen = false;
 
   toggleSidebar(): void {
@@ -159,44 +160,95 @@ export class ChatPageComponent implements OnInit, AfterViewChecked {
     }
 
     this.loading = true;
-    const nextMessages = [
+    this.prompt = '';
+
+    const userMessages = [
       ...this.messages(),
       { role: 'user' as const, content: text, created_at: Math.floor(Date.now() / 1000) },
     ];
-    this.messages.set(nextMessages);
+
+    // Add user message + empty assistant placeholder for streaming
+    this.messages.set([
+      ...userMessages,
+      { role: 'assistant' as const, content: '', model: this.model, created_at: Math.floor(Date.now() / 1000) },
+    ]);
+    this.streaming = true;
     this.queueScrollToBottom();
 
-    this.chatService.complete({
+    // Index of the assistant placeholder in the messages array
+    const streamingIdx = userMessages.length;
+
+    this.chatService.stream({
       model: this.model,
-      messages: nextMessages,
-      stream: false,
+      messages: userMessages,
+      stream: true,
       temperature: 0.7,
     }).subscribe({
-      next: (response) => {
-        const reply = this.mapAssistantMessage(response);
-        if (reply) {
-          this.messages.update((items) => [...items, reply]);
+      next: ({ event, data }) => {
+        if (event === 'done') {
+          return;
+        }
+
+        // Final meta chunk carries full telemetry — update the placeholder in place
+        if (data['object'] === 'chat.completion.meta') {
+          const choice = (data['choices'] as { message: Record<string, unknown> }[] | undefined)?.[0];
+          const metaMsg = choice?.message;
+          const metrics = data['metrics'] as Record<string, unknown> | undefined;
+          const usage = data['usage'] as Record<string, unknown> | undefined;
+
+          if (metaMsg) {
+            this.messages.update(items =>
+              items.map((m, i) =>
+                i === streamingIdx
+                  ? {
+                      ...m,
+                      provider: (metaMsg['provider'] ?? metrics?.['provider']) as string | undefined,
+                      latency_ms: (metaMsg['latency_ms'] ?? metrics?.['latency_ms']) as number | undefined,
+                      first_token_ms: (metaMsg['first_token_ms'] ?? metrics?.['first_token_ms']) as number | undefined,
+                      prompt_tokens: (metaMsg['prompt_tokens'] ?? usage?.['prompt_tokens']) as number | undefined,
+                      completion_tokens: (metaMsg['completion_tokens'] ?? usage?.['completion_tokens']) as number | undefined,
+                      total_tokens: (metaMsg['total_tokens'] ?? usage?.['total_tokens']) as number | undefined,
+                      tokens_per_second: (metaMsg['tokens_per_second'] ?? metrics?.['tokens_per_second']) as number | undefined,
+                      finish_reason: metaMsg['finish_reason'] as string | undefined,
+                      estimated_cost: metrics?.['estimated_cost'] as number | undefined,
+                      created_at: (metaMsg['created_at'] ?? data['created']) as number | undefined,
+                      capabilities: (metaMsg['capabilities'] as string[] | undefined) ?? [],
+                      free: metaMsg['free'] as boolean | undefined,
+                    }
+                  : m
+              )
+            );
+          }
+          return;
+        }
+
+        // Regular streaming chunk — append delta content to the placeholder
+        const delta = (data['choices'] as { delta?: { content?: string } }[] | undefined)?.[0]?.delta?.content;
+        if (delta) {
+          this.messages.update(items =>
+            items.map((m, i) => i === streamingIdx ? { ...m, content: m.content + delta } : m)
+          );
           this.queueScrollToBottom();
         }
       },
       error: () => {
-        this.messages.update((items) => [
-          ...items,
-          {
-            role: 'assistant',
-            content: 'Backend request failed.',
-            model: this.model,
-            created_at: Math.floor(Date.now() / 1000),
-          },
-        ]);
+        this.messages.update(items =>
+          items.map((m, i) =>
+            i === streamingIdx && !m.content
+              ? { ...m, content: 'Backend request failed.' }
+              : m
+          )
+        );
+        this.loading = false;
+        this.streaming = false;
         this.queueScrollToBottom();
       },
       complete: () => {
         this.loading = false;
+        this.streaming = false;
+        this.queueScrollToBottom();
       },
     });
-
-    this.prompt = '';
   }
 
   /** Return the display label shown in the message header for a given turn. */

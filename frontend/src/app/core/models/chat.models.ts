@@ -82,6 +82,12 @@ export interface ChatModel {
   capabilities?: string[];
 }
 
+/** A single SSE event emitted by the streaming endpoint */
+export interface ChatStreamEvent {
+  event: string;
+  data: Record<string, unknown>;
+}
+
 /** Per-provider summary included in the GET /api/v1/models response */
 export interface ProviderSummary {
   id: string;
