@@ -1,0 +1,288 @@
+:host { display: block; }
+
+.stats-shell {
+  min-height: calc(100vh - 57px);
+  background:
+    radial-gradient(circle at top left, rgba(193,165,107,0.12), transparent 22%),
+    linear-gradient(180deg, #0b0d11 0%, #12151c 100%);
+  padding: 2rem;
+  color: #f7f3ea;
+}
+
+/* ── Header ──────────────────────────────────────────────────── */
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.page-header h1 {
+  margin: 0 0 .3rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: .9rem;
+  color: #9fa8ba;
+}
+
+.header-badges {
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.chip {
+  padding: .3rem .75rem;
+  border-radius: 999px;
+  font-size: .8rem;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.1);
+  color: #c8cdd8;
+}
+
+/* ── State banners ───────────────────────────────────────────── */
+
+.state-banner {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: 1.5rem;
+  border-radius: .75rem;
+  background: rgba(255,255,255,.04);
+  color: #9fa8ba;
+  font-size: .95rem;
+}
+
+.state-banner.error {
+  background: rgba(220,60,60,.08);
+  color: #f08080;
+}
+
+/* ── Summary cards ───────────────────────────────────────────── */
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2.5rem;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  padding: 1.25rem 1.5rem;
+  border-radius: .75rem;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.07);
+}
+
+.stat-card.accent {
+  background: rgba(214,178,121,.08);
+  border-color: rgba(214,178,121,.2);
+}
+
+.stat-card.accent-warn {
+  background: rgba(220,100,60,.08);
+  border-color: rgba(220,100,60,.2);
+}
+
+.stat-label {
+  font-size: .78rem;
+  color: #9fa8ba;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.stat-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #f7f3ea;
+  line-height: 1;
+}
+
+.stat-card.accent .stat-value { color: #d6b279; }
+.stat-card.accent-warn .stat-value { color: #f09060; }
+
+.stat-sub {
+  font-size: .75rem;
+  color: #9fa8ba;
+  margin-top: .1rem;
+}
+
+/* ── Tables ──────────────────────────────────────────────────── */
+
+.table-section {
+  margin-bottom: 2.5rem;
+}
+
+.table-section h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #c8cdd8;
+  margin: 0 0 .75rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border-radius: .75rem;
+  border: 1px solid rgba(255,255,255,.08);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .88rem;
+}
+
+thead th {
+  padding: .65rem 1rem;
+  text-align: left;
+  background: rgba(255,255,255,.04);
+  color: #9fa8ba;
+  font-weight: 500;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+thead th.num { text-align: right; }
+
+tbody tr {
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  transition: background .12s;
+}
+
+tbody tr:last-child { border-bottom: none; }
+
+/* Total rows */
+.row-total { }
+.row-total:hover { background: rgba(255,255,255,.03); }
+.row-total.row-clickable { cursor: pointer; }
+.row-total.row-clickable:hover { background: rgba(214,178,121,.05); }
+.row-total.row-expanded { background: rgba(214,178,121,.04); }
+
+/* Drilldown rows */
+.row-drill {
+  background: rgba(0,0,0,.18);
+}
+.row-drill:hover { background: rgba(0,0,0,.25); }
+.row-drill td { padding-top: .45rem; padding-bottom: .45rem; }
+
+/* Expand chevron */
+.expand-cell {
+  width: 28px;
+  padding: .6rem .5rem .6rem .75rem;
+  color: #9fa8ba;
+}
+
+.chevron {
+  display: inline-block;
+  font-size: 1rem;
+  line-height: 1;
+  transition: transform .18s;
+  color: #6b7280;
+}
+
+.chevron.open { transform: rotate(90deg); color: #d6b279; }
+
+tbody td {
+  padding: .6rem 1rem;
+  color: #c8cdd8;
+  white-space: nowrap;
+}
+
+tbody td.num { text-align: right; color: #9fa8ba; }
+tbody td.bold { font-weight: 600; color: #f7f3ea; }
+tbody td.cost { color: #d6b279; }
+tbody td.cost-dim { color: #a8914a; }
+
+.provider-name { color: #f7f3ea; font-weight: 500; }
+.model-name { color: #f7f3ea; font-weight: 500; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.provider-sub { color: #9fa8ba; font-size: .82rem; }
+.drill-name { color: #9fa8ba; font-size: .85rem; padding-left: 1.5rem !important; }
+
+/* ── Telegram section ────────────────────────────────────────── */
+
+.tg-section {
+  margin-bottom: 2.5rem;
+}
+
+.tg-section h2 {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #c8cdd8;
+  margin: 0 0 .75rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.tg-section h2 svg { color: #5eacd9; flex-shrink: 0; }
+
+.tg-badge {
+  font-size: .72rem;
+  padding: .2rem .55rem;
+  border-radius: 999px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.tg-on  { background: rgba(73,132,83,.18); border: 1px solid rgba(73,132,83,.28); color: #89d39a; }
+.tg-off { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); color: #9fa8ba; }
+
+.tg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-bottom: .75rem;
+}
+
+.tg-note {
+  margin: 0;
+  font-size: .78rem;
+  color: #6b7280;
+  font-style: italic;
+}
+
+/* ── Empty state ─────────────────────────────────────────────── */
+
+.empty {
+  text-align: center;
+  padding: 3rem;
+  color: #9fa8ba;
+  font-size: .95rem;
+}
+
+/* ── Spinner ─────────────────────────────────────────────────── */
+
+.dot-spin {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.1);
+  border-top-color: #d6b279;
+  animation: spin .8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Responsive ──────────────────────────────────────────────── */
+
+@media (max-width: 575.98px) {
+  .stats-shell { padding: 1rem; }
+  .stat-value { font-size: 1.4rem; }
+}

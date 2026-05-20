@@ -139,3 +139,76 @@ export interface ConversationSummary {
 export interface Conversation extends ConversationSummary {
   messages: ChatMessage[];
 }
+
+/** Telegram bot runtime counters (in-memory, reset on restart) */
+export interface TelegramStats {
+  enabled: boolean;
+  active_chats: number;
+  messages_received: number;
+  messages_sent: number;
+  errors: number;
+}
+
+/** Aggregate usage stats returned by GET /api/v1/stats */
+export interface GlobalStats {
+  total_conversations: number;
+  total_messages: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_tokens: number;
+  total_cost: number;
+}
+
+export interface ProfileSummary {
+  profile_id: string;
+  profile_name: string;
+  total_conversations: number;
+  total_messages: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_tokens: number;
+  total_cost: number;
+}
+
+export interface ProfileSlice {
+  profile_id: string;
+  profile_name: string;
+  message_count: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  estimated_cost: number;
+}
+
+export interface ProviderStats {
+  provider: string | null;
+  message_count: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  estimated_cost: number;
+  avg_latency_ms: number | null;
+  avg_tokens_per_second: number | null;
+  by_profile: ProfileSlice[];
+}
+
+export interface ModelStats {
+  model: string | null;
+  provider: string | null;
+  message_count: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  estimated_cost: number;
+  avg_latency_ms: number | null;
+  avg_tokens_per_second: number | null;
+  by_profile: ProfileSlice[];
+}
+
+export interface UsageStats {
+  global_stats: GlobalStats;
+  by_profile: ProfileSummary[];
+  by_provider: ProviderStats[];
+  by_model: ModelStats[];
+  telegram?: TelegramStats;
+}

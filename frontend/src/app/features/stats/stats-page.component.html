@@ -1,0 +1,225 @@
+<div class="stats-shell">
+
+  <header class="page-header">
+    <div>
+      <h1>Usage Statistics</h1>
+      <p class="subtitle">Token consumption, latency and cost across providers and models.</p>
+    </div>
+    <div class="header-badges" *ngIf="!loading() && stats() as s">
+      <span class="chip">{{ s.by_profile.length }} profil{{ s.by_profile.length === 1 ? 'o' : 'i' }}</span>
+      <span class="chip">{{ s.global_stats.total_conversations }} conversazioni</span>
+    </div>
+  </header>
+
+  <div class="state-banner" *ngIf="loading()">
+    <span class="dot-spin"></span> Loading stats…
+  </div>
+
+  <div class="state-banner error" *ngIf="error()">{{ error() }}</div>
+
+  <ng-container *ngIf="!loading() && !error() && stats() as s">
+
+    <!-- Summary cards -->
+    <div class="summary-grid">
+      <div class="stat-card">
+        <span class="stat-label">Messaggi</span>
+        <span class="stat-value">{{ s.global_stats.total_messages | number }}</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Token totali</span>
+        <span class="stat-value">{{ s.global_stats.total_tokens | number }}</span>
+        <span class="stat-sub">{{ s.global_stats.total_prompt_tokens | number }} prompt · {{ s.global_stats.total_completion_tokens | number }} completion</span>
+      </div>
+      <div class="stat-card accent">
+        <span class="stat-label">Costo stimato</span>
+        <span class="stat-value">{{ formatCost(s.global_stats.total_cost) }}</span>
+      </div>
+    </div>
+
+    <!-- By profile -->
+    <section class="table-section" *ngIf="s.by_profile.length">
+      <h2>Per profilo</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Profilo</th>
+              <th class="num">Conversazioni</th>
+              <th class="num">Messaggi</th>
+              <th class="num">Prompt tkn</th>
+              <th class="num">Completion tkn</th>
+              <th class="num">Totale tkn</th>
+              <th class="num">Costo stimato</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let p of s.by_profile">
+              <td class="provider-name">{{ p.profile_name }}</td>
+              <td class="num">{{ p.total_conversations | number }}</td>
+              <td class="num">{{ p.total_messages | number }}</td>
+              <td class="num">{{ p.total_prompt_tokens | number }}</td>
+              <td class="num">{{ p.total_completion_tokens | number }}</td>
+              <td class="num bold">{{ p.total_tokens | number }}</td>
+              <td class="num cost">{{ formatCost(p.total_cost) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- By provider -->
+    <section class="table-section" *ngIf="s.by_provider.length">
+      <h2>Per provider</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Provider</th>
+              <th class="num">Risposte</th>
+              <th class="num">Prompt tkn</th>
+              <th class="num">Completion tkn</th>
+              <th class="num">Totale tkn</th>
+              <th class="num">Costo stimato</th>
+              <th class="num">Lat. media</th>
+              <th class="num">t/s medio</th>
+            </tr>
+          </thead>
+          <tbody>
+            <ng-container *ngFor="let p of s.by_provider">
+              <!-- Total row -->
+              <tr class="row-total"
+                  [class.row-expanded]="isProviderExpanded(providerKey(p))"
+                  (click)="p.by_profile.length > 1 && toggleProvider(providerKey(p))"
+                  [class.row-clickable]="p.by_profile.length > 1">
+                <td class="expand-cell">
+                  <span class="chevron" *ngIf="p.by_profile.length > 1"
+                        [class.open]="isProviderExpanded(providerKey(p))">›</span>
+                </td>
+                <td class="provider-name">{{ providerLabel(p) }}</td>
+                <td class="num">{{ p.message_count | number }}</td>
+                <td class="num">{{ p.prompt_tokens | number }}</td>
+                <td class="num">{{ p.completion_tokens | number }}</td>
+                <td class="num bold">{{ p.total_tokens | number }}</td>
+                <td class="num cost">{{ formatCost(p.estimated_cost) }}</td>
+                <td class="num">{{ formatLatency(p.avg_latency_ms) }}</td>
+                <td class="num">{{ formatTps(p.avg_tokens_per_second) }}</td>
+              </tr>
+              <!-- Per-profile drilldown rows -->
+              <ng-container *ngIf="isProviderExpanded(providerKey(p))">
+                <tr class="row-drill" *ngFor="let pr of p.by_profile">
+                  <td></td>
+                  <td class="drill-name">↳ {{ pr.profile_name }}</td>
+                  <td class="num">{{ pr.message_count | number }}</td>
+                  <td class="num">{{ pr.prompt_tokens | number }}</td>
+                  <td class="num">{{ pr.completion_tokens | number }}</td>
+                  <td class="num">{{ pr.total_tokens | number }}</td>
+                  <td class="num cost-dim">{{ formatCost(pr.estimated_cost) }}</td>
+                  <td class="num">—</td>
+                  <td class="num">—</td>
+                </tr>
+              </ng-container>
+            </ng-container>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- By model -->
+    <section class="table-section" *ngIf="s.by_model.length">
+      <h2>Per modello</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Modello</th>
+              <th>Provider</th>
+              <th class="num">Risposte</th>
+              <th class="num">Prompt tkn</th>
+              <th class="num">Completion tkn</th>
+              <th class="num">Totale tkn</th>
+              <th class="num">Costo stimato</th>
+              <th class="num">Lat. media</th>
+              <th class="num">t/s medio</th>
+            </tr>
+          </thead>
+          <tbody>
+            <ng-container *ngFor="let m of s.by_model">
+              <!-- Total row -->
+              <tr class="row-total"
+                  [class.row-expanded]="isModelExpanded(modelKey(m))"
+                  (click)="m.by_profile.length > 1 && toggleModel(modelKey(m))"
+                  [class.row-clickable]="m.by_profile.length > 1">
+                <td class="expand-cell">
+                  <span class="chevron" *ngIf="m.by_profile.length > 1"
+                        [class.open]="isModelExpanded(modelKey(m))">›</span>
+                </td>
+                <td class="model-name">{{ modelLabel(m) }}</td>
+                <td class="provider-sub">{{ m.provider || '—' }}</td>
+                <td class="num">{{ m.message_count | number }}</td>
+                <td class="num">{{ m.prompt_tokens | number }}</td>
+                <td class="num">{{ m.completion_tokens | number }}</td>
+                <td class="num bold">{{ m.total_tokens | number }}</td>
+                <td class="num cost">{{ formatCost(m.estimated_cost) }}</td>
+                <td class="num">{{ formatLatency(m.avg_latency_ms) }}</td>
+                <td class="num">{{ formatTps(m.avg_tokens_per_second) }}</td>
+              </tr>
+              <!-- Per-profile drilldown rows -->
+              <ng-container *ngIf="isModelExpanded(modelKey(m))">
+                <tr class="row-drill" *ngFor="let pr of m.by_profile">
+                  <td></td>
+                  <td class="drill-name">↳ {{ pr.profile_name }}</td>
+                  <td></td>
+                  <td class="num">{{ pr.message_count | number }}</td>
+                  <td class="num">{{ pr.prompt_tokens | number }}</td>
+                  <td class="num">{{ pr.completion_tokens | number }}</td>
+                  <td class="num">{{ pr.total_tokens | number }}</td>
+                  <td class="num cost-dim">{{ formatCost(pr.estimated_cost) }}</td>
+                  <td class="num">—</td>
+                  <td class="num">—</td>
+                </tr>
+              </ng-container>
+            </ng-container>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="empty" *ngIf="!s.by_provider.length">
+      <p>Nessun dato disponibile. Inizia una conversazione per raccogliere statistiche.</p>
+    </div>
+
+    <!-- Telegram -->
+    <section class="tg-section" *ngIf="s.telegram">
+      <h2>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.44 14.08l-2.961-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.71.479z"/></svg>
+        Telegram Bot
+        <span class="tg-badge" [class.tg-on]="s.telegram.enabled" [class.tg-off]="!s.telegram.enabled">
+          {{ s.telegram.enabled ? 'attivo' : 'disabilitato' }}
+        </span>
+      </h2>
+      <div class="tg-grid" *ngIf="s.telegram.enabled">
+        <div class="stat-card">
+          <span class="stat-label">Chat attive</span>
+          <span class="stat-value">{{ s.telegram.active_chats | number }}</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Messaggi ricevuti</span>
+          <span class="stat-value">{{ s.telegram.messages_received | number }}</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Risposte inviate</span>
+          <span class="stat-value">{{ s.telegram.messages_sent | number }}</span>
+        </div>
+        <div class="stat-card" [class.accent-warn]="s.telegram.errors > 0">
+          <span class="stat-label">Errori</span>
+          <span class="stat-value">{{ s.telegram.errors | number }}</span>
+        </div>
+      </div>
+      <p class="tg-note" *ngIf="s.telegram.enabled">I contatori si azzerano al riavvio del backend.</p>
+    </section>
+
+  </ng-container>
+
+</div>

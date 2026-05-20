@@ -26,8 +26,8 @@
 - **Telegram bot** — polling-based; per-chat conversation history; streaming replies with live edit; `/start`, `/new`, `/model`, `/models`; optional user allowlist (`TELEGRAM_ALLOWED_USERS`)
 
 ## Phase 5
-- **Usage telemetry** — per-message token counts + latency; provider-reported cost estimates;
-- Usage stats / cost tracking dashboard
+- **Usage telemetry** ✓ — per-message token counts + latency; provider-reported cost estimates
+- **Usage stats / cost tracking dashboard** ✓ — GET /v1/stats (by profile or global); Angular `/stats` page with summary cards + per-provider / per-model tables
 - Plugin / tool calling
 - Multi-modal support (image input)
 - Conversation search / full-text index

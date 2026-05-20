@@ -43,7 +43,7 @@ async def lifespan(application: FastAPI):
 
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
     format='%(asctime)s %(levelname)-8s %(name)s — %(message)s',
 )
 # Keep noisy third-party loggers at WARNING

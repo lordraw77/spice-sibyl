@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     # Default model used by the Telegram bot (falls back to default_model)
     telegram_default_model: str | None = None
 
+    # Logging level for the application (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    log_level: str = "INFO"
+
     # Master secret used to derive the Fernet encryption key for vaulted API keys.
     # Override with VAULT_SECRET_KEY env var in production.
     vault_secret_key: str = "change-me-in-production"

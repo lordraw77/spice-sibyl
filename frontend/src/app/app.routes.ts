@@ -21,5 +21,10 @@ export const routes: Routes = [
         (m) => m.ProvidersPageComponent
       ),
   },
+  {
+    path: 'stats',
+    loadComponent: () =>
+      import('./features/stats/stats-page.component').then((m) => m.StatsPageComponent),
+  },
   { path: '**', redirectTo: 'chat' },
 ];

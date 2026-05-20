@@ -16,7 +16,7 @@ import { ToastContainerComponent } from './shared/toast-container/toast-containe
   `,
   styles: [`
     :host { display: block; height: 100vh; overflow: hidden; background: #0b0d11; }
-    .app-main { height: calc(100vh - 57px); overflow: hidden; }
+    .app-main { height: calc(100vh - 57px); overflow-y: auto; }
   `]
 })
 export class AppComponent {}

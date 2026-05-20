@@ -6,12 +6,14 @@ model.  The bot streams the provider response and edits the reply message as
 tokens arrive (throttled to ~1 edit/s to stay within Telegram rate limits).
 
 Commands:
-  /start         — welcome message
-  /new           — clear conversation history for this chat
-  /model         — show the current model
-  /model <id>    — switch to a different model
-  /models        — list all available models
-  Any text       — sent to the active model, reply streamed back
+  /start            — welcome message
+  /new              — clear conversation history for this chat
+  /model            — show the current model
+  /model <id>       — switch to a different model
+  /models           — list all available models grouped by provider
+  /models <query>   — filter models by provider, capability or name
+  /stats            — show global usage statistics
+  Any text          — sent to the active model, reply streamed back
 """
 
 import asyncio
@@ -19,6 +21,7 @@ import logging
 import time
 from collections import defaultdict
 
+import aiosqlite
 from telegram import Update
 from telegram.constants import ChatAction, ParseMode
 from telegram.ext import (
@@ -32,6 +35,7 @@ from telegram.ext import (
 
 from app.core.config import settings
 from app.data.model_catalog import iter_configured_models
+from app.db.stats_repository import get_usage_stats
 from app.dependencies.provider_factory import get_provider
 from app.schemas.chat import ChatCompletionRequest, ChatMessage
 
@@ -46,6 +50,21 @@ _sessions: dict[int, list[dict]] = defaultdict(list)
 _models: dict[int, str] = {}
 
 _MAX_HISTORY = 40  # keep last 40 messages (~20 exchanges) per chat
+
+# ── In-memory counters ───────────────────────────────────────────────────────
+
+_tg_messages_received: int = 0
+_tg_messages_sent: int = 0
+_tg_errors: int = 0
+
+
+def get_telegram_stats() -> dict:
+    return {
+        "active_chats": len([s for s in _sessions.values() if s]),
+        "messages_received": _tg_messages_received,
+        "messages_sent": _tg_messages_sent,
+        "errors": _tg_errors,
+    }
 
 # ── Access control ───────────────────────────────────────────────────────────
 
@@ -95,7 +114,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"  /new — nuova conversazione\n"
         f"  /model — mostra modello corrente\n"
         f"  /model &lt;id&gt; — cambia modello\n"
-        f"  /models — lista modelli disponibili",
+        f"  /models — lista modelli disponibili\n"
+        f"  /models &lt;query&gt; — filtra per provider, capability o nome\n"
+        f"  /stats — statistiche di utilizzo",
         parse_mode=ParseMode.HTML,
     )
 
@@ -133,19 +154,84 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_allowed(update.effective_user.id):
         return
+
+    query = ' '.join(context.args).strip().lower() if context.args else ''
+    all_models = iter_configured_models()
+
+    if query:
+        filtered = [
+            m for m in all_models
+            if query in m['id'].lower()
+            or query in (m.get('provider') or '').lower()
+            or any(query in cap.lower() for cap in m.get('capabilities') or [])
+            or query in (m.get('label') or '').lower()
+        ]
+    else:
+        filtered = all_models
+
+    if not filtered:
+        await update.message.reply_text(
+            f"Nessun modello trovato per <code>{query}</code>.",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
     models_by_provider: dict[str, list[str]] = defaultdict(list)
-    for m in iter_configured_models():
+    for m in filtered:
         models_by_provider[m.get('provider', 'other')].append(m['id'])
 
-    lines = []
+    header = f"🔍 Filtro: <i>{query}</i>\n\n" if query else ''
+    lines = [header] if header else []
     for provider, ids in sorted(models_by_provider.items()):
         lines.append(f"<b>{provider}</b>")
-        for mid in ids[:10]:  # cap per-provider to keep message short
+        for mid in ids[:10]:
             lines.append(f"  <code>{mid}</code>")
         if len(ids) > 10:
             lines.append(f"  … +{len(ids) - 10} altri")
 
-    text = '\n'.join(lines) or "Nessun modello disponibile."
+    text = '\n'.join(lines)
+    for chunk in _split(text):
+        await update.message.reply_text(chunk, parse_mode=ParseMode.HTML)
+
+
+async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_allowed(update.effective_user.id):
+        return
+
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("PRAGMA foreign_keys=ON")
+        usage = await get_usage_stats(db)
+
+    g = usage.global_stats
+
+    def fmt_cost(v: float) -> str:
+        if v == 0:
+            return '—'
+        if v < 0.0001:
+            return '< $0.0001'
+        return f'${v:.4f}'
+
+    lines = [
+        "📊 <b>Statistiche di utilizzo</b>\n",
+        f"💬 Conversazioni: <b>{g.total_conversations:,}</b>",
+        f"📨 Messaggi:       <b>{g.total_messages:,}</b>",
+        f"🔢 Token totali:   <b>{g.total_tokens:,}</b>",
+        f"   ├ prompt:       {g.total_prompt_tokens:,}",
+        f"   └ completion:   {g.total_completion_tokens:,}",
+        f"💰 Costo stimato:  <b>{fmt_cost(g.total_cost)}</b>",
+    ]
+
+    if usage.by_provider:
+        lines.append("\n<b>Per provider</b>")
+        for p in usage.by_provider[:8]:
+            name = p.provider or 'unknown'
+            cost = fmt_cost(p.estimated_cost)
+            lines.append(
+                f"  <code>{name}</code> — {p.total_tokens:,} tkn · {cost}"
+            )
+
+    text = '\n'.join(lines)
     for chunk in _split(text):
         await update.message.reply_text(chunk, parse_mode=ParseMode.HTML)
 
@@ -153,11 +239,15 @@ async def cmd_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 # ── Message handler ──────────────────────────────────────────────────────────
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    global _tg_messages_received, _tg_messages_sent, _tg_errors
+
     if not update.message or not update.message.text:
         return
     if not _is_allowed(update.effective_user.id):
         await update.message.reply_text("⛔ Accesso non autorizzato.")
         return
+
+    _tg_messages_received += 1
 
     chat_id = update.effective_chat.id
     text = update.message.text.strip()
@@ -214,10 +304,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         if full_content:
             session.append({"role": "assistant", "content": full_content})
+            _tg_messages_sent += 1
 
     except asyncio.CancelledError:
         raise
     except Exception as exc:
+        _tg_errors += 1
         logger.exception("Telegram handler error for chat_id=%s model=%s", chat_id, model)
         try:
             await sent.edit_text(f"⚠ Errore: {exc}")
@@ -240,5 +332,6 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("new", cmd_new))
     app.add_handler(CommandHandler("model", cmd_model))
     app.add_handler(CommandHandler("models", cmd_models))
+    app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     return app

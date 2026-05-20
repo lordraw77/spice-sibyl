@@ -30,6 +30,7 @@ from app.api.v1.endpoints import (
     openrouter_discovery,
     profiles,
     providers,
+    stats,
 )
 
 api_router = APIRouter(prefix="/v1")
@@ -46,3 +47,4 @@ api_router.include_router(cerebras_discovery.router, prefix="/cerebras-discovery
 api_router.include_router(mistral_discovery.router, prefix="/mistral-discovery", tags=["mistral-discovery"])
 api_router.include_router(conversations.router, prefix="/conversations", tags=["conversations"])
 api_router.include_router(profiles.router, prefix="/profiles", tags=["profiles"])
+api_router.include_router(stats.router, prefix="/stats", tags=["stats"])
