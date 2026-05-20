@@ -110,6 +110,22 @@
         </div>
       </div>
 
+      <!-- Tools -->
+      <div class="sidebar-section" *ngIf="availableTools().length">
+        <div class="section-header">
+          <span class="section-label">Tool calling</span>
+          <button class="tools-toggle" [class.enabled]="toolsEnabled()" (click)="toggleTools()" title="Abilita / disabilita tool">
+            {{ toolsEnabled() ? 'ON' : 'OFF' }}
+          </button>
+        </div>
+        <ul class="tools-list" *ngIf="toolsEnabled()">
+          <li *ngFor="let t of availableTools()" class="tool-item">
+            <span class="tool-icon">⚙</span>
+            <span class="tool-name">{{ t.function.name }}</span>
+          </li>
+        </ul>
+      </div>
+
       <!-- Providers -->
       <div class="sidebar-section">
         <div class="section-label">Provider</div>
@@ -168,6 +184,22 @@
         [class.streaming]="streaming && last && message.role === 'assistant'"
       >
         <div class="role">{{ roleLabel(message) }}</div>
+
+        <!-- Tool call / result events shown above the reply text -->
+        <ng-container *ngIf="message.tool_events?.length">
+          <ng-container *ngFor="let ev of message.tool_events">
+            <div class="tool-bubble tool-call" *ngIf="ev.kind === 'call'">
+              <span class="tool-bubble-icon">⚙</span>
+              <span class="tool-bubble-name">{{ ev.name }}</span>
+              <span class="tool-bubble-args" *ngIf="toolArgsSummary(ev.arguments)">{{ toolArgsSummary(ev.arguments) }}</span>
+            </div>
+            <div class="tool-bubble tool-result" *ngIf="ev.kind === 'result'">
+              <span class="tool-bubble-icon">✓</span>
+              <span class="tool-bubble-result">{{ ev.result }}</span>
+            </div>
+          </ng-container>
+        </ng-container>
+
         <div class="bubble markdown-body" [innerHTML]="renderedContent(message)"></div>
 
         <div class="meta" *ngIf="message.role === 'assistant' && (message.latency_ms || message.prompt_tokens || message.completion_tokens || message.tokens_per_second || message.provider || message.finish_reason || message.created_at || message.estimated_cost)">

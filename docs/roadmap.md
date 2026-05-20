@@ -28,6 +28,6 @@
 ## Phase 5
 - **Usage telemetry** ✓ — per-message token counts + latency; provider-reported cost estimates
 - **Usage stats / cost tracking dashboard** ✓ — GET /v1/stats (by profile or global); Angular `/stats` page with summary cards + per-provider / per-model tables
-- Plugin / tool calling
+- **Plugin / tool calling** ✓ — loop server-side con max 5 iterazioni; 3 tool built-in (get_datetime, calculator, web_search via DuckDuckGo); GET /v1/tools; SSE eventi tool_call/tool_result; toggle ON/OFF nella sidebar; tool bubbles nella chat
 - Multi-modal support (image input)
 - **Conversation search / full-text index** ✓ — SQLite FTS5 con trigger di sincronizzazione; GET /v1/conversations/search?q=; search bar nella sidebar con debounce 300 ms, risultati inline con snippet, Escape per chiudere

@@ -210,6 +210,88 @@
   margin: 0;
 }
 
+/* ── Tools sidebar section ───────────────────────────────────── */
+.tools-toggle {
+  padding: .25rem .65rem;
+  border-radius: .4rem;
+  border: 1px solid rgba(255,255,255,.1);
+  background: transparent;
+  font-size: .75rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: #6b7280;
+  transition: all .15s;
+  letter-spacing: .04em;
+}
+.tools-toggle.enabled {
+  background: rgba(214,178,121,.14);
+  border-color: rgba(214,178,121,.3);
+  color: #d6b279;
+}
+
+.tools-list {
+  list-style: none;
+  margin: .4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+}
+.tool-item {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .25rem .5rem;
+  border-radius: .4rem;
+  background: rgba(255,255,255,.03);
+  font-size: .78rem;
+  color: #9fa8ba;
+}
+.tool-icon { font-size: .75rem; color: #d6b279; }
+.tool-name { font-family: monospace; }
+
+/* ── Tool bubbles in chat ────────────────────────────────────── */
+.tool-bubble {
+  display: flex;
+  align-items: baseline;
+  gap: .45rem;
+  padding: .35rem .75rem;
+  border-radius: .55rem;
+  font-size: .8rem;
+  margin-bottom: .35rem;
+  max-width: 100%;
+  overflow: hidden;
+}
+.tool-bubble.tool-call {
+  background: rgba(214,178,121,.07);
+  border: 1px solid rgba(214,178,121,.15);
+  color: #c8a85a;
+}
+.tool-bubble.tool-result {
+  background: rgba(73,132,83,.07);
+  border: 1px solid rgba(73,132,83,.15);
+  color: #7ab88a;
+}
+.tool-bubble-icon { flex-shrink: 0; font-size: .9rem; }
+.tool-bubble-name { font-weight: 600; font-family: monospace; flex-shrink: 0; }
+.tool-bubble-args {
+  color: #9fa8ba;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: monospace;
+  font-size: .75rem;
+}
+.tool-bubble-result {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: monospace;
+  font-size: .78rem;
+  opacity: .9;
+  max-height: 6em;
+  overflow-y: auto;
+}
+
 /* ── Search bar ─────────────────────────────────────────────── */
 .search-bar {
   display: flex;

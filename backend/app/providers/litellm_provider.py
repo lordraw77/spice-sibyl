@@ -63,7 +63,19 @@ class LiteLLMProvider(BaseProvider):
 
     def _serialize_messages(self, messages) -> list[dict]:
         """Convert Pydantic message objects to plain dicts for LiteLLM."""
-        return [{'role': m.role, 'content': m.content} for m in messages]
+        result = []
+        for m in messages:
+            msg: dict = {'role': m.role}
+            if m.content is not None:
+                msg['content'] = m.content
+            if m.tool_calls:
+                msg['tool_calls'] = [tc.model_dump() for tc in m.tool_calls]
+            if m.tool_call_id:
+                msg['tool_call_id'] = m.tool_call_id
+            if m.name:
+                msg['name'] = m.name
+            result.append(msg)
+        return result
 
     def _build_call_kwargs(self, request: ChatCompletionRequest) -> dict:
         """Assemble the keyword arguments dict passed to litellm.acompletion."""
@@ -84,6 +96,10 @@ class LiteLLMProvider(BaseProvider):
 
         if request.temperature is not None:
             kwargs['temperature'] = request.temperature
+
+        if request.tools:
+            kwargs['tools'] = [t.model_dump() for t in request.tools]
+            kwargs['tool_choice'] = request.tool_choice or 'auto'
 
         return kwargs
 

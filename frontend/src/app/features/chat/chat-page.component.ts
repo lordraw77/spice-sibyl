@@ -34,7 +34,7 @@ import { ChatService } from '../../core/services/chat.service';
 import { ConversationService } from '../../core/services/conversation.service';
 import { ProfileService } from '../../core/services/profile.service';
 import { ProfileModalComponent } from '../profile/profile-modal.component';
-import { ChatCompletionResponse, ChatMessage, ChatModel, ConversationSummary, ProviderSummary, SearchResult } from '../../core/models/chat.models';
+import { ChatCompletionResponse, ChatMessage, ChatModel, ConversationSummary, ProviderSummary, SearchResult, ToolDefinition, ToolEvent } from '../../core/models/chat.models';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -54,6 +54,8 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly sanitizer = inject(DomSanitizer);
   private readonly notifications = inject(NotificationService);
   readonly availabilityFilter = signal<'all' | 'free'>('all');
+  readonly toolsEnabled = signal(false);
+  readonly availableTools = signal<ToolDefinition[]>([]);
 
   constructor() {
     // Reload conversation list and reset messages whenever the active profile changes.
@@ -138,6 +140,17 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   /** When true, the view scrolls to the bottom on the next AfterViewChecked cycle. */
   private shouldAutoScroll = true;
 
+  toggleTools(): void {
+    this.toolsEnabled.update(v => !v);
+  }
+
+  toolArgsSummary(args: Record<string, unknown> | undefined): string {
+    if (!args || !Object.keys(args).length) return '';
+    return Object.entries(args)
+      .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
+      .join(', ');
+  }
+
   setAvailabilityFilter(value: 'all' | 'free'): void {
     this.availabilityFilter.set(value);
     this.ensureValidSelectedModel();
@@ -165,6 +178,11 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
 
   ngOnInit(): void {
     marked.setOptions({ breaks: true, gfm: true });
+
+    this.chatService.listTools().subscribe({
+      next: tools => this.availableTools.set(tools),
+      error: () => {},
+    });
 
     this.searchSubject.pipe(
       debounceTime(300),
@@ -256,14 +274,55 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     // Index of the assistant placeholder in the messages array
     const streamingIdx = userMessages.length;
 
+    const tools = this.toolsEnabled() && this.availableTools().length
+      ? this.availableTools()
+      : undefined;
+
     this.chatService.stream({
       model: this.model,
-      messages: userMessages,
+      messages: userMessages.map(m => ({ ...m, tool_events: undefined })),
       stream: true,
       temperature: 0.7,
+      tools,
     }).subscribe({
       next: ({ event, data }) => {
         if (event === 'done') {
+          return;
+        }
+
+        // Tool call event — add to the assistant placeholder's tool_events
+        if (event === 'tool_call') {
+          const toolEvent: ToolEvent = {
+            kind: 'call',
+            id: data['id'] as string,
+            name: data['name'] as string,
+            arguments: data['arguments'] as Record<string, unknown>,
+          };
+          this.messages.update(items =>
+            items.map((m, i) =>
+              i === streamingIdx
+                ? { ...m, tool_events: [...(m.tool_events ?? []), toolEvent] }
+                : m
+            )
+          );
+          return;
+        }
+
+        // Tool result event — append to tool_events
+        if (event === 'tool_result') {
+          const toolEvent: ToolEvent = {
+            kind: 'result',
+            id: data['id'] as string,
+            name: data['name'] as string,
+            result: data['result'] as string,
+          };
+          this.messages.update(items =>
+            items.map((m, i) =>
+              i === streamingIdx
+                ? { ...m, tool_events: [...(m.tool_events ?? []), toolEvent] }
+                : m
+            )
+          );
           return;
         }
 
@@ -350,7 +409,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     if (this.currentConversationId) {
       saveMessages();
     } else {
-      const title = userMessage.content.slice(0, 60);
+      const title = (typeof userMessage.content === 'string' ? userMessage.content : '').slice(0, 60);
       const profileId = this.profileService.currentId;
       this.conversationService.create(title, this.model, profileId).subscribe({
         next: (conv) => {
@@ -452,10 +511,11 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
    * User messages: plain-text HTML escape with newline-to-<br> conversion.
    */
   renderedContent(message: ChatMessage): SafeHtml {
+    const content = message.content ?? '';
     if (message.role !== 'assistant') {
-      return this.sanitizer.bypassSecurityTrustHtml(this.escapeHtml(message.content).replace(/\n/g, '<br>'));
+      return this.sanitizer.bypassSecurityTrustHtml(this.escapeHtml(content).replace(/\n/g, '<br>'));
     }
-    const html = marked.parse(message.content) as string;
+    const html = marked.parse(content) as string;
     const clean = DOMPurify.sanitize(html);
     return this.sanitizer.bypassSecurityTrustHtml(clean);
   }

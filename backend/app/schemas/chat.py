@@ -10,12 +10,45 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
+class ToolCallFunction(BaseModel):
+    name: str
+    arguments: str  # JSON-encoded string, as per OpenAI spec
+
+
+class ToolCall(BaseModel):
+    id: str
+    type: str = "function"
+    function: ToolCallFunction
+
+
+class ToolFunctionParams(BaseModel):
+    type: str = "object"
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+
+
+class ToolFunction(BaseModel):
+    name: str
+    description: str
+    parameters: dict[str, Any] = {}
+
+
+class ToolDefinition(BaseModel):
+    type: str = "function"
+    function: ToolFunction
+
+
 class ChatMessage(BaseModel):
     """A single turn in a conversation, optionally carrying telemetry metadata."""
 
     role: Literal["system", "user", "assistant", "tool"]
-    # Content is a plain string for text models; a list of dicts for multimodal payloads.
-    content: str | list[dict[str, Any]]
+    # Content is None when the assistant message carries only tool_calls
+    content: str | list[dict[str, Any]] | None = None
+
+    # Tool calling fields
+    tool_calls: list[ToolCall] | None = None
+    tool_call_id: str | None = None  # present on role="tool" result messages
+    name: str | None = None          # optional tool name on result messages
 
     # Telemetry fields — populated on assistant messages returned by providers
     model: str | None = None
@@ -41,6 +74,8 @@ class ChatCompletionRequest(BaseModel):
     stream: bool = False
     temperature: float | None = 0.7
     max_tokens: int | None = Field(default=1024, alias="max_tokens")
+    tools: list[ToolDefinition] | None = None
+    tool_choice: str | None = None
 
 
 class ChatCompletionChoice(BaseModel):

@@ -31,6 +31,7 @@ from app.api.v1.endpoints import (
     profiles,
     providers,
     stats,
+    tools,
 )
 
 api_router = APIRouter(prefix="/v1")
@@ -48,3 +49,4 @@ api_router.include_router(mistral_discovery.router, prefix="/mistral-discovery",
 api_router.include_router(conversations.router, prefix="/conversations", tags=["conversations"])
 api_router.include_router(profiles.router, prefix="/profiles", tags=["profiles"])
 api_router.include_router(stats.router, prefix="/stats", tags=["stats"])
+api_router.include_router(tools.router, prefix="/tools", tags=["tools"])

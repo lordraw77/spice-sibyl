@@ -10,7 +10,9 @@
 /** A single conversation turn.  Extra fields are populated only on assistant replies. */
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string;
+  content: string | null;
+  /** UI-only: tool call/result events attached to this assistant message */
+  tool_events?: ToolEvent[];
   model?: string;
   provider?: string;
   /** Total round-trip latency in milliseconds */
@@ -29,12 +31,30 @@ export interface ChatMessage {
   free?: boolean;
 }
 
+/** Tool call inside an assistant message */
+export interface ToolCallFunction { name: string; arguments: string; }
+export interface ToolCall { id: string; type: string; function: ToolCallFunction; }
+
+/** Tool definition sent in the request */
+export interface ToolFunction { name: string; description: string; parameters: Record<string, unknown>; }
+export interface ToolDefinition { type: string; function: ToolFunction; }
+
+/** UI-only tool event attached to an assistant message for display */
+export interface ToolEvent {
+  kind: 'call' | 'result';
+  id: string;
+  name: string;
+  arguments?: Record<string, unknown>;
+  result?: string;
+}
+
 /** Body sent to POST /api/v1/chat/completions */
 export interface ChatCompletionRequest {
   model: string;
   messages: ChatMessage[];
   stream?: boolean;
   temperature?: number;
+  tools?: ToolDefinition[];
 }
 
 /** Token consumption reported by the provider */

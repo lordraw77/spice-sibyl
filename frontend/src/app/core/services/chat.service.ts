@@ -9,7 +9,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
-import { ChatCompletionRequest, ChatCompletionResponse, ChatModel, ChatStreamEvent, ProviderStatus, ProviderSummary, ProviderTestResult } from '../models/chat.models';
+import { ChatCompletionRequest, ChatCompletionResponse, ChatModel, ChatStreamEvent, ProviderStatus, ProviderSummary, ProviderTestResult, ToolDefinition } from '../models/chat.models';
 import { AppConfigService } from '../config/app-config.service';
 
 @Injectable({ providedIn: 'root' })
@@ -142,5 +142,10 @@ export class ChatService {
       `${this.apiUrl}/providers/${providerId}/key`,
       { api_key: apiKey },
     );
+  }
+
+  /** Return the list of built-in tool definitions from the backend. */
+  listTools(): Observable<ToolDefinition[]> {
+    return this.http.get<ToolDefinition[]>(`${this.apiUrl}/tools`);
   }
 }
