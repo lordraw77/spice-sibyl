@@ -6,8 +6,8 @@ on:
       - "v*.*.*"
 
 env:
-  BACKEND_IMAGE: lordraw77/spice-sibyl-backend
-  FRONTEND_IMAGE: lordraw77/spice-sibyl-frontend
+  BACKEND_IMAGE: lordraw/spice-sibyl-backend
+  FRONTEND_IMAGE: lordraw/spice-sibyl-frontend
 
 jobs:
   build-and-push:

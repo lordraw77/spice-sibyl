@@ -35,10 +35,10 @@ git push origin v1.2.3
 Le immagini prodotte:
 
 ```
-lordraw77/spice-sibyl-backend:v1.2.3
-lordraw77/spice-sibyl-backend:latest
-lordraw77/spice-sibyl-frontend:v1.2.3
-lordraw77/spice-sibyl-frontend:latest
+lordraw/spice-sibyl-backend:v1.2.3
+lordraw/spice-sibyl-backend:latest
+lordraw/spice-sibyl-frontend:v1.2.3
+lordraw/spice-sibyl-frontend:latest
 ```
 
 ---
@@ -158,7 +158,7 @@ make frontend   # ng serve :4200
 
 ## 5. Struttura immagini
 
-### Backend (`lordraw77/spice-sibyl-backend`)
+### Backend (`lordraw/spice-sibyl-backend`)
 
 - Base: `python:3.12-slim`
 - Utente non-root (`app`)
@@ -166,7 +166,7 @@ make frontend   # ng serve :4200
 - Healthcheck su `GET /api/v1/health`
 - Porta `8000`
 
-### Frontend (`lordraw77/spice-sibyl-frontend`)
+### Frontend (`lordraw/spice-sibyl-frontend`)
 
 - Build: `node:20-alpine` → `ng build --configuration production`
 - Serve: `nginx:alpine`
