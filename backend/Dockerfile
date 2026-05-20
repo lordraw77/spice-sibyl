@@ -11,10 +11,12 @@ COPY . .
 RUN chown -R app:app /app
 
 # Persistent volume for SQLite DB
-VOLUME ["/data"]
+#VOLUME ["/data"]
+ENV PYTHONPATH=/app
+ENV DB_PATH=/data/spice_sibyl.db
 
 USER app
-ENV DB_PATH=/data/spice_sibyl.db
+#ENV DB_PATH=/app/spice_sibyl.db
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"
