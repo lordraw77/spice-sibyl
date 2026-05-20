@@ -1,6 +1,6 @@
 # SpiceSibyl — Developer Guide
 
-> **Version:** 0.4.0  
+> **Version:** 0.5.0  
 > **Stack:** Python 3.11 · FastAPI · LiteLLM · aiosqlite · cryptography · Angular 18 · Docker Compose
 
 ---
@@ -17,9 +17,10 @@
    - [Provider System](#35-provider-system)
    - [Key Resolver & Vault](#36-key-resolver--vault)
    - [Database Layer](#37-database-layer)
-   - [Model Catalog](#38-model-catalog)
-   - [Provider Factory Dependency](#39-provider-factory-dependency)
-   - [Endpoint Reference](#310-endpoint-reference)
+   - [Tool System](#38-tool-system)
+   - [Model Catalog](#39-model-catalog)
+   - [Provider Factory Dependency](#310-provider-factory-dependency)
+   - [Endpoint Reference](#311-endpoint-reference)
 4. [Frontend](#4-frontend)
    - [Application Bootstrap](#41-application-bootstrap)
    - [Runtime Configuration](#42-runtime-configuration)
@@ -30,7 +31,8 @@
    - [Chat Page](#47-chat-page)
    - [Profile Modal](#48-profile-modal)
    - [Discovery Page](#49-discovery-page)
-   - [Routing](#410-routing)
+   - [Stats Page](#410-stats-page)
+   - [Routing](#411-routing)
 5. [Shared Configuration](#5-shared-configuration)
 6. [Docker & Infrastructure](#6-docker--infrastructure)
 7. [Adding a New Provider](#7-adding-a-new-provider)
@@ -45,8 +47,11 @@ The provider is selected at request time by inspecting the **model-ID prefix** (
 
 Beyond routing, the gateway also provides:
 - **Conversation persistence** — full history stored in SQLite, scoped per profile
+- **Conversation search** — FTS5 full-text search over message content, kept in sync by DB triggers
 - **API key vault** — provider keys encrypted with Fernet and cached in-memory
 - **Profile system** — named identities stored client-side (localStorage) + server-side (SQLite)
+- **Tool calling** — server-side loop with three built-in tools; `tool_call`/`tool_result` SSE events
+- **Usage stats** — aggregated per profile, provider, and model; includes Telegram bot counters
 
 ---
 
@@ -65,6 +70,8 @@ spice-sibyl/
 │   │   │       ├── models.py
 │   │   │       ├── profiles.py
 │   │   │       ├── providers.py
+│   │   │       ├── stats.py
+│   │   │       ├── tools.py
 │   │   │       ├── cloudflare_discovery.py
 │   │   │       ├── openrouter_discovery.py
 │   │   │       ├── gemini_discovery.py
@@ -80,7 +87,9 @@ spice-sibyl/
 │   │   │   ├── database.py              # Schema, init_db(), get_db()
 │   │   │   ├── conversation_repository.py
 │   │   │   ├── profile_repository.py
-│   │   │   └── vault_repository.py
+│   │   │   ├── vault_repository.py
+│   │   │   ├── stats_repository.py
+│   │   │   └── search_repository.py
 │   │   ├── dependencies/
 │   │   │   └── provider_factory.py
 │   │   ├── providers/
@@ -95,11 +104,16 @@ spice-sibyl/
 │   │   ├── schemas/
 │   │   │   ├── chat.py
 │   │   │   ├── conversations.py
-│   │   │   └── profiles.py
+│   │   │   ├── profiles.py
+│   │   │   └── stats.py
 │   │   ├── services/
 │   │   │   ├── chat_service.py
 │   │   │   ├── key_resolver.py
 │   │   │   └── vault_service.py
+│   │   ├── tools/
+│   │   │   ├── __init__.py
+│   │   │   ├── builtin.py
+│   │   │   └── registry.py
 │   │   └── main.py
 │   ├── tests/
 │   ├── .env.example
@@ -121,11 +135,13 @@ spice-sibyl/
 │       │       ├── conversation.service.ts
 │       │       ├── discovery.service.ts
 │       │       ├── notification.service.ts
-│       │       └── profile.service.ts
+│       │       ├── profile.service.ts
+│       │       └── stats.service.ts
 │       ├── features/
 │       │   ├── chat/
 │       │   ├── profile/
-│       │   └── discovery/
+│       │   ├── discovery/
+│       │   └── stats/
 │       ├── shared/toast-container/
 │       └── layout/navbar.component.ts
 ├── shared-config/provider_models.yaml
@@ -147,13 +163,13 @@ The FastAPI application is created with an `asynccontextmanager` lifespan that r
 ```python
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    await init_db()                    # create tables, run migrations
+    await init_db()                    # create tables, run migrations (incl. FTS5)
     async for db in get_db():
         await vault_repository.load_all(db)  # decrypt keys → warm in-memory cache
     yield
 ```
 
-On every boot: tables are created (idempotently), migrations applied, vault keys decrypted and cached.
+On every boot: tables are created (idempotently), migrations applied (including `messages_fts` FTS5 table and its triggers, populated from existing messages on first run), vault keys decrypted and cached.
 
 ---
 
@@ -200,6 +216,8 @@ PUT    /api/v1/providers/{id}/key
 DELETE /api/v1/providers/{id}/key
 POST   /api/v1/providers/{id}/test
 POST   /api/v1/chat/completions
+GET    /api/v1/tools
+GET    /api/v1/stats
 GET    /api/v1/profiles
 POST   /api/v1/profiles
 DELETE /api/v1/profiles/{id}
@@ -209,6 +227,7 @@ GET    /api/v1/conversations/{id}
 PATCH  /api/v1/conversations/{id}
 DELETE /api/v1/conversations/{id}
 POST   /api/v1/conversations/{id}/messages
+GET    /api/v1/conversations/search?q=&profile_id=
 POST   /api/v1/{cloudflare|openrouter|gemini|groq|cerebras|mistral}-discovery/run
 ```
 
@@ -216,11 +235,13 @@ POST   /api/v1/{cloudflare|openrouter|gemini|groq|cerebras|mistral}-discovery/ru
 
 ### 3.4 Schemas
 
-**`backend/app/schemas/chat.py`** — `ChatMessage`, `ChatCompletionRequest`, `ChatCompletionResponse`, `ChatMetrics`, `ChatUsage`
+**`backend/app/schemas/chat.py`** — `ChatMessage` (with `tool_calls`, `tool_call_id`, `name`), `ChatCompletionRequest` (with `tools` field), `ChatCompletionResponse`, `ChatMetrics`, `ChatUsage`, `ToolCall`, `ToolCallFunction`, `ToolDefinition`, `ToolFunction`. The `content` field is now `str | list | None` to support tool message envelopes.
 
-**`backend/app/schemas/conversations.py`** — `ConversationCreate`, `ConversationUpdate`, `ConversationSummary`, `Conversation`, `AppendMessagesRequest`
+**`backend/app/schemas/conversations.py`** — `ConversationCreate`, `ConversationUpdate`, `ConversationSummary`, `Conversation`, `AppendMessagesRequest`, `SearchResult`
 
 **`backend/app/schemas/profiles.py`** — `ProfileCreate`, `Profile`
+
+**`backend/app/schemas/stats.py`** — `StatsResponse` and related breakdown types
 
 ---
 
@@ -230,7 +251,7 @@ All adapters extend `BaseProvider` (`complete`, `stream`, `list_models`).
 
 | Adapter | File | Transport | Notes |
 |---|---|---|---|
-| `LiteLLMProvider` | `litellm_provider.py` | LiteLLM | Ollama, Groq, Together, Fireworks, HF, OpenAI |
+| `LiteLLMProvider` | `litellm_provider.py` | LiteLLM | Ollama, Groq, Together, Fireworks, HF, OpenAI. Handles `tool_calls`/`tool_call_id`/`name` in `_serialize_messages`; passes `tools` to LiteLLM via `_build_call_kwargs` |
 | `GeminiProvider` | `gemini_provider.py` | LiteLLM | Google Generative AI |
 | `OpenRouterProvider` | `openrouter_provider.py` | LiteLLM | OpenRouter |
 | `CloudflareProvider` | `cloudflare_provider.py` | direct httpx | Streaming emulated |
@@ -286,7 +307,8 @@ load_all(db)                           # decrypt all rows → warm_cache (called
 ```python
 async def init_db() -> None:
     # executescript(_SCHEMA) — creates tables if not exist
-    # applies _MIGRATIONS idempotently (ALTER TABLE ADD COLUMN, etc.)
+    # applies _MIGRATIONS idempotently (ALTER TABLE ADD COLUMN, FTS5 table + triggers, etc.)
+    # populates messages_fts from existing messages on first FTS migration
 
 async def get_db():  # FastAPI dependency
     # yields aiosqlite.Connection with row_factory=Row and foreign_keys=ON
@@ -299,10 +321,52 @@ async def get_db():  # FastAPI dependency
 | `conversation_repository` | `list_conversations(db, profile_id)`, `get_conversation(db, id)`, `create_conversation(db, title, model, profile_id)`, `update_title`, `delete_conversation`, `append_messages` |
 | `profile_repository` | `list_profiles(db)`, `get_profile(db, id)`, `create_profile(db, name)`, `delete_profile(db, id)` |
 | `vault_repository` | `store_key`, `delete_key`, `load_all` |
+| `stats_repository` | `get_stats(db, profile_id)` — aggregates global totals, per-profile, per-provider, per-model |
+| `search_repository` | `search(db, q, profile_id)` — FTS5 prefix-match, returns `SearchResult[]` with snippets |
+
+**FTS5 schema additions:**
+
+```sql
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+    id UNINDEXED,
+    conversation_id UNINDEXED,
+    content,
+    tokenize='unicode61'
+);
+-- Triggers: messages_fts_ai (INSERT), messages_fts_ad (DELETE), messages_fts_au (UPDATE)
+```
 
 ---
 
-### 3.8 Model Catalog
+### 3.8 Tool System
+
+**`backend/app/tools/builtin.py`**
+
+| Tool | Description |
+|---|---|
+| `get_datetime` | Returns current date/time for an IANA timezone string |
+| `calculator` | Evaluates a math expression using AST parsing (no `eval`) |
+| `web_search` | Queries DuckDuckGo JSON API and returns results |
+
+**`backend/app/tools/registry.py`**
+
+`ToolRegistry` maps tool names to their implementations. `GET /api/v1/tools` returns all registered tool definitions in OpenAI function-calling format.
+
+**Tool execution loop in `ChatService.stream()`:**
+
+When `tools` are present in the request, `stream()` enters a loop (max 5 iterations):
+1. Call `provider.complete()` (non-streaming, synchronous inside the loop)
+2. If the response contains `tool_calls`, for each call:
+   - Emit `event: tool_call` SSE
+   - Execute via `ToolRegistry`
+   - Emit `event: tool_result` SSE
+   - Append tool and result messages
+3. Loop back to step 1 with updated messages
+4. When no more tool calls, stream the final response normally
+
+---
+
+### 3.9 Model Catalog
 
 **File:** `backend/app/data/model_catalog.py`
 
@@ -313,7 +377,7 @@ Lookup order:
 
 ---
 
-### 3.9 Provider Factory Dependency
+### 3.10 Provider Factory Dependency
 
 **File:** `backend/app/dependencies/provider_factory.py`
 
@@ -330,10 +394,19 @@ Routing rules evaluated in order on the model-ID prefix:
 
 ---
 
-### 3.10 Endpoint Reference
+### 3.11 Endpoint Reference
 
 #### `POST /api/v1/chat/completions`
-Supports both streaming (`stream: true` → SSE) and non-streaming. Errors map to `429` (rate limit) or `500`.
+Supports both streaming (`stream: true` → SSE) and non-streaming. When `tools` is present in the request body, runs the server-side tool execution loop. Errors map to `429` (rate limit) or `500`.
+
+#### `GET /api/v1/tools`
+Returns all built-in tool definitions in OpenAI function-calling format.
+
+#### `GET /api/v1/stats?profile_id=`
+Returns `StatsResponse` with global totals, per-profile breakdown, per-provider (with profile drilldown), per-model (with profile drilldown), and Telegram bot counters. `profile_id` is optional.
+
+#### `GET /api/v1/conversations/search?q=&profile_id=`
+FTS5 prefix-match search over message content. `profile_id` is optional. Returns `SearchResult[]` including a text snippet for each hit.
 
 #### `PUT /api/v1/providers/{id}/key`
 Encrypts the supplied key with Fernet and stores it in `api_keys`. Updates the in-memory vault cache immediately. Returns `{ ok, configured, vaulted }`.
@@ -348,7 +421,7 @@ Returns conversations belonging to the given profile, newest first.
 Body: `{ title: str, model: str, profile_id: str }`. Creates and returns a `ConversationSummary`.
 
 #### `POST /api/v1/conversations/{id}/messages`
-Body: `{ messages: ChatMessage[] }`. Appends messages and bumps `updated_at`.
+Body: `{ messages: ChatMessage[] }`. Appends messages and bumps `updated_at`. Each inserted message is indexed by the `messages_fts_ai` trigger.
 
 #### `GET /api/v1/profiles` / `POST /api/v1/profiles` / `DELETE /api/v1/profiles/{id}`
 CRUD for profiles. DELETE cascades to conversations (messages are deleted via FK cascade).
@@ -383,31 +456,35 @@ Two interceptors registered in order:
 
 | Interface | Description |
 |---|---|
-| `ChatMessage` | Conversation turn with optional telemetry fields |
-| `ChatCompletionRequest/Response` | OpenAI-compatible request/response envelope |
+| `ChatMessage` | Conversation turn with optional telemetry and `tool_calls`/`tool_call_id`/`name` fields |
+| `ToolCall` / `ToolDefinition` / `ToolCallFunction` / `ToolFunction` | Tool calling types mirroring OpenAI format |
+| `ChatCompletionRequest` | OpenAI-compatible request envelope with `tools` field |
+| `ChatCompletionResponse` | Response envelope |
 | `ChatModel` | Model entry from `GET /models` |
 | `ProviderSummary` | Per-provider summary |
 | `Profile` | `{ id, name, created_at }` |
 | `ConversationSummary` | `{ id, title, model, created_at, updated_at }` |
 | `Conversation` | `ConversationSummary & { messages: ChatMessage[] }` |
+| `SearchResult` | `{ conversation_id, title, snippet, ... }` |
 
 ---
 
 ### 4.4 Services
 
 #### ChatService
-Wraps `POST /chat/completions`. Streaming uses raw `fetch` + `ReadableStream` (not `HttpClient`) to avoid buffering. Emits `{ event, data }` observables.
+Wraps `POST /chat/completions`. Streaming uses raw `fetch` + `ReadableStream` (not `HttpClient`) to avoid buffering. Emits `{ event, data }` observables including `tool_call` and `tool_result` events.
 
 #### ConversationService
 HTTP client for all conversation endpoints.
 
 ```typescript
 list(profileId: string): Observable<ConversationSummary[]>  // GET ?profile_id=
-create(title, model, profileId): Observable<ConversationSummary>  // POST with profile_id in body
+create(title, model, profileId): Observable<ConversationSummary>
 get(id): Observable<Conversation>
 rename(id, title): Observable<ConversationSummary>
 delete(id): Observable<void>
 appendMessages(id, messages): Observable<void>
+search(q, profileId?): Observable<SearchResult[]>  // GET /conversations/search
 ```
 
 #### ProfileService
@@ -421,6 +498,13 @@ create(name): Observable<Profile>  // also calls select()
 delete(id): Observable<void>
 select(profile): void   // updates signal + localStorage
 clear(): void           // sets signal to null, removes from localStorage
+```
+
+#### StatsService
+HTTP client for `GET /stats`.
+
+```typescript
+getStats(profileId?: string): Observable<StatsResponse>
 ```
 
 #### NotificationService
@@ -446,7 +530,7 @@ Catches `HttpErrorResponse`, extracts the FastAPI `detail` field, calls `Notific
 
 Toast variants: `error` (pink), `warning` (gold), `info` (blue). Rendered in `ToastContainerComponent` (fixed top-right, mounted in `AppComponent`).
 
-Streaming errors arrive as `event: error` SSE frames → parsed by `ChatService` → `subscriber.error()` → chat page error handler → toast + inline `⚠` bubble.
+Streaming errors arrive as `event: error` SSE frames → parsed by `ChatService` → `subscriber.error()` → chat page error handler → toast + inline bubble.
 
 ---
 
@@ -458,13 +542,17 @@ Streaming errors arrive as `event: error` SSE frames → parsed by `ChatService`
 
 | Signal | Type | Description |
 |---|---|---|
-| `messages` | `ChatMessage[]` | Full conversation including telemetry |
+| `messages` | `ChatMessage[]` | Full conversation including telemetry and `tool_events[]` |
 | `conversations` | `ConversationSummary[]` | Sidebar list for the active profile |
 | `models` | `ChatModel[]` | All models from `GET /models` |
 | `providers` | `ProviderSummary[]` | Per-provider summaries |
 | `capabilityFilter` | `string` | Active capability filter |
 | `availabilityFilter` | `'all'\|'free'` | Free-only toggle |
 | `selectedProviders` | `string[]` | Provider IDs in the sidebar filter |
+| `toolsEnabled` | `boolean` | Whether tools are sent with requests |
+| `tools` | `ToolDefinition[]` | Fetched from `GET /tools` on load |
+| `searchQuery` | `string` | Current search bar input |
+| `searchResults` | `SearchResult[]` | Inline results from FTS5 search |
 
 #### Computed
 
@@ -478,7 +566,7 @@ Streaming errors arrive as `event: error` SSE frames → parsed by `ChatService`
 
 | Method | Description |
 |---|---|
-| `send()` | Appends user message, starts SSE stream, updates messages on each chunk |
+| `send()` | Appends user message, starts SSE stream, updates messages on each chunk. Sends `tools` when enabled |
 | `onEnter(event)` | Enter sends, Shift+Enter inserts newline |
 | `selectConversation(id)` | GET conversation → `messages.set(conv.messages)`, closes sidebar on mobile |
 | `newConversation()` | Resets to welcome state, closes sidebar on mobile |
@@ -486,6 +574,11 @@ Streaming errors arrive as `event: error` SSE frames → parsed by `ChatService`
 | `switchProfile()` | Calls `profileService.clear()` → modal reappears |
 | `persistExchange(userMsg, assistantIdx)` | After stream: create conversation if new, then append messages |
 | `loadConversationList()` | GET `/conversations?profile_id=<current>` → updates `conversations` signal |
+| `onSearch(q)` | Debounced 300 ms → `conversationService.search(q)` → updates `searchResults` |
+
+#### SSE handling
+
+`tool_call` and `tool_result` events are stored as `tool_events[]` on the assistant `ChatMessage` and rendered as colored bubbles above the reply text.
 
 #### Effect (constructor)
 ```typescript
@@ -527,12 +620,27 @@ Tabs: `cloudflare | openrouter | gemini | groq | cerebras | mistral`. Each tab c
 
 ---
 
-### 4.10 Routing
+### 4.10 Stats Page
+
+**File:** `frontend/src/app/features/stats/stats-page.component.ts`
+
+Loaded at route `/stats`. Calls `StatsService.getStats()` on init and renders:
+
+- **Summary cards** — global totals (messages, tokens, conversations)
+- **Per-profile table** — one row per profile with message and token counts
+- **Per-provider table** — expandable rows with per-profile drilldown
+- **Per-model table** — expandable rows with per-profile drilldown
+- **Telegram section** — `messages_received`, `messages_sent`, `errors`, `active_chats`
+
+---
+
+### 4.11 Routing
 
 ```
 /           → ChatPageComponent      (lazy-loaded)
 /discovery  → DiscoveryPageComponent (lazy-loaded)
 /providers  → ProvidersPageComponent (lazy-loaded)
+/stats      → StatsPageComponent     (lazy-loaded)
 ```
 
 ---

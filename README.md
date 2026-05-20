@@ -17,8 +17,10 @@ SpiceSibyl is an OpenAI-compatible multi-provider AI gateway with a built-in Ang
 9. [Profiles](#profiles)
 10. [Provider catalog](#provider-catalog)
 11. [Model discovery](#model-discovery)
-12. [Error handling](#error-handling)
-13. [Running tests](#running-tests)
+12. [Tool calling](#tool-calling)
+13. [Usage stats](#usage-stats)
+14. [Error handling](#error-handling)
+15. [Running tests](#running-tests)
 
 ---
 
@@ -36,10 +38,13 @@ FastAPI gateway  (/api/v1)
       ├── OpenRouterProvider ──► OpenRouter
       ├── CloudflareProvider ──► Cloudflare Workers AI
       ├── CerebrasProvider   ──► Cerebras Cloud
-      └── MistralProvider    ──► Mistral AI
+      ├── MistralProvider    ──► Mistral AI
+      │
+      ├── ToolRegistry       ──► get_datetime · calculator · web_search
       │
       └── SQLite (aiosqlite)
             ├── conversations + messages  (history per profile)
+            ├── messages_fts              (FTS5 virtual table for search)
             ├── profiles                  (named identities)
             └── api_keys                  (Fernet-encrypted)
 ```
@@ -62,14 +67,15 @@ FastAPI gateway  (/api/v1)
 spice-sibyl/
 ├── backend/
 │   ├── app/
-│   │   ├── api/v1/endpoints/   # chat, conversations, profiles, providers, discovery ×6
+│   │   ├── api/v1/endpoints/   # chat, conversations, profiles, providers, discovery ×6, stats, tools
 │   │   ├── core/               # Settings (pydantic-settings)
 │   │   ├── data/               # Model catalog loader (YAML)
-│   │   ├── db/                 # SQLite: schema, repositories (conversation, profile, vault)
+│   │   ├── db/                 # SQLite: schema, repositories (conversation, profile, vault, stats, search)
 │   │   ├── dependencies/       # FastAPI provider factory dependency
 │   │   ├── providers/          # BaseProvider + concrete adapters
 │   │   ├── schemas/            # Pydantic request/response models
-│   │   └── services/           # ChatService · VaultService · KeyResolver
+│   │   ├── services/           # ChatService · VaultService · KeyResolver
+│   │   └── tools/              # Built-in tool definitions and registry
 │   ├── tests/
 │   ├── .env.example
 │   └── requirements.txt
@@ -79,11 +85,12 @@ spice-sibyl/
 │       │   ├── config/         # Runtime config (app-config.json)
 │       │   ├── interceptors/   # error.interceptor · profile.interceptor
 │       │   ├── models/         # TypeScript domain models
-│       │   └── services/       # ChatService · ConversationService · ProfileService · …
+│       │   └── services/       # ChatService · ConversationService · ProfileService · StatsService · …
 │       ├── features/
 │       │   ├── chat/           # Chat page (sidebar + messages + composer)
 │       │   ├── profile/        # Profile selector modal
-│       │   └── discovery/      # Model discovery page
+│       │   ├── discovery/      # Model discovery page
+│       │   └── stats/          # Usage stats dashboard
 │       ├── shared/
 │       │   └── toast-container/
 │       └── layout/             # Navbar
@@ -184,7 +191,7 @@ Remove a vaulted key. The provider falls back to the env variable.
 Tests connectivity to a provider.
 
 ### `POST /chat/completions`
-OpenAI-compatible chat completion (streaming or non-streaming).
+OpenAI-compatible chat completion (streaming or non-streaming). Pass `tools: [...]` to enable tool calling.
 
 ```jsonc
 {
@@ -192,9 +199,16 @@ OpenAI-compatible chat completion (streaming or non-streaming).
   "messages": [{ "role": "user", "content": "Hello!" }],
   "stream": false,
   "temperature": 0.7,
-  "max_tokens": 1024
+  "max_tokens": 1024,
+  "tools": []
 }
 ```
+
+### `GET /tools`
+Returns all built-in tool definitions in OpenAI function-calling format.
+
+### `GET /stats?profile_id=`
+Returns global usage totals, per-profile breakdown, per-provider and per-model breakdowns, and Telegram bot counters. `profile_id` is optional.
 
 ### `GET /profiles`
 List all profiles.
@@ -223,9 +237,24 @@ Delete a conversation and all its messages.
 ### `POST /conversations/{id}/messages`
 Append messages to an existing conversation.
 
+### `GET /conversations/search?q=&profile_id=`
+Full-text search over message content using SQLite FTS5 (prefix-match). Returns `SearchResult[]` with a snippet per hit.
+
 ### Discovery endpoints
 `POST /{cloudflare|openrouter|gemini|groq|cerebras|mistral}-discovery/run`  
 Each returns `{ model_count, yaml, models[] }`.
+
+---
+
+## SSE event types
+
+| Event         | Description                                                      |
+|---------------|------------------------------------------------------------------|
+| `message`     | Streaming delta chunk OR `chat.completion.meta` telemetry        |
+| `done`        | `[DONE]` sentinel                                                |
+| `error`       | `{"message": "..."}`                                             |
+| `tool_call`   | `{"id": "...", "name": "...", "arguments": {...}}` — tool being invoked |
+| `tool_result` | `{"id": "...", "name": "...", "result": "..."}` — tool execution result |
 
 ---
 
@@ -239,6 +268,8 @@ Every chat exchange is automatically saved to SQLite after the stream completes:
 4. Clicking a conversation loads its full message history including all telemetry fields.
 
 Conversations are **scoped to a profile** — switching profiles shows only that profile's history.
+
+All messages are indexed automatically in the `messages_fts` FTS5 virtual table via database triggers, making them instantly searchable.
 
 ---
 
@@ -304,6 +335,31 @@ The **Discovery** page fetches the live model catalog from a provider and genera
 | Groq       | `POST /groq-discovery/run`       | `GROQ_API_KEY`                                  |
 | Cerebras   | `POST /cerebras-discovery/run`   | `CEREBRAS_API_KEY`                              |
 | Mistral    | `POST /mistral-discovery/run`    | `MISTRAL_API_KEY`                               |
+
+---
+
+## Tool calling
+
+SpiceSibyl ships three built-in tools that any model supporting function calling can use:
+
+| Tool           | Description                                          |
+|----------------|------------------------------------------------------|
+| `get_datetime` | Returns the current date/time for an IANA timezone   |
+| `calculator`   | Evaluates a math expression (AST-safe, no `eval`)    |
+| `web_search`   | Queries the DuckDuckGo JSON API and returns results  |
+
+Enable tools in the chat sidebar with the tools toggle. When enabled, tool definitions are sent with the completion request. `ChatService.stream()` runs a tool execution loop (max 5 iterations) and emits `tool_call` / `tool_result` SSE events before the final reply. These are rendered as colored bubbles above the assistant's response text.
+
+---
+
+## Usage stats
+
+The `/stats` page shows:
+- Global message/token totals
+- Per-profile breakdown table
+- Per-provider breakdown with per-profile drilldown
+- Per-model breakdown with per-profile drilldown
+- Telegram bot counters (messages received/sent, errors, active chats)
 
 ---
 

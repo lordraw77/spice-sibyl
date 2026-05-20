@@ -6,6 +6,9 @@
 - API OpenAI-compatible su `/v1/chat/completions`
 - UI web stile chat moderna con telemetria per-messaggio in tempo reale
 - Supporto streaming SSE end-to-end con gestione errori strutturata
+- Tool calling con loop di esecuzione lato server (max 5 iterazioni)
+- Dashboard statistiche di utilizzo per profilo, provider e modello
+- Ricerca full-text dei messaggi tramite SQLite FTS5
 - Discovery live dei cataloghi modelli dai provider, con generazione YAML
 - Notifiche errori globali (toast) nel frontend
 - Persistenza conversazioni su SQLite con history separata per profilo
@@ -20,9 +23,11 @@ spice-sibyl/
 ├── backend/app/
 │   ├── api/v1/endpoints/       # Endpoint REST
 │   │   ├── chat.py             # POST /chat/completions
-│   │   ├── conversations.py    # CRUD conversazioni + messaggi
+│   │   ├── conversations.py    # CRUD conversazioni + messaggi + ricerca FTS5
 │   │   ├── profiles.py         # CRUD profili
 │   │   ├── providers.py        # GET/PATCH/PUT/DELETE providers + key vault
+│   │   ├── stats.py            # GET /stats — statistiche utilizzo
+│   │   ├── tools.py            # GET /tools — definizioni tool built-in
 │   │   └── *_discovery.py      # Discovery × 6 provider
 │   ├── core/config.py          # Settings (env / .env)
 │   ├── data/                   # Loader catalogo YAML
@@ -30,23 +35,35 @@ spice-sibyl/
 │   │   ├── database.py         # Schema SQLite, init_db(), get_db()
 │   │   ├── conversation_repository.py
 │   │   ├── profile_repository.py
-│   │   └── vault_repository.py # Cifratura/decifratura chiavi API
+│   │   ├── vault_repository.py # Cifratura/decifratura chiavi API
+│   │   ├── stats_repository.py # Query aggregazione utilizzo
+│   │   └── search_repository.py # Query FTS5 full-text search
 │   ├── dependencies/           # provider_factory.py — FastAPI dependency
 │   ├── providers/              # BaseProvider + adapter concreti
-│   └── services/
-│       ├── chat_service.py     # Orchestrazione SSE streaming
-│       ├── key_resolver.py     # Vault → env fallback per le API key
-│       └── vault_service.py    # Fernet encrypt/decrypt + cache in-memory
+│   ├── schemas/
+│   │   ├── chat.py             # ChatMessage, ToolCall, ToolDefinition, …
+│   │   ├── conversations.py    # ConversationSummary, SearchResult, …
+│   │   ├── profiles.py
+│   │   └── stats.py            # StatsResponse e tipi correlati
+│   ├── services/
+│   │   ├── chat_service.py     # Orchestrazione SSE streaming + tool loop
+│   │   ├── key_resolver.py     # Vault → env fallback per le API key
+│   │   └── vault_service.py    # Fernet encrypt/decrypt + cache in-memory
+│   └── tools/
+│       ├── __init__.py
+│       ├── builtin.py          # get_datetime · calculator · web_search
+│       └── registry.py         # ToolRegistry — lookup per nome
 ├── frontend/src/app/
 │   ├── core/
 │   │   ├── config/             # AppConfigService (app-config.json runtime)
 │   │   ├── interceptors/       # error.interceptor · profile.interceptor
 │   │   ├── models/             # Interfacce TypeScript (mirror Pydantic)
-│   │   └── services/           # ChatService · ConversationService · ProfileService · …
+│   │   └── services/           # ChatService · ConversationService · ProfileService · StatsService · …
 │   ├── features/
 │   │   ├── chat/               # ChatPageComponent — UI chat principale
 │   │   ├── profile/            # ProfileModalComponent — selettore profili
-│   │   └── discovery/          # DiscoveryPageComponent
+│   │   ├── discovery/          # DiscoveryPageComponent
+│   │   └── stats/              # StatsPageComponent — dashboard utilizzo
 │   ├── shared/toast-container/
 │   └── layout/navbar.component.ts
 └── shared-config/provider_models.yaml
@@ -90,9 +107,19 @@ api_keys (
     encrypted_key TEXT NOT NULL,   -- cifrato con Fernet
     updated_at    INTEGER NOT NULL
 )
+
+-- Tabella virtuale FTS5 per ricerca full-text sui messaggi
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+    id UNINDEXED,
+    conversation_id UNINDEXED,
+    content,
+    tokenize='unicode61'
+);
+-- Mantenuta in sync da 3 trigger: messages_fts_ai (INSERT),
+-- messages_fts_ad (DELETE), messages_fts_au (UPDATE)
 ```
 
-Il database viene inizializzato al boot tramite `lifespan` in `main.py`. Le migration additive (es. aggiunta colonna `profile_id`) vengono applicate idempotentemente.
+Il database viene inizializzato al boot tramite `lifespan` in `main.py`. Le migration additive (es. aggiunta colonna `profile_id`, creazione tabella FTS5) vengono applicate idempotentemente. Al primo avvio con la migrazione FTS5, la tabella viene popolata dai messaggi esistenti.
 
 ---
 
@@ -101,11 +128,17 @@ Il database viene inizializzato al boot tramite `lifespan` in `main.py`. Le migr
 ```
 Frontend (ChatPageComponent)
   │  POST /api/v1/chat/completions  (fetch + ReadableStream)
+  │  body include tools[] quando il toggle è attivo
   ▼
 FastAPI chat.py
   │  get_provider(model) → provider adapter
   ▼
 ChatService.stream()
+  │  se tools[] presenti → tool execution loop (max 5 iterazioni)
+  │    ├── provider.complete() → tool_calls nel response
+  │    ├── emette event: tool_call  (SSE)
+  │    ├── ToolRegistry.execute(name, arguments)
+  │    └── emette event: tool_result (SSE)
   │  EventSourceResponse(event_generator())
   ▼
 Provider.stream()
@@ -123,16 +156,19 @@ Frontend.persistExchange()
   │  POST /api/v1/conversations/{id}/messages  { messages: [user, assistant] }
   ▼
 conversation_repository → SQLite
+  │  trigger messages_fts_ai aggiorna messages_fts automaticamente
 ```
 
 ### SSE event types
 
-| Event     | Emesso da         | Contenuto                                            |
-|-----------|-------------------|------------------------------------------------------|
-| `message` | ChatService       | Chunk delta (`chat.completion.chunk`)                |
-| `message` | LiteLLMProvider   | Chunk finale `chat.completion.meta` con telemetria   |
-| `done`    | ChatService       | `[DONE]` — segnala fine stream                       |
-| `error`   | ChatService       | `{"message": "..."}` — errore inside generator       |
+| Event         | Emesso da         | Contenuto                                                        |
+|---------------|-------------------|------------------------------------------------------------------|
+| `message`     | ChatService       | Chunk delta (`chat.completion.chunk`)                            |
+| `message`     | LiteLLMProvider   | Chunk finale `chat.completion.meta` con telemetria               |
+| `done`        | ChatService       | `[DONE]` — segnala fine stream                                   |
+| `error`       | ChatService       | `{"message": "..."}` — errore inside generator                   |
+| `tool_call`   | ChatService       | `{"id": "...", "name": "...", "arguments": {...}}`               |
+| `tool_result` | ChatService       | `{"id": "...", "name": "...", "result": "..."}`                  |
 
 ---
 
@@ -150,6 +186,69 @@ conversation_repository → SQLite
 Tutte le API key vengono risolte via `key_resolver.resolve(provider_id)`:
 1. Controlla la cache in-memory del vault (chiave cifrata nel DB)
 2. Fallback sull'env var / `settings.*_api_key`
+
+---
+
+## Tool system
+
+```
+GET /api/v1/tools
+  ▼
+tools/registry.py → lista definizioni in formato OpenAI function-calling
+
+POST /api/v1/chat/completions  { tools: [...] }
+  ▼
+ChatService.stream()
+  │  provider.complete() — non streaming, sincrono dentro il loop
+  │  risposta contiene tool_calls[]
+  ▼
+ToolRegistry.execute(name, arguments)
+  │  builtin.py:
+  │    get_datetime(timezone) → datetime ISO string
+  │    calculator(expression) → risultato numerico (AST safe eval)
+  │    web_search(query)      → risultati DuckDuckGo JSON API
+  ▼
+messages aggiornati con tool e tool_result, poi chiamata finale al provider
+```
+
+---
+
+## Conversation search — FTS5
+
+```
+GET /api/v1/conversations/search?q=<termine>&profile_id=<uuid>
+  ▼
+search_repository.search(db, q, profile_id)
+  │  query FTS5 prefix-match: messages_fts MATCH '<termine>*'
+  │  JOIN conversations per filtrare per profile_id
+  ▼
+SearchResult[] { conversation_id, title, snippet, ... }
+  ▼
+Frontend: barra di ricerca nella sidebar con debounce 300ms
+  │  risultati inline, Escape per cancellare
+```
+
+---
+
+## Usage stats
+
+```
+GET /api/v1/stats?profile_id=<uuid>
+  ▼
+stats_repository.get_stats(db, profile_id)
+  │  aggregazioni SQL su messages + conversations
+  │  + get_telegram_stats() dai contatori in-memory del bot
+  ▼
+StatsResponse {
+  global_totals,
+  per_profile[],
+  per_provider[] (con drilldown per profilo),
+  per_model[]    (con drilldown per profilo),
+  telegram { messages_received, messages_sent, errors, active_chats }
+}
+  ▼
+StatsPageComponent: summary cards + tabelle espandibili
+```
 
 ---
 
@@ -233,7 +332,7 @@ chat.service.ts  →  subscriber.error(new Error(message))
   ▼
 ChatPageComponent.error handler
   ├── NotificationService.add(...)   → toast
-  └── messages.update(...)           → ⚠ messaggio nella bubble
+  └── messages.update(...)           → messaggio nella bubble
 ```
 
 ---
