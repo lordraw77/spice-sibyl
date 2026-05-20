@@ -61,6 +61,14 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   readonly toolsEnabled = signal(false);
   readonly availableTools = signal<ToolDefinition[]>([]);
 
+  readonly conversationsOpen = signal(true);
+  readonly modelOpen = signal(true);
+  readonly providerOpen = signal(true);
+
+  toggleConversations(): void { this.conversationsOpen.update(v => !v); }
+  toggleModel(): void { this.modelOpen.update(v => !v); }
+  toggleProviderSection(): void { this.providerOpen.update(v => !v); }
+
   constructor() {
     // Reload the conversation list whenever the active profile changes.
     // Reset messages only when the profile *actually* changes — not on every

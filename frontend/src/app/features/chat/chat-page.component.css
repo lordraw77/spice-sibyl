@@ -73,12 +73,36 @@
   justify-content: space-between;
 }
 
+.section-collapse-btn {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+.section-collapse-btn:hover .section-label { color: #9ba3b4; }
+
 .section-label {
   font-size: .72rem;
   font-weight: 600;
   letter-spacing: .07em;
   text-transform: uppercase;
   color: #6b7485;
+  transition: color .15s;
+}
+
+.section-chevron {
+  color: #6b7485;
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+  transition: transform .2s ease, color .15s;
+}
+.section-chevron.open {
+  transform: rotate(0deg);
 }
 
 /* ── Profile chip ───────────────────────────────────────────── */
@@ -149,10 +173,10 @@
   display: flex;
   flex-direction: column;
   gap: .2rem;
-  max-height: 240px;
+  max-height: 10.5rem;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,.06) transparent;
+  scrollbar-color: rgba(255,255,255,.12) transparent;
 }
 
 .conversation-item {

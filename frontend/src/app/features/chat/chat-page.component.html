@@ -26,88 +26,100 @@
       <!-- Conversations -->
       <div class="sidebar-section">
         <div class="section-header">
-          <span class="section-label">Conversazioni</span>
+          <button class="section-collapse-btn" (click)="toggleConversations()" [attr.aria-expanded]="conversationsOpen()">
+            <span class="section-label">Conversazioni</span>
+            <svg class="section-chevron" [class.open]="conversationsOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
           <button class="btn-new-chat" (click)="newConversation()" title="Nuova chat">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Nuova
           </button>
         </div>
 
-        <!-- Search bar -->
-        <div class="search-bar">
-          <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input
-            class="search-input"
-            type="text"
-            placeholder="Cerca nelle conversazioni…"
-            [value]="searchQuery()"
-            (input)="onSearchInput($any($event.target).value)"
-            (keydown.escape)="clearSearch()"
-          />
-          <button class="search-clear" *ngIf="searchQuery()" (click)="clearSearch()" title="Cancella">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </div>
-
-        <!-- Search results -->
-        <ng-container *ngIf="searchQuery(); else normalList">
-          <div class="search-spinner" *ngIf="isSearching()">
-            <span class="dot-spin-sm"></span>
+        <ng-container *ngIf="conversationsOpen()">
+          <!-- Search bar -->
+          <div class="search-bar">
+            <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input
+              class="search-input"
+              type="text"
+              placeholder="Cerca nelle conversazioni…"
+              [value]="searchQuery()"
+              (input)="onSearchInput($any($event.target).value)"
+              (keydown.escape)="clearSearch()"
+            />
+            <button class="search-clear" *ngIf="searchQuery()" (click)="clearSearch()" title="Cancella">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </div>
-          <ul class="conversation-list" *ngIf="!isSearching() && searchResults().length">
-            <li
-              *ngFor="let r of searchResults()"
-              class="conversation-item search-result-item"
-              [class.active]="r.id === currentConversationId"
-              (click)="selectSearchResult(r)"
-            >
-              <span class="conv-title">{{ r.title }}</span>
-              <span class="conv-snippet">{{ r.snippet }}</span>
-            </li>
-          </ul>
-          <p class="no-convs" *ngIf="!isSearching() && !searchResults().length">
-            Nessun risultato.
-          </p>
-        </ng-container>
 
-        <!-- Normal conversation list -->
-        <ng-template #normalList>
-          <ul class="conversation-list" *ngIf="conversations().length; else noConvs">
-            <li
-              *ngFor="let conv of conversations()"
-              class="conversation-item"
-              [class.active]="conv.id === currentConversationId"
-              (click)="selectConversation(conv.id)"
-            >
-              <span class="conv-title">{{ conv.title }}</span>
-              <button class="conv-delete" (click)="deleteConversation(conv.id, $event)" title="Elimina">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </li>
-          </ul>
-          <ng-template #noConvs>
-            <p class="no-convs">Nessuna conversazione salvata.</p>
+          <!-- Search results -->
+          <ng-container *ngIf="searchQuery(); else normalList">
+            <div class="search-spinner" *ngIf="isSearching()">
+              <span class="dot-spin-sm"></span>
+            </div>
+            <ul class="conversation-list" *ngIf="!isSearching() && searchResults().length">
+              <li
+                *ngFor="let r of searchResults()"
+                class="conversation-item search-result-item"
+                [class.active]="r.id === currentConversationId"
+                (click)="selectSearchResult(r)"
+              >
+                <span class="conv-title">{{ r.title }}</span>
+                <span class="conv-snippet">{{ r.snippet }}</span>
+              </li>
+            </ul>
+            <p class="no-convs" *ngIf="!isSearching() && !searchResults().length">
+              Nessun risultato.
+            </p>
+          </ng-container>
+
+          <!-- Normal conversation list -->
+          <ng-template #normalList>
+            <ul class="conversation-list" *ngIf="conversations().length; else noConvs">
+              <li
+                *ngFor="let conv of conversations()"
+                class="conversation-item"
+                [class.active]="conv.id === currentConversationId"
+                (click)="selectConversation(conv.id)"
+              >
+                <span class="conv-title">{{ conv.title }}</span>
+                <button class="conv-delete" (click)="deleteConversation(conv.id, $event)" title="Elimina">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </li>
+            </ul>
+            <ng-template #noConvs>
+              <p class="no-convs">Nessuna conversazione salvata.</p>
+            </ng-template>
           </ng-template>
-        </ng-template>
+        </ng-container>
       </div>
 
       <!-- Model -->
       <div class="sidebar-section">
-        <div class="section-label">Modello</div>
-        <select class="form-select mb-2" [ngModel]="capabilityFilter()" (ngModelChange)="setCapabilityFilter($event)">
-          <option *ngFor="let capability of availableCapabilities()" [value]="capability">
-            {{ capability === 'all' ? 'Tutte le capacità' : capability }}
-          </option>
-        </select>
-        <select class="form-select" [(ngModel)]="model">
-          <option *ngFor="let item of filteredModels()" [value]="item.id">{{ item.label || item.id }}</option>
-        </select>
-        <div class="model-badges" *ngIf="selectedModelMeta() as selected">
-          <span class="badge-chip provider">{{ selected.provider || 'provider' }}</span>
-          <span class="badge-chip ok" *ngIf="selected.configured">configurato</span>
-          <span class="badge-chip free" *ngIf="selected.free">free</span>
-          <span class="badge-chip" *ngFor="let capability of selected.capabilities || []">{{ capability }}</span>
+        <div class="section-header">
+          <button class="section-collapse-btn" (click)="toggleModel()" [attr.aria-expanded]="modelOpen()">
+            <span class="section-label">Modello</span>
+            <svg class="section-chevron" [class.open]="modelOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
         </div>
+        <ng-container *ngIf="modelOpen()">
+          <select class="form-select mb-2" [ngModel]="capabilityFilter()" (ngModelChange)="setCapabilityFilter($event)">
+            <option *ngFor="let capability of availableCapabilities()" [value]="capability">
+              {{ capability === 'all' ? 'Tutte le capacità' : capability }}
+            </option>
+          </select>
+          <select class="form-select" [(ngModel)]="model">
+            <option *ngFor="let item of filteredModels()" [value]="item.id">{{ item.label || item.id }}</option>
+          </select>
+          <div class="model-badges" *ngIf="selectedModelMeta() as selected">
+            <span class="badge-chip provider">{{ selected.provider || 'provider' }}</span>
+            <span class="badge-chip ok" *ngIf="selected.configured">configurato</span>
+            <span class="badge-chip free" *ngIf="selected.free">free</span>
+            <span class="badge-chip" *ngFor="let capability of selected.capabilities || []">{{ capability }}</span>
+          </div>
+        </ng-container>
       </div>
 
       <!-- Tools -->
@@ -128,36 +140,43 @@
 
       <!-- Providers -->
       <div class="sidebar-section">
-        <div class="section-label">Provider</div>
-        <div class="provider-filters">
-          <select class="form-select form-select-sm" [ngModel]="availabilityFilter()" (ngModelChange)="setAvailabilityFilter($event)">
-            <option value="all">Tutti</option>
-            <option value="free">Solo free</option>
-          </select>
-          <select class="form-select form-select-sm" [ngModel]="capabilityFilter()" (ngModelChange)="setCapabilityFilter($event)">
-            <option *ngFor="let capability of availableCapabilities()" [value]="capability">
-              {{ capability === 'all' ? 'Tutte' : capability }}
-            </option>
-          </select>
+        <div class="section-header">
+          <button class="section-collapse-btn" (click)="toggleProviderSection()" [attr.aria-expanded]="providerOpen()">
+            <span class="section-label">Provider</span>
+            <svg class="section-chevron" [class.open]="providerOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
         </div>
-        <ul class="provider-list">
-          <li *ngFor="let provider of providers()">
-            <button type="button" class="provider-toggle" [class.active]="isProviderSelected(provider.id)" (click)="toggleProvider(provider.id)">
-              <div class="provider-row">
-                <span class="provider-name">
-                  <span class="provider-check" [class.on]="isProviderSelected(provider.id)">
-                    {{ isProviderSelected(provider.id) ? '✓' : '○' }}
+        <ng-container *ngIf="providerOpen()">
+          <div class="provider-filters">
+            <select class="form-select form-select-sm" [ngModel]="availabilityFilter()" (ngModelChange)="setAvailabilityFilter($event)">
+              <option value="all">Tutti</option>
+              <option value="free">Solo free</option>
+            </select>
+            <select class="form-select form-select-sm" [ngModel]="capabilityFilter()" (ngModelChange)="setCapabilityFilter($event)">
+              <option *ngFor="let capability of availableCapabilities()" [value]="capability">
+                {{ capability === 'all' ? 'Tutte' : capability }}
+              </option>
+            </select>
+          </div>
+          <ul class="provider-list">
+            <li *ngFor="let provider of providers()">
+              <button type="button" class="provider-toggle" [class.active]="isProviderSelected(provider.id)" (click)="toggleProvider(provider.id)">
+                <div class="provider-row">
+                  <span class="provider-name">
+                    <span class="provider-check" [class.on]="isProviderSelected(provider.id)">
+                      {{ isProviderSelected(provider.id) ? '✓' : '○' }}
+                    </span>
+                    {{ provider.label }}
                   </span>
-                  {{ provider.label }}
-                </span>
-                <span class="provider-count">{{ provider.model_count }}</span>
+                  <span class="provider-count">{{ provider.model_count }}</span>
+                </div>
+              </button>
+              <div class="provider-caps" *ngIf="provider.capabilities.length">
+                <span class="mini-cap" *ngFor="let capability of provider.capabilities">{{ capability }}</span>
               </div>
-            </button>
-            <div class="provider-caps" *ngIf="provider.capabilities.length">
-              <span class="mini-cap" *ngFor="let capability of provider.capabilities">{{ capability }}</span>
-            </div>
-          </li>
-        </ul>
+            </li>
+          </ul>
+        </ng-container>
       </div>
 
     </div>
