@@ -29,8 +29,10 @@ import { Subject, debounceTime, distinctUntilChanged, switchMap, of } from 'rxjs
 import { takeUntil } from 'rxjs/operators';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 
 import { ChatService } from '../../core/services/chat.service';
+import { ChatStateService } from '../../core/services/chat-state.service';
 import { ConversationService } from '../../core/services/conversation.service';
 import { ProfileService } from '../../core/services/profile.service';
 import { ProfileModalComponent } from '../profile/profile-modal.component';
@@ -49,23 +51,30 @@ import { NotificationService } from '../../core/services/notification.service';
 })
 export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly chatService = inject(ChatService);
+  private readonly chatState = inject(ChatStateService);
   private readonly conversationService = inject(ConversationService);
   readonly profileService = inject(ProfileService);
   private readonly sanitizer = inject(DomSanitizer);
   private readonly notifications = inject(NotificationService);
+  private readonly router = inject(Router);
   readonly availabilityFilter = signal<'all' | 'free'>('all');
   readonly toolsEnabled = signal(false);
   readonly availableTools = signal<ToolDefinition[]>([]);
 
   constructor() {
-    // Reload conversation list and reset messages whenever the active profile changes.
+    // Reload the conversation list whenever the active profile changes.
+    // Reset messages only when the profile *actually* changes — not on every
+    // component re-mount (e.g. the user navigated away and came back).
     // allowSignalWrites is required because newConversation() writes to this.messages.
     effect(() => {
       const profile = this.profileService.current();
       if (profile) {
-        this.currentConversationId = null;
         this.loadConversationList();
-        this.newConversation();
+        if (profile.id !== this.chatState.lastActiveProfileId) {
+          this.chatState.lastActiveProfileId = profile.id;
+          this.currentConversationId = null;
+          this.newConversation();
+        }
       }
     }, { allowSignalWrites: true });
   }
@@ -79,19 +88,12 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   readonly isSearching = signal(false);
   private readonly searchSubject = new Subject<string>();
   private readonly destroy$ = new Subject<void>();
-  currentConversationId: string | null = null;
 
   /** Show profile selector modal when no profile is active */
   readonly showProfileModal = computed(() => !this.profileService.current());
 
-  readonly messages = signal<ChatMessage[]>([
-    {
-      role: 'assistant',
-      content: 'Welcome to SpiceSibyl. Select a model and start chatting.',
-      model: 'SpiceSibyl',
-      created_at: Math.floor(Date.now() / 1000),
-    },
-  ]);
+  // Alias to the singleton service signal so state survives navigation.
+  readonly messages = this.chatState.messages;
   readonly models = signal<ChatModel[]>([]);
   readonly providers = signal<ProviderSummary[]>([]);
   readonly capabilityFilter = signal<string>('all');
@@ -130,9 +132,17 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
 
   prompt = '';
   model = 'ollama/qwen2.5:7b-instruct';
-  loading = false;
-  streaming = false;
   sidebarOpen = window.innerWidth >= 992;
+
+  // Delegated to ChatStateService so state survives navigation away and back.
+  get loading(): boolean { return this.chatState.loading(); }
+  set loading(v: boolean) { this.chatState.loading.set(v); }
+
+  get streaming(): boolean { return this.chatState.streaming(); }
+  set streaming(v: boolean) { this.chatState.streaming.set(v); }
+
+  get currentConversationId(): string | null { return this.chatState.currentConversationId; }
+  set currentConversationId(v: string | null) { this.chatState.currentConversationId = v; }
 
   toggleSidebar(): void {
     this.sidebarOpen = !this.sidebarOpen;
@@ -387,6 +397,9 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
         this.streaming = false;
         this.queueScrollToBottom();
         this.persistExchange(userMessages[userMessages.length - 1], streamingIdx);
+        if (!this.router.url.startsWith('/chat')) {
+          this.notifications.add('success', 'Risposta ricevuta', 'Il modello ha terminato la risposta.', 6000, () => this.router.navigate(['/chat']));
+        }
       },
     });
   }

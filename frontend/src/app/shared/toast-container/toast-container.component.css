@@ -58,6 +58,22 @@
   background: rgba(100, 160, 220, .15);
 }
 
+.toast-success {
+  border-color: rgba(80, 190, 130, .4);
+  background: rgba(8, 18, 14, .95);
+}
+.toast-success .toast-icon {
+  color: #7dd4a8;
+  background: rgba(80, 190, 130, .18);
+}
+
+.toast-clickable {
+  cursor: pointer;
+}
+.toast-clickable:hover {
+  filter: brightness(1.12);
+}
+
 /* ── icon ────────────────────────────────────── */
 .toast-icon {
   flex-shrink: 0;

@@ -16,11 +16,16 @@ export class ToastContainerComponent {
     this.notifications.dismiss(id);
   }
 
+  click(toast: Toast): void {
+    this.notifications.dismiss(toast.id);
+    toast.onClick!();
+  }
+
   trackById(_: number, toast: Toast): string {
     return toast.id;
   }
 
   icon(type: Toast['type']): string {
-    return { error: '✕', warning: '⚠', info: 'ℹ' }[type];
+    return { error: '✕', warning: '⚠', info: 'ℹ', success: '✓' }[type];
   }
 }

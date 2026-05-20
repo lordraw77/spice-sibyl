@@ -5,12 +5,15 @@
     [class.toast-error]="t.type === 'error'"
     [class.toast-warning]="t.type === 'warning'"
     [class.toast-info]="t.type === 'info'"
+    [class.toast-success]="t.type === 'success'"
+    [class.toast-clickable]="!!t.onClick"
+    (click)="t.onClick && click(t)"
   >
     <span class="toast-icon">{{ icon(t.type) }}</span>
     <div class="toast-body">
       <span class="toast-title">{{ t.title }}</span>
       <span class="toast-detail" *ngIf="t.detail">{{ t.detail }}</span>
     </div>
-    <button class="toast-close" (click)="dismiss(t.id)" aria-label="Chiudi">✕</button>
+    <button class="toast-close" (click)="dismiss(t.id); $event.stopPropagation()" aria-label="Chiudi">✕</button>
   </div>
 </div>
