@@ -32,21 +32,62 @@
             Nuova
           </button>
         </div>
-        <ul class="conversation-list" *ngIf="conversations().length; else noConvs">
-          <li
-            *ngFor="let conv of conversations()"
-            class="conversation-item"
-            [class.active]="conv.id === currentConversationId"
-            (click)="selectConversation(conv.id)"
-          >
-            <span class="conv-title">{{ conv.title }}</span>
-            <button class="conv-delete" (click)="deleteConversation(conv.id, $event)" title="Elimina">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          </li>
-        </ul>
-        <ng-template #noConvs>
-          <p class="no-convs">Nessuna conversazione salvata.</p>
+
+        <!-- Search bar -->
+        <div class="search-bar">
+          <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input
+            class="search-input"
+            type="text"
+            placeholder="Cerca nelle conversazioni…"
+            [value]="searchQuery()"
+            (input)="onSearchInput($any($event.target).value)"
+            (keydown.escape)="clearSearch()"
+          />
+          <button class="search-clear" *ngIf="searchQuery()" (click)="clearSearch()" title="Cancella">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <!-- Search results -->
+        <ng-container *ngIf="searchQuery(); else normalList">
+          <div class="search-spinner" *ngIf="isSearching()">
+            <span class="dot-spin-sm"></span>
+          </div>
+          <ul class="conversation-list" *ngIf="!isSearching() && searchResults().length">
+            <li
+              *ngFor="let r of searchResults()"
+              class="conversation-item search-result-item"
+              [class.active]="r.id === currentConversationId"
+              (click)="selectSearchResult(r)"
+            >
+              <span class="conv-title">{{ r.title }}</span>
+              <span class="conv-snippet">{{ r.snippet }}</span>
+            </li>
+          </ul>
+          <p class="no-convs" *ngIf="!isSearching() && !searchResults().length">
+            Nessun risultato.
+          </p>
+        </ng-container>
+
+        <!-- Normal conversation list -->
+        <ng-template #normalList>
+          <ul class="conversation-list" *ngIf="conversations().length; else noConvs">
+            <li
+              *ngFor="let conv of conversations()"
+              class="conversation-item"
+              [class.active]="conv.id === currentConversationId"
+              (click)="selectConversation(conv.id)"
+            >
+              <span class="conv-title">{{ conv.title }}</span>
+              <button class="conv-delete" (click)="deleteConversation(conv.id, $event)" title="Elimina">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </li>
+          </ul>
+          <ng-template #noConvs>
+            <p class="no-convs">Nessuna conversazione salvata.</p>
+          </ng-template>
         </ng-template>
       </div>
 

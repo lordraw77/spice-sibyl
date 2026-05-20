@@ -17,6 +17,7 @@ import {
   AfterViewChecked,
   Component,
   ElementRef,
+  OnDestroy,
   OnInit,
   ViewChild,
   computed,
@@ -24,6 +25,8 @@ import {
   inject,
   signal,
 } from '@angular/core';
+import { Subject, debounceTime, distinctUntilChanged, switchMap, of } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
@@ -31,7 +34,7 @@ import { ChatService } from '../../core/services/chat.service';
 import { ConversationService } from '../../core/services/conversation.service';
 import { ProfileService } from '../../core/services/profile.service';
 import { ProfileModalComponent } from '../profile/profile-modal.component';
-import { ChatCompletionResponse, ChatMessage, ChatModel, ConversationSummary, ProviderSummary } from '../../core/models/chat.models';
+import { ChatCompletionResponse, ChatMessage, ChatModel, ConversationSummary, ProviderSummary, SearchResult } from '../../core/models/chat.models';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -44,7 +47,7 @@ import { NotificationService } from '../../core/services/notification.service';
   templateUrl: './chat-page.component.html',
   styleUrl: './chat-page.component.css',
 })
-export class ChatPageComponent implements OnInit, AfterViewChecked {
+export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly chatService = inject(ChatService);
   private readonly conversationService = inject(ConversationService);
   readonly profileService = inject(ProfileService);
@@ -69,6 +72,11 @@ export class ChatPageComponent implements OnInit, AfterViewChecked {
   private messagesContainer?: ElementRef<HTMLDivElement>;
 
   readonly conversations = signal<ConversationSummary[]>([]);
+  readonly searchResults = signal<SearchResult[]>([]);
+  readonly searchQuery = signal('');
+  readonly isSearching = signal(false);
+  private readonly searchSubject = new Subject<string>();
+  private readonly destroy$ = new Subject<void>();
   currentConversationId: string | null = null;
 
   /** Show profile selector modal when no profile is active */
@@ -134,8 +142,43 @@ export class ChatPageComponent implements OnInit, AfterViewChecked {
     this.availabilityFilter.set(value);
     this.ensureValidSelectedModel();
   }
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  onSearchInput(value: string): void {
+    this.searchQuery.set(value);
+    this.searchSubject.next(value.trim());
+  }
+
+  clearSearch(): void {
+    this.searchQuery.set('');
+    this.searchResults.set([]);
+    this.isSearching.set(false);
+  }
+
+  selectSearchResult(result: SearchResult): void {
+    this.clearSearch();
+    this.selectConversation(result.id);
+  }
+
   ngOnInit(): void {
     marked.setOptions({ breaks: true, gfm: true });
+
+    this.searchSubject.pipe(
+      debounceTime(300),
+      distinctUntilChanged(),
+      switchMap(q => {
+        if (!q) { this.searchResults.set([]); this.isSearching.set(false); return of([]); }
+        this.isSearching.set(true);
+        return this.conversationService.search(q, this.profileService.currentId);
+      }),
+      takeUntil(this.destroy$),
+    ).subscribe({
+      next: results => { this.searchResults.set(results); this.isSearching.set(false); },
+      error: () => { this.searchResults.set([]); this.isSearching.set(false); },
+    });
 
     this.loadConversationList();
 

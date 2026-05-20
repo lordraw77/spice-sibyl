@@ -17,6 +17,7 @@ import aiosqlite
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from app.db import conversation_repository as repo
+from app.db import search_repository as search_repo
 from app.db.database import get_db
 from app.schemas.conversations import (
     AppendMessagesRequest,
@@ -24,6 +25,7 @@ from app.schemas.conversations import (
     ConversationCreate,
     ConversationSummary,
     ConversationUpdate,
+    SearchResult,
 )
 
 router = APIRouter()
@@ -33,6 +35,15 @@ _DEFAULT_PROFILE = "default"
 
 def _profile(x_profile_id: str | None = Header(default=None)) -> str:
     return x_profile_id or _DEFAULT_PROFILE
+
+
+@router.get("/search", response_model=list[SearchResult])
+async def search_conversations(
+    q: str = Query(default=""),
+    profile_id: str | None = Query(default=None),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    return await search_repo.search_conversations(db, q, profile_id=profile_id)
 
 
 @router.get("", response_model=list[ConversationSummary])

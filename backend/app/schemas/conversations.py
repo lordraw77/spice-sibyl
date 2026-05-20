@@ -27,3 +27,11 @@ class Conversation(ConversationSummary):
 
 class AppendMessagesRequest(BaseModel):
     messages: list[ChatMessage]
+
+
+class SearchResult(BaseModel):
+    id: str
+    title: str
+    model: str
+    updated_at: int
+    snippet: str

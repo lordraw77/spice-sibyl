@@ -46,11 +46,38 @@ CREATE TABLE IF NOT EXISTS messages (
     free                INTEGER,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
+
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+    id              UNINDEXED,
+    conversation_id UNINDEXED,
+    content,
+    tokenize        = 'unicode61'
+);
+
+CREATE TRIGGER IF NOT EXISTS messages_fts_ai
+AFTER INSERT ON messages BEGIN
+    INSERT INTO messages_fts(id, conversation_id, content)
+    VALUES (new.id, new.conversation_id, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS messages_fts_ad
+AFTER DELETE ON messages BEGIN
+    DELETE FROM messages_fts WHERE id = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS messages_fts_au
+AFTER UPDATE OF content ON messages BEGIN
+    DELETE FROM messages_fts WHERE id = old.id;
+    INSERT INTO messages_fts(id, conversation_id, content)
+    VALUES (new.id, new.conversation_id, new.content);
+END;
 """
 
 _MIGRATIONS = [
     # Add profile_id to conversations if upgrading from an older DB
     "ALTER TABLE conversations ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+    # Populate FTS index from existing messages (idempotent via INSERT OR IGNORE)
+    "INSERT OR IGNORE INTO messages_fts(id, conversation_id, content) SELECT id, conversation_id, content FROM messages",
 ]
 
 

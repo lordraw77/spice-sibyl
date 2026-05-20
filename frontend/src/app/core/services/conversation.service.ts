@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
-import { ChatMessage, Conversation, ConversationSummary } from '../models/chat.models';
+import { ChatMessage, Conversation, ConversationSummary, SearchResult } from '../models/chat.models';
 import { AppConfigService } from '../config/app-config.service';
 
 @Injectable({ providedIn: 'root' })
@@ -38,5 +38,11 @@ export class ConversationService {
 
   appendMessages(id: string, messages: ChatMessage[]): Observable<void> {
     return this.http.post<void>(`${this.baseUrl}/${id}/messages`, { messages });
+  }
+
+  search(query: string, profileId?: string): Observable<SearchResult[]> {
+    const params: Record<string, string> = { q: query };
+    if (profileId) params['profile_id'] = profileId;
+    return this.http.get<SearchResult[]>(`${this.baseUrl}/search`, { params });
   }
 }

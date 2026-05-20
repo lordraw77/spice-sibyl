@@ -140,6 +140,15 @@ export interface Conversation extends ConversationSummary {
   messages: ChatMessage[];
 }
 
+/** Result item returned by GET /api/v1/conversations/search */
+export interface SearchResult {
+  id: string;
+  title: string;
+  model: string;
+  updated_at: number;
+  snippet: string;
+}
+
 /** Telegram bot runtime counters (in-memory, reset on restart) */
 export interface TelegramStats {
   enabled: boolean;

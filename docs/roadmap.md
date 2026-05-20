@@ -30,4 +30,4 @@
 - **Usage stats / cost tracking dashboard** ✓ — GET /v1/stats (by profile or global); Angular `/stats` page with summary cards + per-provider / per-model tables
 - Plugin / tool calling
 - Multi-modal support (image input)
-- Conversation search / full-text index
+- **Conversation search / full-text index** ✓ — SQLite FTS5 con trigger di sincronizzazione; GET /v1/conversations/search?q=; search bar nella sidebar con debounce 300 ms, risultati inline con snippet, Escape per chiudere
