@@ -84,7 +84,11 @@ GROQ_API_KEY=gsk_...
 
 # Telegram (opzionale)
 TELEGRAM_BOT_TOKEN=1234567890:AAF...
+TELEGRAM_ALLOWED_USERS=18278029           # opzionale: limita gli user ID
 TELEGRAM_DEFAULT_MODEL=groq/llama-3.3-70b-versatile
+
+# Multi-MCP orchestrator (opzionale — abilita i modelli agent/*)
+ORCHESTRATOR_BASE_URL=http://host.docker.internal:8910/v1
 ```
 
 > **`VAULT_SECRET_KEY`** cifra le chiavi API salvate tramite UI. Se lo cambi, le chiavi vaultate esistenti diventano illeggibili — imposta un valore stabile e conservalo.
@@ -175,7 +179,44 @@ make frontend   # ng serve :4200
 
 ---
 
-## 6. Reverse proxy (opzionale)
+## 6. Multi-MCP orchestrator sidecar (optional, agent mode)
+
+To enable the `agent/multi-mcp` model (the multi-agent orchestrator), deploy the
+**orchestrator sidecar** from the `multi-mcp` project next to (or alongside) the
+gateway, then point the backend at it.
+
+1. **Run the sidecar** (OpenAI-compatible, port `8910`). It launches its MCP
+   sub-agents on the host Docker daemon (Docker-out-of-Docker), so it mounts
+   `/var/run/docker.sock`. Full instructions — image build, host-path volumes for
+   Synology `nas_config.json` and Linux SSH keys, networking — are in the
+   `multi-mcp` project's `DEPLOY.md`.
+
+   ```bash
+   cd /opt/multi-mcp
+   cp .env.example .env && $EDITOR .env     # MAIN_AGENT_* keys + sub-agent hosts
+   make docker-up                           # build + run on :8910
+   curl http://localhost:8910/health        # {"status":"ok",...}
+   ```
+
+2. **Wire the backend** — set `ORCHESTRATOR_BASE_URL` in `backend/.env` to a URL
+   the backend container can reach (use the host IP or `host.docker.internal`,
+   **not** `localhost`):
+
+   ```env
+   ORCHESTRATOR_BASE_URL=http://<orchestrator-host>:8910/v1
+   ```
+
+3. **Register the model** — make sure the catalog the backend reads (the
+   `provider_models.yaml` mounted at `/config`) contains an `agent` provider
+   block with `agent/multi-mcp`, then `docker compose restart backend`.
+
+Once wired, select **agent/multi-mcp** in the web model picker, or use `/agent`
+in Telegram. The orchestrator streams its delegation progress as `tool_call` /
+`tool_result` bubbles (web) and progressive status edits (Telegram).
+
+---
+
+## 7. Reverse proxy (opzionale)
 
 Per esporre tutto su HTTPS con un unico dominio, esempio con **nginx** o **Caddy** sul server host:
 

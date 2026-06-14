@@ -18,29 +18,35 @@ SpiceSibyl is an OpenAI-compatible multi-provider AI gateway with a built-in Ang
 10. [Provider catalog](#provider-catalog)
 11. [Model discovery](#model-discovery)
 12. [Tool calling](#tool-calling)
-13. [Usage stats](#usage-stats)
-14. [Error handling](#error-handling)
-15. [Running tests](#running-tests)
+13. [Multi-MCP orchestrator (agent mode)](#multi-mcp-orchestrator-agent-mode)
+14. [Telegram bot](#telegram-bot)
+15. [Usage stats](#usage-stats)
+16. [Error handling](#error-handling)
+17. [Running tests](#running-tests)
 
 ---
 
 ## Architecture
 
 ```
-Browser (Angular)
+Browser (Angular)  ┐
+                   ├─ HTTP / REST + SSE
+Telegram bot       ┘
       │
-      │  HTTP / REST + SSE
       ▼
-FastAPI gateway  (/api/v1)
+FastAPI gateway  (/api/v1)   ── routing by model prefix ──►
       │
-      ├── GeminiProvider     ──► Google Generative AI
-      ├── LiteLLMProvider    ──► Ollama, Groq, Mistral, Together, Fireworks, HuggingFace
-      ├── OpenRouterProvider ──► OpenRouter
-      ├── CloudflareProvider ──► Cloudflare Workers AI
-      ├── CerebrasProvider   ──► Cerebras Cloud
-      ├── MistralProvider    ──► Mistral AI
+      ├── GeminiProvider       ──► Google Generative AI
+      ├── LiteLLMProvider      ──► Ollama, Groq, Mistral, Together, Fireworks, HuggingFace
+      ├── OpenRouterProvider   ──► OpenRouter
+      ├── CloudflareProvider   ──► Cloudflare Workers AI
+      ├── CerebrasProvider     ──► Cerebras Cloud
+      ├── MistralProvider      ──► Mistral AI
+      ├── OrchestratorProvider ──► Multi-MCP orchestrator sidecar  (agent/* models)
+      │                              └─► ask_proxmox · ask_synology · ask_linux
+      │                                  ask_homeassistant · ask_watchyourlan
       │
-      ├── ToolRegistry       ──► get_datetime · calculator · web_search
+      ├── ToolRegistry         ──► get_datetime · calculator · web_search
       │
       └── SQLite (aiosqlite)
             ├── conversations + messages  (history per profile)
@@ -154,6 +160,11 @@ All backend settings are read from environment variables or `backend/.env`.
 | `CEREBRAS_API_KEY`      | —                                    | Cerebras Cloud API key                               |
 | `HF_TOKEN`              | —                                    | HuggingFace API token                                |
 | `MODEL_CATALOG_PATH`    | —                                    | Override path for `provider_models.yaml`             |
+| `ORCHESTRATOR_BASE_URL` | —                                    | Multi-MCP orchestrator sidecar base, e.g. `http://host.docker.internal:8910/v1`. Empty = `agent/*` models disabled |
+| `ORCHESTRATOR_TIMEOUT`  | `300`                                | Read timeout (s) for an orchestrator turn (it spawns Docker MCP sub-agents) |
+| `TELEGRAM_BOT_TOKEN`    | —                                    | Telegram bot token — leave empty to disable the bot  |
+| `TELEGRAM_ALLOWED_USERS`| —                                    | Comma-separated Telegram user IDs allowed to use the bot (empty = everyone) |
+| `TELEGRAM_DEFAULT_MODEL`| —                                    | Default model for the bot (falls back to `DEFAULT_MODEL`); set to `agent/multi-mcp` to default to agent mode |
 
 ---
 
@@ -349,6 +360,57 @@ SpiceSibyl ships three built-in tools that any model supporting function calling
 | `web_search`   | Queries the DuckDuckGo JSON API and returns results  |
 
 Enable tools in the chat sidebar with the tools toggle. When enabled, tool definitions are sent with the completion request. `ChatService.stream()` runs a tool execution loop (max 5 iterations) and emits `tool_call` / `tool_result` SSE events before the final reply. These are rendered as colored bubbles above the assistant's response text.
+
+---
+
+## Multi-MCP orchestrator (agent mode)
+
+SpiceSibyl can expose an external **multi-agent orchestrator** (the [`multi-mcp`](../multi-mcp) project) as a first-class model, so it is reachable from both the web console and Telegram with no channel-specific code. The orchestrator delegates each request to specialized sub-agents — Proxmox, Synology NAS, Linux SSH fleet, Home Assistant, and WatchYourLAN — each backed by its own MCP server.
+
+### How it works
+
+```
+SpiceSibyl gateway ──(agent/* model)──► OrchestratorProvider ──HTTP/SSE──► orchestrator sidecar
+                                                                                  │ run_turn()
+                                                                                  ▼
+                                            ask_proxmox · ask_synology · ask_linux · ask_homeassistant · ask_watchyourlan
+                                                                                  │ docker run --rm -i
+                                                                                  ▼
+                                                                          MCP servers (sibling containers)
+```
+
+- The sidecar (`agent_server.py` in the `multi-mcp` project) is an **OpenAI-compatible** HTTP service (default port `8910`). It wraps the orchestrator's own provider rotation pool and `.env` — the same configuration the standalone CLI uses.
+- `OrchestratorProvider` routes any model whose ID starts with **`agent/`** (e.g. `agent/multi-mcp`) to the sidecar, forwarding the request and streaming the response back.
+- Register the model by adding an `agent` provider block to `provider_models.yaml` and pointing `ORCHESTRATOR_BASE_URL` at the sidecar. Then select **`agent/multi-mcp`** in the web model picker (or `/agent` in Telegram).
+
+### Streaming progress
+
+As the orchestrator delegates to sub-agents it streams progress frames that map onto the existing SSE `tool_call` / `tool_result` events. In the web UI these render as the same colored bubbles used by built-in tools; in Telegram they appear as progressive status edits (`🔧 ask_proxmox …` → `✅ ask_proxmox`) before the final answer.
+
+> Deployment, Docker image, and the Docker-out-of-Docker model are documented in the `multi-mcp` project's `DEPLOY.md`.
+
+---
+
+## Telegram bot
+
+An optional polling bot starts alongside the FastAPI server when `TELEGRAM_BOT_TOKEN` is set. It shares the same provider factory and key resolver as the HTTP API, keeps per-chat conversation history, and streams replies by progressively editing the Telegram message. Set `TELEGRAM_ALLOWED_USERS` to restrict access by user ID.
+
+The command menu is registered automatically (visible under the Telegram `/` button):
+
+| Command           | Description                                                        |
+|-------------------|--------------------------------------------------------------------|
+| `/start`, `/help` | Welcome message and command list                                   |
+| `/agent`          | Switch this chat to **agent mode** (`agent/multi-mcp` orchestrator); remembers the previous chat model |
+| `/chat`           | Switch back to normal chat (restores the remembered model)         |
+| `/chat <id>`      | Switch to a specific chat model                                    |
+| `/new`            | Clear the conversation for this chat                               |
+| `/model`          | Show the current model                                             |
+| `/model <id>`     | Switch to a different model (clears history)                       |
+| `/models`         | List available models grouped by provider                          |
+| `/models <query>` | Filter models by provider, capability, or name                     |
+| `/stats`          | Global usage statistics                                            |
+
+Switching between `/agent` and `/chat` toggles the active model and clears the conversation (agent and chat contexts are kept separate). The bot maintains in-memory counters (`messages_received`, `messages_sent`, `errors`, `active_chats`) exposed via `GET /stats`.
 
 ---
 

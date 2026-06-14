@@ -4,13 +4,15 @@ SpiceSibyl's backend is a **FastAPI async gateway** that exposes an OpenAI-compa
 
 ## Key characteristics
 
-**Provider routing by model prefix** — the correct adapter is selected at request time by inspecting the model ID string (e.g. `groq/…`, `gemini/…`, `cloudflare/…`). Adding a new provider requires a new adapter class and a one-line entry in the factory; the rest of the stack is unaffected.
+**Provider routing by model prefix** — the correct adapter is selected at request time by inspecting the model ID string (e.g. `groq/…`, `gemini/…`, `cloudflare/…`, `agent/…`). Adding a new provider requires a new adapter class and a one-line entry in the factory; the rest of the stack is unaffected.
 
 **Streaming end-to-end** — all providers expose an async generator. `ChatService` wraps it in a Starlette `EventSourceResponse`, forwarding SSE chunks to the browser as they arrive. Errors that occur after the `200 OK` is sent are emitted as a typed `event: error` SSE frame so the client always receives a structured message.
 
 **Unified telemetry** — every response (streaming and non-streaming) carries a `metrics` block with gateway-measured latency, time-to-first-token, token throughput, and provider-reported cost estimate. Streaming providers emit a final `chat.completion.meta` chunk containing the aggregate telemetry.
 
 **Tool calling** — `ChatService.stream()` runs a server-side tool execution loop (max 5 iterations) when tools are present in the request. Each iteration calls `provider.complete()` synchronously, inspects the response for `tool_calls`, executes the matching built-in via `ToolRegistry`, and emits `event: tool_call` and `event: tool_result` SSE frames before sending the final reply. Three built-in tools are available: `get_datetime` (IANA timezone), `calculator` (AST-safe expression eval), and `web_search` (DuckDuckGo JSON API).
+
+**Multi-MCP orchestrator (agent mode)** — `OrchestratorProvider` routes any `agent/*` model (e.g. `agent/multi-mcp`) to an external OpenAI-compatible orchestrator sidecar (`ORCHESTRATOR_BASE_URL`). The sidecar delegates to specialized MCP sub-agents (Proxmox, Synology, Linux SSH, Home Assistant, WatchYourLAN) and streams progress frames that map onto the existing `tool_call` / `tool_result` SSE events, so the web UI shows tool bubbles and Telegram shows progressive status edits. `agent/*` models bypass the server-side tool loop — they orchestrate their own sub-agents.
 
 **Conversation search (FTS5)** — a SQLite FTS5 virtual table (`messages_fts`) is kept in sync with the `messages` table via three database triggers (INSERT/DELETE/UPDATE). `GET /conversations/search?q=&profile_id=` runs a prefix-match query and returns `SearchResult[]` with a snippet per hit.
 
@@ -20,7 +22,7 @@ SpiceSibyl's backend is a **FastAPI async gateway** that exposes an OpenAI-compa
 
 **Conversation persistence** — after each completed stream the frontend posts the user and assistant messages to `/conversations/{id}/messages`. Messages are stored in SQLite with full telemetry fields and are scoped to a profile UUID, enabling per-user history without authentication overhead. Inserted messages are indexed automatically in `messages_fts` by database trigger.
 
-**Telegram bot** — an optional polling-based bot starts alongside the FastAPI server when `TELEGRAM_BOT_TOKEN` is set. It shares the same provider factory and key resolver as the HTTP API, supports per-chat conversation history, streams replies by progressively editing the Telegram message, and maintains in-memory counters (`messages_received`, `messages_sent`, `errors`, `active_chats`) exposed via `GET /stats`. The `/stats` and `/models` commands are supported; `/models` accepts an optional filter (e.g. `/models groq`, `/models vision`).
+**Telegram bot** — an optional polling-based bot starts alongside the FastAPI server when `TELEGRAM_BOT_TOKEN` is set. It shares the same provider factory and key resolver as the HTTP API, supports per-chat conversation history, streams replies by progressively editing the Telegram message, and maintains in-memory counters (`messages_received`, `messages_sent`, `errors`, `active_chats`) exposed via `GET /stats`. Access can be restricted with `TELEGRAM_ALLOWED_USERS`. The command menu is registered automatically via `set_my_commands` (post-init). Commands: `/start` · `/help` · `/agent` (switch to the `agent/multi-mcp` orchestrator) · `/chat` (switch back to a normal chat model, `/chat <id>` for a specific one) · `/new` · `/model [<id>]` · `/models [<query>]` · `/stats`. `/agent` and `/chat` toggle the active model while remembering the previous chat model.
 
 ## Structure
 
@@ -30,7 +32,7 @@ app/
 ├── core/               pydantic-settings (env / .env)
 ├── db/                 SQLite schema · conversation / profile / vault / stats / search repositories
 ├── dependencies/       provider factory (FastAPI dependency)
-├── providers/          BaseProvider · LiteLLM · Gemini · OpenRouter · Cloudflare · Cerebras · Mistral · Mock
+├── providers/          BaseProvider · LiteLLM · Gemini · OpenRouter · Cloudflare · Cerebras · Mistral · Orchestrator · Mock
 ├── schemas/            Pydantic request/response models (chat · conversations · profiles · stats)
 ├── services/           ChatService · VaultService · KeyResolver
 ├── tools/              ToolRegistry · built-in tools (get_datetime · calculator · web_search)

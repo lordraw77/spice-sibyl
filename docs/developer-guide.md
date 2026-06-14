@@ -385,6 +385,7 @@ Routing rules evaluated in order on the model-ID prefix:
 
 | Prefix | Adapter |
 |---|---|
+| `agent/` | `OrchestratorProvider` (Multi-MCP orchestrator sidecar) |
 | `cloudflare/` | `CloudflareProvider` |
 | `openrouter/` | `OpenRouterProvider` |
 | `gemini/` | `GeminiProvider` |

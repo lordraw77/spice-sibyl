@@ -22,7 +22,8 @@
       "Bash(docker build *)",
       "Bash(docker exec mmo-test python -c ' *)",
       "Bash(docker rm *)",
-      "Bash(python3 -m py_compile agent_server.py main_agent.py)"
+      "Bash(python3 -m py_compile agent_server.py main_agent.py)",
+      "Bash(python3.12 -m py_compile app/telegram/bot.py)"
     ],
     "additionalDirectories": [
       "/opt/multi-mcp"

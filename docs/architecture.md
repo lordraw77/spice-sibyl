@@ -7,6 +7,8 @@
 - UI web stile chat moderna con telemetria per-messaggio in tempo reale
 - Supporto streaming SSE end-to-end con gestione errori strutturata
 - Tool calling con loop di esecuzione lato server (max 5 iterazioni)
+- Multi-agent orchestration via the `agent/*` model family (Multi-MCP orchestrator sidecar)
+- Telegram bot with chat/agent mode toggle, reachable through the same gateway
 - Dashboard statistiche di utilizzo per profilo, provider e modello
 - Ricerca full-text dei messaggi tramite SQLite FTS5
 - Discovery live dei cataloghi modelli dai provider, con generazione YAML
@@ -68,6 +70,47 @@ spice-sibyl/
 │   └── layout/navbar.component.ts
 └── shared-config/provider_models.yaml
 ```
+
+---
+
+## Multi-MCP orchestrator integration (agent mode)
+
+The gateway can front an external **multi-agent orchestrator** (the `multi-mcp`
+project) and expose it as the `agent/*` model family. This keeps the integration
+in one place — both the web console and the Telegram bot reach it through the
+same `get_provider()` routing, with no channel-specific code.
+
+```
+Angular / Telegram ──► FastAPI gateway ──(agent/*)──► OrchestratorProvider
+                                                          │ httpx (OpenAI-compatible, SSE)
+                                                          ▼
+                                  agent_server.py  (orchestrator sidecar, port 8910)
+                                                          │ run_turn()  ── provider rotation pool
+                                                          ▼
+                       ask_proxmox · ask_synology · ask_linux · ask_homeassistant · ask_watchyourlan
+                                                          │ docker run --rm -i  (host daemon)
+                                                          ▼
+                                          MCP servers (sibling containers / mcp-proxy)
+```
+
+**Components**
+
+- `app/providers/orchestrator_provider.py` — `OrchestratorProvider`, a thin
+  proxy to the sidecar (`complete` / `stream` / `list_models`), configured via
+  `ORCHESTRATOR_BASE_URL` and `ORCHESTRATOR_TIMEOUT`.
+- `app/dependencies/provider_factory.py` — routes the `agent/` prefix to it.
+- `shared-config/provider_models.yaml` — declares the `agent/multi-mcp` model so
+  it appears in the model picker and `GET /models`.
+
+**Progress streaming** — the sidecar emits control frames carrying a named SSE
+event (`tool_call` / `tool_result`) as the orchestrator delegates. `ChatService`
+maps these onto the SSE events the frontend already renders as tool bubbles; the
+Telegram bot turns them into progressive status edits. The protocol is additive:
+any provider may emit a `{"_sse_event": …}` control frame; providers that don't
+are unaffected.
+
+Deployment of the sidecar (Docker image, Docker-out-of-Docker, host-path volumes)
+is documented in the `multi-mcp` project's `DEPLOY.md`.
 
 ---
 

@@ -22,7 +22,7 @@ import time
 from collections import defaultdict
 
 import aiosqlite
-from telegram import Update
+from telegram import BotCommand, Update
 from telegram.constants import ChatAction, ParseMode
 from telegram.ext import (
     Application,
@@ -46,10 +46,20 @@ logger = logging.getLogger(__name__)
 # chat_id → list of message dicts (role/content only, no telemetry)
 _sessions: dict[int, list[dict]] = defaultdict(list)
 
-# chat_id → model id string
+# chat_id → model id string (the active model)
 _models: dict[int, str] = {}
 
+# chat_id → last non-agent model, remembered so /chat can restore it
+_chat_models: dict[int, str] = {}
+
 _MAX_HISTORY = 40  # keep last 40 messages (~20 exchanges) per chat
+
+# The multi-agent orchestrator model (routed to the Multi-MCP sidecar)
+_AGENT_MODEL = "agent/multi-mcp"
+
+
+def _is_agent_model(model: str) -> bool:
+    return model.startswith("agent/")
 
 # ── In-memory counters ───────────────────────────────────────────────────────
 
@@ -111,6 +121,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"👋 Ciao! Sono SpiceSibyl.\n\n"
         f"Modello attivo: <code>{model}</code>\n\n"
         f"Comandi:\n"
+        f"  /agent — modalità agente (Multi-MCP orchestrator)\n"
+        f"  /chat — torna alla chat normale\n"
+        f"  /chat &lt;id&gt; — chat con un modello specifico\n"
         f"  /new — nuova conversazione\n"
         f"  /model — mostra modello corrente\n"
         f"  /model &lt;id&gt; — cambia modello\n"
@@ -147,6 +160,52 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     _sessions[chat_id].clear()
     await update.message.reply_text(
         f"✅ Modello impostato: <code>{model_id}</code>\nConversazione azzerata.",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def cmd_agent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Switch this chat to the Multi-MCP orchestrator (agent mode)."""
+    if not _is_allowed(update.effective_user.id):
+        return
+    chat_id = update.effective_chat.id
+    current = _models.get(chat_id, _default_model())
+    if not _is_agent_model(current):
+        _chat_models[chat_id] = current  # remember to restore on /chat
+    _models[chat_id] = _AGENT_MODEL
+    _sessions[chat_id].clear()
+    await update.message.reply_text(
+        f"🤖 Modalità <b>agente</b>: <code>{_AGENT_MODEL}</code>\n"
+        f"Delego a Proxmox · Synology · Linux · HAOS · WatchYourLAN.\n"
+        f"Conversazione azzerata. Torna alla chat con /chat.",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def cmd_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Switch this chat back to a normal chat model.
+
+    /chat            → restore the last chat model (or the default)
+    /chat <model_id> → switch to a specific chat model
+    """
+    if not _is_allowed(update.effective_user.id):
+        return
+    chat_id = update.effective_chat.id
+
+    if context.args:
+        target = context.args[0].strip()
+    else:
+        target = _chat_models.get(chat_id) or settings.default_model
+        if _is_agent_model(target):
+            target = settings.default_model  # never fall back into agent mode
+
+    _models[chat_id] = target
+    if not _is_agent_model(target):
+        _chat_models[chat_id] = target
+    _sessions[chat_id].clear()
+    await update.message.reply_text(
+        f"💬 Modalità <b>chat</b>: <code>{target}</code>\n"
+        f"Conversazione azzerata. Passa all'agente con /agent.",
         parse_mode=ParseMode.HTML,
     )
 
@@ -342,14 +401,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 # ── Bot lifecycle ─────────────────────────────────────────────────────────────
 
+# Command menu shown in the Telegram UI (the "/" hint list).
+_BOT_COMMANDS = [
+    BotCommand("agent", "Modalità agente (Multi-MCP orchestrator)"),
+    BotCommand("chat", "Torna alla chat normale (/chat <id> per un modello)"),
+    BotCommand("new", "Nuova conversazione"),
+    BotCommand("model", "Mostra o cambia il modello (/model <id>)"),
+    BotCommand("models", "Lista modelli disponibili (/models <query>)"),
+    BotCommand("stats", "Statistiche di utilizzo"),
+    BotCommand("help", "Mostra l'elenco dei comandi"),
+]
+
+
+async def _post_init(app: Application) -> None:
+    """Register the command menu so commands show up under the Telegram '/' button."""
+    await app.bot.set_my_commands(_BOT_COMMANDS)
+
+
 def build_application() -> Application:
     app = (
         ApplicationBuilder()
         .token(settings.telegram_bot_token)
+        .post_init(_post_init)
         .build()
     )
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("help", cmd_start))
     app.add_handler(CommandHandler("new", cmd_new))
+    app.add_handler(CommandHandler("agent", cmd_agent))
+    app.add_handler(CommandHandler("chat", cmd_chat))
     app.add_handler(CommandHandler("model", cmd_model))
     app.add_handler(CommandHandler("models", cmd_models))
     app.add_handler(CommandHandler("stats", cmd_stats))
