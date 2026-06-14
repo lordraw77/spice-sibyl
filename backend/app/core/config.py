@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     # Optional override for the provider_models.yaml catalog path
     model_catalog_path: str | None = None
 
+    # Multi-MCP orchestrator sidecar (agent/* models). Empty = disabled.
+    # e.g. http://host.docker.internal:8910/v1
+    orchestrator_base_url: str | None = None
+    # Read timeout (s) for an orchestrator turn — it spawns Docker MCP sub-agents.
+    orchestrator_timeout: float = 300.0
+
     # SQLite database path for conversation persistence
     db_path: str = "spice_sibyl.db"
 

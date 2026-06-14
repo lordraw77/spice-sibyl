@@ -272,12 +272,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     request = ChatCompletionRequest(model=model, messages=messages, max_tokens=2048)
 
     full_content = ""
+    progress: list[str] = []  # transient sub-agent delegation status (agent/* models)
     last_edit = time.monotonic()
 
     try:
         async for chunk in provider.stream(request):
             if chunk.get("object") == "chat.completion.meta":
                 break
+
+            # Orchestrator progress frames — show delegation status until the
+            # final answer starts streaming (agent/multi-mcp).
+            sse_event = chunk.get("_sse_event")
+            if sse_event == "tool_call":
+                progress.append(f"🔧 {chunk.get('name', 'agent')} …")
+                now = time.monotonic()
+                if now - last_edit >= 1.0:
+                    try:
+                        await sent.edit_text("\n".join(progress))
+                        last_edit = now
+                    except Exception:
+                        pass
+                continue
+            if sse_event == "tool_result":
+                if progress:
+                    progress[-1] = progress[-1].replace("🔧", "✅").removesuffix(" …")
+                continue
+
             choices = chunk.get("choices") or []
             if not choices:
                 continue

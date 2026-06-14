@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find / -name \"main-agent.py\")",
+      "Bash(find / -name \"*agent*.py\")",
+      "Read(//opt/multi-mcp/**)",
+      "Bash(python3 -c \"import openai, dotenv; print\\('openai/dotenv OK'\\)\")",
+      "Bash(python3 -c \"import fastapi, uvicorn; print\\('fastapi/uvicorn OK'\\)\")",
+      "Bash(python3 -m py_compile main_agent.py)",
+      "Bash(python3 -m py_compile agent_server.py)",
+      "Bash(python3 -c \"import agent_server; print\\('import OK ->', agent_server.MODEL_ID\\); print\\('routes:', [r.path for r in agent_server.app.routes if hasattr\\(r,'path'\\)]\\)\")",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -m py_compile app/providers/orchestrator_provider.py app/dependencies/provider_factory.py app/core/config.py)",
+      "Bash(python3.12 -c ' *)",
+      "Bash(MODEL_CATALOG_PATH=/opt/spice-sibyl/shared-config/provider_models.yaml python3.12 -c ' *)",
+      "Bash(python3.12 -m pytest -q)",
+      "Bash(sed -n '1,60p' tests/test_chat.py)",
+      "Bash(sed -n '1,40p' tests/conftest.py)",
+      "Bash(sed -n '243,275p' linux_mcp_agent.py)",
+      "Bash(sed -n '236,265p' synology_mcp_agent.py)",
+      "Bash(docker --version)",
+      "Bash(docker build *)",
+      "Bash(docker exec mmo-test python -c ' *)",
+      "Bash(docker rm *)",
+      "Bash(python3 -m py_compile agent_server.py main_agent.py)"
+    ],
+    "additionalDirectories": [
+      "/opt/multi-mcp"
+    ]
+  }
+}

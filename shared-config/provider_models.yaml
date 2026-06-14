@@ -2,7 +2,47 @@ providers:
   ollama:
     enabled: true
     configured: true
-    models: []
+    models:
+      - id: ollama/qwen2.5:7b-instruct
+        label: Ollama · Qwen 2.5 7B Instruct
+        default: true
+        capabilities: [chat, reasoning, code]
+      - id: ollama/qwen2.5:7b
+        label: Ollama · Qwen 2.5 7B
+        default: false
+        capabilities: [chat, reasoning]
+      - id: ollama/qwen2.5-coder:7b
+        label: Ollama · Qwen 2.5 Coder 7B
+        default: false
+        capabilities: [chat, code]
+      - id: ollama/qwen2.5-coder:1.5b
+        label: Ollama · Qwen 2.5 Coder 1.5B
+        default: false
+        capabilities: [chat, code, fast]
+      - id: ollama/llama3.2:3b
+        label: Ollama · Llama 3.2 3B
+        default: false
+        capabilities: [chat, fast]
+      - id: ollama/gemma3:1b
+        label: Ollama · Gemma 3 1B
+        default: false
+        capabilities: [chat, fast]
+      - id: ollama/gemma3:270m
+        label: Ollama · Gemma 3 270M
+        default: false
+        capabilities: [chat, fast]
+      - id: ollama/phi3:mini
+        label: Ollama · Phi-3 Mini
+        default: false
+        capabilities: [chat, fast]
+      - id: ollama/deepseek-coder:latest
+        label: Ollama · DeepSeek Coder
+        default: false
+        capabilities: [chat, code]
+      - id: ollama/functiongemma:latest
+        label: Ollama · FunctionGemma
+        default: false
+        capabilities: [chat, tools]
 
   groq:
     enabled: true
@@ -2315,9 +2355,19 @@ providers:
         free: true
         capabilities: [chat, tools]
 
-  mock:
+  agent:
     enabled: true
     configured: true
+    models:
+      - id: agent/multi-mcp
+        label: Multi-MCP · Orchestrator (Proxmox · Synology · Linux · HAOS · WatchYourLAN)
+        default: false
+        free: false
+        capabilities: [chat, tools, agent]
+
+  mock:
+    enabled: false
+    configured: false
     models:
       - id: mock/echo-v1
         label: Mock · Echo V1

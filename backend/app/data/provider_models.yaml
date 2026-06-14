@@ -154,6 +154,16 @@ providers:
         free: false
         capabilities: [chat]
 
+  agent:
+    enabled: true
+    configured: true
+    models:
+      - id: agent/multi-mcp
+        label: Multi-MCP · Orchestrator (Proxmox · Synology · Linux · HAOS · WatchYourLAN)
+        default: false
+        free: false
+        capabilities: [chat, tools, agent]
+
   mock:
     label: SpiceSibyl Mock
     enabled: true

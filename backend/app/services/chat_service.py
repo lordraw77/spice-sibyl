@@ -26,13 +26,22 @@ class ChatService:
     async def stream(self, request: ChatCompletionRequest):
         provider = ProviderFactory.get_provider(request.model)
 
-        if request.tools:
+        # agent/* models orchestrate their own sub-agents; never wrap them in the
+        # server-side tool loop — they stream their own tool_call/tool_result frames.
+        is_agent = bool(request.model and request.model.startswith("agent/"))
+        if request.tools and not is_agent:
             return EventSourceResponse(self._stream_with_tools(provider, request))
 
         async def _plain():
             try:
                 async for chunk in provider.stream(request):
-                    yield {"event": "message", "data": json.dumps(chunk)}
+                    # A provider may emit control frames carrying a named SSE event
+                    # (e.g. the orchestrator's tool_call / tool_result progress).
+                    event = "message"
+                    if isinstance(chunk, dict) and "_sse_event" in chunk:
+                        chunk = dict(chunk)
+                        event = chunk.pop("_sse_event")
+                    yield {"event": event, "data": json.dumps(chunk)}
                 yield {"event": "done", "data": "[DONE]"}
             except Exception as exc:
                 yield {"event": "error", "data": json.dumps({"message": str(exc)})}
