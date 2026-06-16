@@ -53,6 +53,24 @@
   >
     Mistral
   </button>
+
+  <button
+    type="button"
+    class="submenu-item"
+    [class.active]="activeSource() === 'nvidia'"
+    (click)="setSource('nvidia')"
+  >
+    NVIDIA
+  </button>
+
+  <button
+    type="button"
+    class="submenu-item"
+    [class.active]="activeSource() === 'ollama'"
+    (click)="setSource('ollama')"
+  >
+    Ollama
+  </button>
 </div>
 
   <div class="discovery-header">

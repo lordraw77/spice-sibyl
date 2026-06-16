@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     mistral_api_key: str | None = None
     hf_token: str | None = None
     cerebras_api_key: str | None = None
+    nvidia_api_key: str | None = None
 
     # Optional override for the provider_models.yaml catalog path
     model_catalog_path: str | None = None

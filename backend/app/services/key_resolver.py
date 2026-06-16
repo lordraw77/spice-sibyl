@@ -24,6 +24,7 @@ def _from_settings(provider_id: str) -> str | None:
         "huggingface":  settings.hf_token,
         "openai":       settings.openai_api_key,
         "cerebras":     settings.cerebras_api_key,
+        "nvidia":       settings.nvidia_api_key,
     }
     val = mapping.get(provider_id)
     return val if val and val not in _PLACEHOLDER else None

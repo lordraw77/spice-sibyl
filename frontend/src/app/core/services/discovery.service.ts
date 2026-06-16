@@ -79,4 +79,20 @@ export class DiscoveryService {
       {}
     );
   }
+
+  /** Trigger a NVIDIA NIM model catalog fetch on the backend. */
+  runNvidiaDiscovery(): Observable<DiscoveryResult> {
+    return this.http.post<DiscoveryResult>(
+      `${this.config.apiUrl}/nvidia-discovery/run`,
+      {}
+    );
+  }
+
+  /** Trigger a local Ollama model catalog fetch on the backend. */
+  runOllamaDiscovery(): Observable<DiscoveryResult> {
+    return this.http.post<DiscoveryResult>(
+      `${this.config.apiUrl}/ollama-discovery/run`,
+      {}
+    );
+  }
 }

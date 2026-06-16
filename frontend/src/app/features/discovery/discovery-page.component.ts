@@ -15,7 +15,7 @@ import { FormsModule } from '@angular/forms';
 import { DiscoveryService, DiscoveryModel } from '../../core/services/discovery.service';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 
-type DiscoverySource = 'cloudflare' | 'openrouter' | 'gemini' | 'groq' | 'cerebras' | 'mistral';
+type DiscoverySource = 'cloudflare' | 'openrouter' | 'gemini' | 'groq' | 'cerebras' | 'mistral' | 'nvidia' | 'ollama';
 
 @Component({
   selector: 'app-discovery-page',
@@ -48,6 +48,8 @@ export class DiscoveryPageComponent {
       case 'groq':       return '⚡ Groq Model Discovery';
       case 'cerebras':   return '🧠 Cerebras Model Discovery';
       case 'mistral':    return '🔶 Mistral AI Model Discovery';
+      case 'nvidia':     return '⬛ NVIDIA Model Discovery';
+      case 'ollama':     return '🦙 Ollama Model Discovery';
     }
   });
 
@@ -65,6 +67,10 @@ export class DiscoveryPageComponent {
         return 'Recupera e visualizza tutti i modelli LLM disponibili sulla piattaforma Cerebras e genera il blocco YAML per il catalogo.';
       case 'mistral':
         return 'Recupera e visualizza tutti i modelli chat disponibili su Mistral AI e genera il blocco YAML per il catalogo.';
+      case 'nvidia':
+        return 'Recupera e visualizza tutti i modelli LLM disponibili su NVIDIA NIM (integrate.api.nvidia.com) e genera il blocco YAML per il catalogo.';
+      case 'ollama':
+        return 'Recupera e visualizza tutti i modelli scaricati nell\'istanza Ollama locale e genera il blocco YAML per il catalogo.';
     }
   });
 
@@ -97,7 +103,9 @@ export class DiscoveryPageComponent {
       : source === 'gemini' ? this.discoveryService.runGeminiDiscovery()
       : source === 'groq' ? this.discoveryService.runGroqDiscovery()
       : source === 'cerebras' ? this.discoveryService.runCerebrasDiscovery()
-      : this.discoveryService.runMistralDiscovery();
+      : source === 'mistral' ? this.discoveryService.runMistralDiscovery()
+      : source === 'nvidia' ? this.discoveryService.runNvidiaDiscovery()
+      : this.discoveryService.runOllamaDiscovery();
 
     request$.subscribe({
       next: (result) => {

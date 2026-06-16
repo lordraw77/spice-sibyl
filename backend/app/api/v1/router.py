@@ -13,6 +13,8 @@ Route map:
   POST /v1/groq-discovery/run         — fetch Groq model catalog
   POST /v1/cerebras-discovery/run     — fetch Cerebras model catalog
   POST /v1/mistral-discovery/run      — fetch Mistral AI model catalog
+  POST /v1/nvidia-discovery/run       — fetch NVIDIA NIM model catalog
+  POST /v1/ollama-discovery/run       — fetch local Ollama model catalog
 """
 
 from fastapi import APIRouter
@@ -27,6 +29,8 @@ from app.api.v1.endpoints import (
     health,
     mistral_discovery,
     models,
+    nvidia_discovery,
+    ollama_discovery,
     openrouter_discovery,
     profiles,
     providers,
@@ -46,6 +50,8 @@ api_router.include_router(gemini_discovery.router, prefix="/gemini-discovery", t
 api_router.include_router(groq_discovery.router, prefix="/groq-discovery", tags=["groq-discovery"])
 api_router.include_router(cerebras_discovery.router, prefix="/cerebras-discovery", tags=["cerebras-discovery"])
 api_router.include_router(mistral_discovery.router, prefix="/mistral-discovery", tags=["mistral-discovery"])
+api_router.include_router(nvidia_discovery.router, prefix="/nvidia-discovery", tags=["nvidia-discovery"])
+api_router.include_router(ollama_discovery.router, prefix="/ollama-discovery", tags=["ollama-discovery"])
 api_router.include_router(conversations.router, prefix="/conversations", tags=["conversations"])
 api_router.include_router(profiles.router, prefix="/profiles", tags=["profiles"])
 api_router.include_router(stats.router, prefix="/stats", tags=["stats"])

@@ -2365,6 +2365,561 @@ providers:
         free: false
         capabilities: [chat, tools, agent]
 
+  nvidia:
+    enabled: true
+    configured: true
+    models:
+        - id: nvidia/01-ai/yi-large
+          label: NVIDIA · YI Large
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/abacusai/dracarys-llama-3.1-70b-instruct
+          label: NVIDIA · Dracarys Llama 3 1 70b Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/adept/fuyu-8b
+          label: NVIDIA · Fuyu 8b
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/ai21labs/jamba-1.5-large-instruct
+          label: NVIDIA · Jamba 1 5 Large Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/aisingapore/sea-lion-7b-instruct
+          label: NVIDIA · SEA Lion 7b Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/baai/bge-m3
+          label: NVIDIA · BGE M3
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/bigcode/starcoder2-15b
+          label: NVIDIA · Starcoder2 15b
+          default: false
+          free: false
+          capabilities: [chat, code, tools]
+        - id: nvidia/bytedance/seed-oss-36b-instruct
+          label: NVIDIA · Seed OSS 36b Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/databricks/dbrx-instruct
+          label: NVIDIA · Dbrx Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/deepseek-ai/deepseek-coder-6.7b-instruct
+          label: NVIDIA · Deepseek Coder 6 7b Instruct
+          default: false
+          free: false
+          capabilities: [chat, code, tools]
+        - id: nvidia/deepseek-ai/deepseek-v4-flash
+          label: NVIDIA · Deepseek V4 Flash
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/deepseek-ai/deepseek-v4-pro
+          label: NVIDIA · Deepseek V4 PRO
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/google/codegemma-1.1-7b
+          label: NVIDIA · Codegemma 1 1 7b
+          default: false
+          free: false
+          capabilities: [chat, code, tools]
+        - id: nvidia/google/codegemma-7b
+          label: NVIDIA · Codegemma 7b
+          default: false
+          free: false
+          capabilities: [chat, code, tools]
+        - id: nvidia/google/deplot
+          label: NVIDIA · Deplot
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/google/gemma-2-2b-it
+          label: NVIDIA · Gemma 2 2b IT
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/google/gemma-2b
+          label: NVIDIA · Gemma 2b
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/google/gemma-3-12b-it
+          label: NVIDIA · Gemma 3 12b IT
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/google/gemma-3-4b-it
+          label: NVIDIA · Gemma 3 4b IT
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/google/gemma-3n-e2b-it
+          label: NVIDIA · Gemma 3n E2b IT
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/google/gemma-3n-e4b-it
+          label: NVIDIA · Gemma 3n E4b IT
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/google/gemma-4-31b-it
+          label: NVIDIA · Gemma 4 31b IT
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/google/recurrentgemma-2b
+          label: NVIDIA · Recurrentgemma 2b
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/ibm/granite-3.0-3b-a800m-instruct
+          label: NVIDIA · Granite 3 0 3b A800m Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/ibm/granite-3.0-8b-instruct
+          label: NVIDIA · Granite 3 0 8b Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/ibm/granite-34b-code-instruct
+          label: NVIDIA · Granite 34b Code Instruct
+          default: false
+          free: false
+          capabilities: [chat, code, tools]
+        - id: nvidia/ibm/granite-8b-code-instruct
+          label: NVIDIA · Granite 8b Code Instruct
+          default: false
+          free: false
+          capabilities: [chat, code, tools]
+        - id: nvidia/meta/codellama-70b
+          label: NVIDIA · Codellama 70b
+          default: false
+          free: false
+          capabilities: [chat, code, tools]
+        - id: nvidia/meta/llama-3.1-70b-instruct
+          label: NVIDIA · Llama 3 1 70b Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/meta/llama-3.1-8b-instruct
+          label: NVIDIA · Llama 3 1 8b Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/meta/llama-3.2-11b-vision-instruct
+          label: NVIDIA · Llama 3 2 11b Vision Instruct
+          default: false
+          free: false
+          capabilities: [chat, vision, tools]
+        - id: nvidia/meta/llama-3.2-1b-instruct
+          label: NVIDIA · Llama 3 2 1b Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/meta/llama-3.2-3b-instruct
+          label: NVIDIA · Llama 3 2 3b Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/meta/llama-3.2-90b-vision-instruct
+          label: NVIDIA · Llama 3 2 90b Vision Instruct
+          default: false
+          free: false
+          capabilities: [chat, vision, tools]
+        - id: nvidia/meta/llama-3.3-70b-instruct
+          label: NVIDIA · Llama 3 3 70b Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/meta/llama-4-maverick-17b-128e-instruct
+          label: NVIDIA · Llama 4 Maverick 17b 128e Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/meta/llama-guard-4-12b
+          label: NVIDIA · Llama Guard 4 12b
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/meta/llama2-70b
+          label: NVIDIA · Llama2 70b
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/microsoft/kosmos-2
+          label: NVIDIA · Kosmos 2
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/microsoft/phi-3-vision-128k-instruct
+          label: NVIDIA · PHI 3 Vision 128k Instruct
+          default: false
+          free: false
+          capabilities: [chat, vision, tools]
+        - id: nvidia/microsoft/phi-3.5-moe-instruct
+          label: NVIDIA · PHI 3 5 MOE Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/microsoft/phi-4-mini-instruct
+          label: NVIDIA · PHI 4 Mini Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/microsoft/phi-4-multimodal-instruct
+          label: NVIDIA · PHI 4 Multimodal Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/minimaxai/minimax-m2.7
+          label: NVIDIA · Minimax M2 7
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/minimaxai/minimax-m3
+          label: NVIDIA · Minimax M3
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/mistralai/codestral-22b-instruct-v0.1
+          label: NVIDIA · Codestral 22b Instruct V0 1
+          default: false
+          free: false
+          capabilities: [chat, code, tools]
+        - id: nvidia/mistralai/ministral-14b-instruct-2512
+          label: NVIDIA · Ministral 14b Instruct 2512
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/mistralai/mistral-7b-instruct-v0.3
+          label: NVIDIA · Mistral 7b Instruct V0 3
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/mistralai/mistral-large
+          label: NVIDIA · Mistral Large
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/mistralai/mistral-large-2-instruct
+          label: NVIDIA · Mistral Large 2 Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/mistralai/mistral-large-3-675b-instruct-2512
+          label: NVIDIA · Mistral Large 3 675b Instruct 2512
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/mistralai/mistral-medium-3.5-128b
+          label: NVIDIA · Mistral Medium 3 5 128b
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/mistralai/mistral-nemotron
+          label: NVIDIA · Mistral Nemotron
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/mistralai/mistral-small-4-119b-2603
+          label: NVIDIA · Mistral Small 4 119b 2603
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/mistralai/mixtral-8x22b-v0.1
+          label: NVIDIA · Mixtral 8x22b V0 1
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/mistralai/mixtral-8x7b-instruct-v0.1
+          label: NVIDIA · Mixtral 8x7b Instruct V0 1
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/moonshotai/kimi-k2.6
+          label: NVIDIA · Kimi K2 6
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/nv-mistralai/mistral-nemo-12b-instruct
+          label: NVIDIA · Mistral Nemo 12b Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/nvidia/ai-synthetic-video-detector
+          label: NVIDIA · AI Synthetic Video Detector
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/nvidia/cosmos-reason2-8b
+          label: NVIDIA · Cosmos Reason2 8b
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/nvidia/gliner-pii
+          label: NVIDIA · Gliner PII
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/nvidia/ising-calibration-1-35b-a3b
+          label: NVIDIA · Ising Calibration 1 35b A3b
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/nvidia/llama-3.1-nemoguard-8b-content-safety
+          label: NVIDIA · Llama 3 1 Nemoguard 8b Content Safety
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/nvidia/llama-3.1-nemoguard-8b-topic-control
+          label: NVIDIA · Llama 3 1 Nemoguard 8b Topic Control
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/nvidia/llama-3.1-nemotron-51b-instruct
+          label: NVIDIA · Llama 3 1 Nemotron 51b Instruct
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/llama-3.1-nemotron-70b-instruct
+          label: NVIDIA · Llama 3 1 Nemotron 70b Instruct
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/llama-3.1-nemotron-nano-8b-v1
+          label: NVIDIA · Llama 3 1 Nemotron Nano 8b V1
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/llama-3.1-nemotron-nano-vl-8b-v1
+          label: NVIDIA · Llama 3 1 Nemotron Nano VL 8b V1
+          default: false
+          free: false
+          capabilities: [chat, vision, reasoning, tools]
+        - id: nvidia/nvidia/llama-3.1-nemotron-safety-guard-8b-v3
+          label: NVIDIA · Llama 3 1 Nemotron Safety Guard 8b V3
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/llama-3.1-nemotron-ultra-253b-v1
+          label: NVIDIA · Llama 3 1 Nemotron Ultra 253b V1
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/llama-3.3-nemotron-super-49b-v1
+          label: NVIDIA · Llama 3 3 Nemotron Super 49b V1
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/llama-3.3-nemotron-super-49b-v1.5
+          label: NVIDIA · Llama 3 3 Nemotron Super 49b V1 5
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/llama3-chatqa-1.5-70b
+          label: NVIDIA · Llama3 Chatqa 1 5 70b
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/nvidia/mistral-nemo-minitron-8b-8k-instruct
+          label: NVIDIA · Mistral Nemo Minitron 8b 8k Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/nvidia/nemoretriever-parse
+          label: NVIDIA · Nemoretriever Parse
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/nvidia/nemotron-3-content-safety
+          label: NVIDIA · Nemotron 3 Content Safety
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/nemotron-3-nano-30b-a3b
+          label: NVIDIA · Nemotron 3 Nano 30b A3b
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
+          label: NVIDIA · Nemotron 3 Nano Omni 30b A3b Reasoning
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/nemotron-3-super-120b-a12b
+          label: NVIDIA · Nemotron 3 Super 120b A12b
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/nemotron-3-ultra-550b-a55b
+          label: NVIDIA · Nemotron 3 Ultra 550b A55b
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/nemotron-3.5-content-safety
+          label: NVIDIA · Nemotron 3 5 Content Safety
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/nemotron-4-340b-instruct
+          label: NVIDIA · Nemotron 4 340b Instruct
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/nemotron-4-340b-reward
+          label: NVIDIA · Nemotron 4 340b Reward
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/nemotron-content-safety-reasoning-4b
+          label: NVIDIA · Nemotron Content Safety Reasoning 4b
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/nemotron-mini-4b-instruct
+          label: NVIDIA · Nemotron Mini 4b Instruct
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/nemotron-nano-12b-v2-vl
+          label: NVIDIA · Nemotron Nano 12b V2 VL
+          default: false
+          free: false
+          capabilities: [chat, vision, reasoning, tools]
+        - id: nvidia/nvidia/nemotron-nano-3-30b-a3b
+          label: NVIDIA · Nemotron Nano 3 30b A3b
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/nemotron-parse
+          label: NVIDIA · Nemotron Parse
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/neva-22b
+          label: NVIDIA · Neva 22b
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/nvidia/nvclip
+          label: NVIDIA · Nvclip
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/nvidia/nvidia-nemotron-nano-9b-v2
+          label: NVIDIA · Nvidia Nemotron Nano 9b V2
+          default: false
+          free: false
+          capabilities: [chat, reasoning, tools]
+        - id: nvidia/nvidia/riva-translate-4b-instruct
+          label: NVIDIA · Riva Translate 4b Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/nvidia/riva-translate-4b-instruct-v1.1
+          label: NVIDIA · Riva Translate 4b Instruct V1 1
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/nvidia/vila
+          label: NVIDIA · Vila
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/openai/gpt-oss-120b
+          label: NVIDIA · GPT OSS 120b
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/openai/gpt-oss-20b
+          label: NVIDIA · GPT OSS 20b
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/qwen/qwen3-next-80b-a3b-instruct
+          label: NVIDIA · Qwen3 Next 80b A3b Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/qwen/qwen3.5-122b-a10b
+          label: NVIDIA · Qwen3 5 122b A10b
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/qwen/qwen3.5-397b-a17b
+          label: NVIDIA · Qwen3 5 397b A17b
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/sarvamai/sarvam-m
+          label: NVIDIA · Sarvam M
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/stepfun-ai/step-3.5-flash
+          label: NVIDIA · Step 3 5 Flash
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/stepfun-ai/step-3.7-flash
+          label: NVIDIA · Step 3 7 Flash
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/stockmark/stockmark-2-100b-instruct
+          label: NVIDIA · Stockmark 2 100b Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/upstage/solar-10.7b-instruct
+          label: NVIDIA · Solar 10 7b Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/writer/palmyra-creative-122b
+          label: NVIDIA · Palmyra Creative 122b
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/writer/palmyra-fin-70b-32k
+          label: NVIDIA · Palmyra FIN 70b 32k
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/writer/palmyra-med-70b
+          label: NVIDIA · Palmyra MED 70b
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/writer/palmyra-med-70b-32k
+          label: NVIDIA · Palmyra MED 70b 32k
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/z-ai/glm-5.1
+          label: NVIDIA · GLM 5 1
+          default: false
+          free: false
+          capabilities: [chat, tools]
+        - id: nvidia/zyphra/zamba2-7b-instruct
+          label: NVIDIA · Zamba2 7b Instruct
+          default: false
+          free: false
+          capabilities: [chat, tools]
+
   mock:
     enabled: false
     configured: false

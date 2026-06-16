@@ -13,6 +13,7 @@ from app.providers.cloudflare_provider import CloudflareProvider
 from app.providers.gemini_provider import GeminiProvider
 from app.providers.litellm_provider import LiteLLMProvider
 from app.providers.mistral_provider import MistralProvider
+from app.providers.nvidia_provider import NvidiaProvider
 from app.providers.openrouter_provider import OpenRouterProvider
 from app.providers.orchestrator_provider import OrchestratorProvider
 
@@ -31,4 +32,6 @@ def get_provider(model: str | None = None):
         return CerebrasProvider()
     if model and model.startswith('mistral/'):
         return MistralProvider()
+    if model and model.startswith('nvidia/'):
+        return NvidiaProvider()
     return LiteLLMProvider()

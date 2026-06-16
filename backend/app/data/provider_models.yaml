@@ -164,6 +164,26 @@ providers:
         free: false
         capabilities: [chat, tools, agent]
 
+  nvidia:
+    label: NVIDIA
+    enabled: true
+    models:
+      - id: nvidia/meta/llama-3.1-70b-instruct
+        label: NVIDIA · Llama 3.1 70B Instruct
+        default: false
+        free: false
+        capabilities: [chat, tools]
+      - id: nvidia/nvidia/llama-3.1-nemotron-70b-instruct
+        label: NVIDIA · Nemotron 70B Instruct
+        default: false
+        free: false
+        capabilities: [chat, tools, reasoning]
+      - id: nvidia/nvidia/llama-3.3-nemotron-super-49b-v1
+        label: NVIDIA · Nemotron Super 49B
+        default: false
+        free: false
+        capabilities: [chat, tools, reasoning]
+
   mock:
     label: SpiceSibyl Mock
     enabled: true

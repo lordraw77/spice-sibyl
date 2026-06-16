@@ -41,6 +41,7 @@ _PROVIDER_META: dict[str, dict] = {
     'huggingface':  {'key_hint': 'HF_TOKEN',            'docs_url': 'https://huggingface.co/settings/tokens'},
     'openai':       {'key_hint': 'OPENAI_API_KEY',      'docs_url': 'https://platform.openai.com/api-keys'},
     'cerebras':     {'key_hint': 'CEREBRAS_API_KEY',    'docs_url': 'https://cloud.cerebras.ai'},
+    'nvidia':       {'key_hint': 'NVIDIA_API_KEY',      'docs_url': 'https://build.nvidia.com'},
     'mock':         {'key_hint': None,                  'docs_url': None},
 }
 
