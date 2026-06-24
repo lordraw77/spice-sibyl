@@ -43,6 +43,7 @@ import DOMPurify from 'dompurify';
 import hljs from 'highlight.js';
 import { NotificationService } from '../../core/services/notification.service';
 import { AppConfigService } from '../../core/config/app-config.service';
+import { UserPreferencesService } from '../../core/services/user-preferences.service';
 
 @Component({
   selector: 'app-chat-page',
@@ -60,21 +61,24 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly notifications = inject(NotificationService);
   private readonly router = inject(Router);
   private readonly appConfig = inject(AppConfigService);
-  readonly availabilityFilter = signal<'all' | 'free'>('all');
-  readonly toolsEnabled = signal(false);
+  private readonly userPrefs = inject(UserPreferencesService);
+
+  private readonly savedPrefs = this.userPrefs.get();
+  readonly availabilityFilter = signal<'all' | 'free'>(this.savedPrefs.availabilityFilter);
+  readonly toolsEnabled = signal(this.savedPrefs.toolsEnabled);
   readonly availableTools = signal<ToolDefinition[]>([]);
 
-  readonly conversationsOpen = signal(true);
-  readonly modelOpen = signal(true);
-  readonly providerOpen = signal(true);
-  readonly systemOpen = signal(false);
-  readonly paramsOpen = signal(false);
+  readonly conversationsOpen = signal(this.savedPrefs.sectionsOpen.conversations);
+  readonly modelOpen = signal(this.savedPrefs.sectionsOpen.model);
+  readonly providerOpen = signal(this.savedPrefs.sectionsOpen.provider);
+  readonly systemOpen = signal(this.savedPrefs.sectionsOpen.system);
+  readonly paramsOpen = signal(this.savedPrefs.sectionsOpen.params);
 
-  toggleConversations(): void { this.conversationsOpen.update(v => !v); }
-  toggleModel(): void { this.modelOpen.update(v => !v); }
-  toggleProviderSection(): void { this.providerOpen.update(v => !v); }
-  toggleSystem(): void { this.systemOpen.update(v => !v); }
-  toggleParams(): void { this.paramsOpen.update(v => !v); }
+  toggleConversations(): void { this.conversationsOpen.update(v => !v); this.userPrefs.setSection('conversations', this.conversationsOpen()); }
+  toggleModel(): void { this.modelOpen.update(v => !v); this.userPrefs.setSection('model', this.modelOpen()); }
+  toggleProviderSection(): void { this.providerOpen.update(v => !v); this.userPrefs.setSection('provider', this.providerOpen()); }
+  toggleSystem(): void { this.systemOpen.update(v => !v); this.userPrefs.setSection('system', this.systemOpen()); }
+  toggleParams(): void { this.paramsOpen.update(v => !v); this.userPrefs.setSection('params', this.paramsOpen()); }
 
   constructor() {
     // Reload the conversation list whenever the active profile changes.
@@ -112,7 +116,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   readonly messages = this.chatState.messages;
   readonly models = signal<ChatModel[]>([]);
   readonly providers = signal<ProviderSummary[]>([]);
-  readonly capabilityFilter = signal<string>('all');
+  readonly capabilityFilter = signal<string>(this.savedPrefs.capabilityFilter);
   readonly selectedProviders = signal<string[]>([]);
 
   /** Sorted list of all capabilities present across loaded models, prefixed with 'all'. */
@@ -147,15 +151,15 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   });
 
   prompt = '';
-  model = 'ollama/qwen2.5:7b-instruct';
+  model = this.savedPrefs.selectedModel ?? 'ollama/qwen2.5:7b-instruct';
   systemPrompt = '';
-  temperature = 0.7;
-  maxTokens = 0;
+  temperature = this.savedPrefs.temperature;
+  maxTokens = this.savedPrefs.maxTokens;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   voiceRecognition: any = null;
   isListening = false;
   copiedMessageIdx: number | null = null;
-  sidebarOpen = window.innerWidth >= 992;
+  sidebarOpen = this.savedPrefs.sidebarOpen;
 
   // Delegated to ChatStateService so state survives navigation away and back.
   get loading(): boolean { return this.chatState.loading(); }
@@ -169,12 +173,29 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
 
   toggleSidebar(): void {
     this.sidebarOpen = !this.sidebarOpen;
+    this.userPrefs.set('sidebarOpen', this.sidebarOpen);
   }
   /** When true, the view scrolls to the bottom on the next AfterViewChecked cycle. */
   private shouldAutoScroll = true;
 
   toggleTools(): void {
     this.toolsEnabled.update(v => !v);
+    this.userPrefs.set('toolsEnabled', this.toolsEnabled());
+  }
+
+  onModelChange(modelId: string): void {
+    this.model = modelId;
+    this.userPrefs.set('selectedModel', modelId);
+  }
+
+  onTemperatureChange(value: number): void {
+    this.temperature = value;
+    this.userPrefs.set('temperature', value);
+  }
+
+  onMaxTokensChange(value: number): void {
+    this.maxTokens = value;
+    this.userPrefs.set('maxTokens', value);
   }
 
   toolArgsSummary(args: Record<string, unknown> | undefined): string {
@@ -186,6 +207,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
 
   setAvailabilityFilter(value: 'all' | 'free'): void {
     this.availabilityFilter.set(value);
+    this.userPrefs.set('availabilityFilter', value);
     this.ensureValidSelectedModel();
   }
   ngOnDestroy(): void {
@@ -247,17 +269,23 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
       next: (response) => {
         this.models.set(response.data);
         this.providers.set(response.providers || []);
-        // Pre-select all enabled providers so the model list is fully visible on load
-        this.selectedProviders.set(
-          (response.providers || [])
-            .filter((provider) => provider.enabled)
-            .map((provider) => provider.id)
-        );
 
-        // Keep the current model if it exists; otherwise fall back to the default / first
-        const preferred = response.data.find((item) => item.id === this.model);
-        if (!preferred && response.data.length > 0) {
-          this.model = response.data.find((item) => item.default)?.id || response.data[0].id;
+        const savedProviders = this.savedPrefs.selectedProviders;
+        const enabledProviderIds = new Set(
+          (response.providers || []).filter(p => p.enabled).map(p => p.id)
+        );
+        if (savedProviders.length && savedProviders.some(id => enabledProviderIds.has(id))) {
+          this.selectedProviders.set(savedProviders.filter(id => enabledProviderIds.has(id)));
+        } else {
+          this.selectedProviders.set(Array.from(enabledProviderIds));
+        }
+
+        const savedModel = this.savedPrefs.selectedModel;
+        const preferred = response.data.find(item => item.id === (savedModel ?? this.model));
+        if (preferred) {
+          this.model = preferred.id;
+        } else if (response.data.length > 0) {
+          this.model = response.data.find(item => item.default)?.id || response.data[0].id;
         }
 
         this.ensureValidSelectedModel();
@@ -720,6 +748,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
 
   setCapabilityFilter(value: string): void {
     this.capabilityFilter.set(value);
+    this.userPrefs.set('capabilityFilter', value);
     this.ensureValidSelectedModel();
   }
 
@@ -732,7 +761,9 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
       current.add(providerId);
     }
 
-    this.selectedProviders.set(Array.from(current));
+    const updated = Array.from(current);
+    this.selectedProviders.set(updated);
+    this.userPrefs.set('selectedProviders', updated);
     this.ensureValidSelectedModel();
   }
 
@@ -751,7 +782,6 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     this.shouldAutoScroll = distanceFromBottom <= threshold;
   }
 
-  /** If the currently selected model is no longer in filteredModels, pick the first available one. */
   private ensureValidSelectedModel(): void {
     const filtered = this.filteredModels();
     if (!filtered.length) {
@@ -762,6 +792,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     if (!filtered.find((item) => item.id === this.model)) {
       this.model = filtered[0].id;
     }
+    this.userPrefs.set('selectedModel', this.model);
   }
 
   private queueScrollToBottom(force = false): void {

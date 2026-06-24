@@ -8,6 +8,7 @@ The model string must carry the 'nvidia/' prefix so the dependency factory
 routes here; the prefix is stripped before the request.
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -22,6 +23,32 @@ from app.services import key_resolver
 logger = logging.getLogger(__name__)
 
 _BASE_URL = 'https://integrate.api.nvidia.com/v1'
+
+# ── Rate limiter (40 requests per minute across all callers) ────────────────
+
+_RPM_LIMIT = 40
+_RPM_WINDOW = 60.0  # seconds
+
+_call_times: list[float] = []
+_rate_lock = asyncio.Lock()
+
+
+async def _rate_limit_wait() -> None:
+    """Block until a slot is available within the RPM window."""
+    async with _rate_lock:
+        now = time.monotonic()
+        _call_times[:] = [t for t in _call_times if now - t < _RPM_WINDOW]
+
+        if len(_call_times) >= _RPM_LIMIT:
+            oldest = _call_times[0]
+            sleep_for = _RPM_WINDOW - (now - oldest) + 0.1
+            logger.info("nvidia rate-limit: %d/%d rpm, sleeping %.1fs",
+                        len(_call_times), _RPM_LIMIT, sleep_for)
+            await asyncio.sleep(sleep_for)
+            now = time.monotonic()
+            _call_times[:] = [t for t in _call_times if now - t < _RPM_WINDOW]
+
+        _call_times.append(time.monotonic())
 
 
 def _require_key() -> str:
@@ -55,6 +82,7 @@ def _body(request: ChatCompletionRequest, stream: bool) -> dict:
 class NvidiaProvider(BaseProvider):
 
     async def complete(self, request: ChatCompletionRequest):
+        await _rate_limit_wait()
         api_key = _require_key()
         model_meta = get_model_metadata(request.model)
         started_at = time.perf_counter()
@@ -124,6 +152,7 @@ class NvidiaProvider(BaseProvider):
         }
 
     async def stream(self, request: ChatCompletionRequest):
+        await _rate_limit_wait()
         api_key = _require_key()
         model_meta = get_model_metadata(request.model)
         started_at = time.perf_counter()

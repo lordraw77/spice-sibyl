@@ -114,8 +114,11 @@ def _split(text: str, limit: int = 4000) -> list[str]:
 # ── Command handlers ─────────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _is_allowed(update.effective_user.id):
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        logger.warning("cmd_start: accesso negato user_id=%s username=%s", user.id, user.username)
         return
+    logger.info("cmd_start: user_id=%s username=%s chat_id=%s", user.id, user.username, update.effective_chat.id)
     model = _models.get(update.effective_chat.id, _default_model())
     await update.message.reply_text(
         f"👋 Ciao! Sono SpiceSibyl.\n\n"
@@ -135,20 +138,26 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def cmd_new(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _is_allowed(update.effective_user.id):
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        logger.warning("cmd_new: accesso negato user_id=%s", user.id)
         return
+    logger.info("cmd_new: reset sessione chat_id=%s user_id=%s", update.effective_chat.id, user.id)
     _sessions[update.effective_chat.id].clear()
     await update.message.reply_text("✅ Conversazione azzerata.")
 
 
 async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _is_allowed(update.effective_user.id):
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        logger.warning("cmd_model: accesso negato user_id=%s", user.id)
         return
     chat_id = update.effective_chat.id
     args = context.args
 
     if not args:
         current = _models.get(chat_id, _default_model())
+        logger.debug("cmd_model: query modello corrente chat_id=%s model=%s", chat_id, current)
         await update.message.reply_text(
             f"Modello corrente: <code>{current}</code>",
             parse_mode=ParseMode.HTML,
@@ -156,6 +165,7 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     model_id = args[0].strip()
+    logger.info("cmd_model: cambio modello chat_id=%s old=%s new=%s", chat_id, _models.get(chat_id, _default_model()), model_id)
     _models[chat_id] = model_id
     _sessions[chat_id].clear()
     await update.message.reply_text(
@@ -166,9 +176,12 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_agent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Switch this chat to the Multi-MCP orchestrator (agent mode)."""
-    if not _is_allowed(update.effective_user.id):
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        logger.warning("cmd_agent: accesso negato user_id=%s", user.id)
         return
     chat_id = update.effective_chat.id
+    logger.info("cmd_agent: attivazione agent mode chat_id=%s user_id=%s", chat_id, user.id)
     current = _models.get(chat_id, _default_model())
     if not _is_agent_model(current):
         _chat_models[chat_id] = current  # remember to restore on /chat
@@ -188,7 +201,9 @@ async def cmd_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     /chat            → restore the last chat model (or the default)
     /chat <model_id> → switch to a specific chat model
     """
-    if not _is_allowed(update.effective_user.id):
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        logger.warning("cmd_chat: accesso negato user_id=%s", user.id)
         return
     chat_id = update.effective_chat.id
 
@@ -199,6 +214,7 @@ async def cmd_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if _is_agent_model(target):
             target = _default_model()
 
+    logger.info("cmd_chat: ritorno a chat mode chat_id=%s model=%s user_id=%s", chat_id, target, user.id)
     _models[chat_id] = target
     if not _is_agent_model(target):
         _chat_models[chat_id] = target
@@ -211,10 +227,13 @@ async def cmd_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def cmd_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _is_allowed(update.effective_user.id):
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        logger.warning("cmd_models: accesso negato user_id=%s", user.id)
         return
 
     query = ' '.join(context.args).strip().lower() if context.args else ''
+    logger.info("cmd_models: lista modelli chat_id=%s query=%r", update.effective_chat.id, query or "(all)")
     all_models = iter_configured_models()
 
     if query:
@@ -254,9 +273,12 @@ async def cmd_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _is_allowed(update.effective_user.id):
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        logger.warning("cmd_stats: accesso negato user_id=%s", user.id)
         return
 
+    logger.info("cmd_stats: richiesta statistiche chat_id=%s user_id=%s", update.effective_chat.id, user.id)
     async with aiosqlite.connect(settings.db_path) as db:
         db.row_factory = aiosqlite.Row
         await db.execute("PRAGMA foreign_keys=ON")
@@ -302,7 +324,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if not update.message or not update.message.text:
         return
-    if not _is_allowed(update.effective_user.id):
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        logger.warning("handle_message: accesso negato user_id=%s username=%s", user.id, user.username)
         await update.message.reply_text("⛔ Accesso non autorizzato.")
         return
 
@@ -311,6 +335,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     chat_id = update.effective_chat.id
     text = update.message.text.strip()
     model = _models.get(chat_id, _default_model())
+    logger.info("handle_message: chat_id=%s user_id=%s model=%s text_len=%d", chat_id, user.id, model, len(text))
 
     # Append user message to history
     session = _sessions[chat_id]
@@ -384,6 +409,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if full_content:
             session.append({"role": "assistant", "content": full_content})
             _tg_messages_sent += 1
+            logger.info("handle_message: risposta completata chat_id=%s model=%s response_len=%d", chat_id, model, len(full_content))
+        else:
+            logger.warning("handle_message: risposta vuota chat_id=%s model=%s", chat_id, model)
 
     except asyncio.CancelledError:
         raise
@@ -415,10 +443,18 @@ _BOT_COMMANDS = [
 
 async def _post_init(app: Application) -> None:
     """Register the command menu so commands show up under the Telegram '/' button."""
+    bot_info = await app.bot.get_me()
+    logger.info("Bot avviato: @%s (id=%s) — %d comandi registrati", bot_info.username, bot_info.id, len(_BOT_COMMANDS))
     await app.bot.set_my_commands(_BOT_COMMANDS)
 
 
 def build_application() -> Application:
+    logger.info("build_application: costruzione bot con default_model=%s", _default_model())
+    allowed = _allowed_users()
+    if allowed:
+        logger.info("build_application: accesso limitato a %d utenti", len(allowed))
+    else:
+        logger.warning("build_application: nessun filtro utenti — accesso aperto a tutti")
     app = (
         ApplicationBuilder()
         .token(settings.telegram_bot_token)

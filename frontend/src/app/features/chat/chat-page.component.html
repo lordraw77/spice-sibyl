@@ -110,7 +110,7 @@
               {{ capability === 'all' ? 'Tutte le capacità' : capability }}
             </option>
           </select>
-          <select class="form-select" [(ngModel)]="model">
+          <select class="form-select" [ngModel]="model" (ngModelChange)="onModelChange($event)">
             <option *ngFor="let item of filteredModels()" [value]="item.id">{{ item.label || item.id }}</option>
           </select>
           <div class="model-badges" *ngIf="selectedModelMeta() as selected">
@@ -155,11 +155,11 @@
         <ng-container *ngIf="paramsOpen()">
           <div class="param-row">
             <label class="param-label">Temperature <span class="param-value">{{ temperature.toFixed(1) }}</span></label>
-            <input type="range" min="0" max="2" step="0.1" [(ngModel)]="temperature" class="param-slider" />
+            <input type="range" min="0" max="2" step="0.1" [ngModel]="temperature" (ngModelChange)="onTemperatureChange($event)" class="param-slider" />
           </div>
           <div class="param-row">
             <label class="param-label">Max tokens <span class="param-value">{{ maxTokens === 0 ? '∞' : maxTokens }}</span></label>
-            <input type="number" min="0" step="256" [(ngModel)]="maxTokens" class="param-input" placeholder="0 = illimitato" />
+            <input type="number" min="0" step="256" [ngModel]="maxTokens" (ngModelChange)="onMaxTokensChange($event)" class="param-input" placeholder="0 = illimitato" />
           </div>
         </ng-container>
       </div>
