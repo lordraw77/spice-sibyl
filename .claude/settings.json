@@ -25,7 +25,12 @@
       "Bash(python3 -m py_compile agent_server.py main_agent.py)",
       "Bash(python3.12 -m py_compile app/telegram/bot.py)",
       "Bash(python -c ' *)",
-      "Bash(python -m py_compile app/api/v1/endpoints/conversations.py app/tools/builtin.py app/tools/registry.py)"
+      "Bash(python -m py_compile app/api/v1/endpoints/conversations.py app/tools/builtin.py app/tools/registry.py)",
+      "Bash(python -c \"from app.services.image_service import generate_image, get_available_provider; print\\('image_service OK'\\)\")",
+      "Bash(python -c \"from app.api.v1.endpoints.images import router; print\\('images endpoint OK'\\)\")",
+      "Bash(python -c \"from app.api.v1.router import api_router; print\\('router OK'\\)\")",
+      "Bash(python3 -c \"from app.services.image_service import generate_image, get_available_provider; print\\('OK'\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/opt/spice-sibyl/backend/app/services/image_service.py'\\).read\\(\\)\\); print\\('OK'\\)\")"
     ],
     "additionalDirectories": [
       "/opt/multi-mcp"

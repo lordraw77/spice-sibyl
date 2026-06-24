@@ -869,6 +869,107 @@ select.form-select-sm:focus {
   50% { box-shadow: 0 0 0 5px rgba(193,60,60,.0); }
 }
 
+/* ── Image attachments & generated images ──────────────────── */
+.message-image {
+  max-width: min(84%, 900px);
+  margin-bottom: .5rem;
+  border-radius: 1rem;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.07);
+}
+
+.message-image img {
+  display: block;
+  width: 100%;
+  max-height: 480px;
+  object-fit: contain;
+  background: rgba(10,12,18,.5);
+  cursor: pointer;
+  transition: transform .15s;
+}
+
+.message-image img:hover {
+  transform: scale(1.01);
+}
+
+.message-image.generated {
+  border-color: rgba(168,130,255,.15);
+  box-shadow: 0 0 20px rgba(168,130,255,.06);
+}
+
+.message.user .message-image {
+  margin-left: auto;
+}
+
+/* ── Attachment preview bar ────────────────────────────────── */
+.attachment-preview {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .45rem .75rem;
+  margin-bottom: .35rem;
+  background: rgba(27,31,41,.7);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: .7rem;
+}
+
+.attachment-thumb {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: .4rem;
+  object-fit: cover;
+  border: 1px solid rgba(255,255,255,.1);
+}
+
+.attachment-name {
+  flex: 1;
+  font-size: .82rem;
+  color: #9fa8ba;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-remove {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: .35rem;
+  padding: .2rem;
+  color: #5a6070;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: color .15s, border-color .15s;
+}
+
+.attachment-remove:hover {
+  color: #e07070;
+  border-color: rgba(224,112,112,.25);
+}
+
+/* ── Attach button in composer ─────────────────────────────── */
+.composer-attach {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: .6rem;
+  border: 1px solid rgba(255,255,255,.1);
+  background: transparent;
+  color: #6b7485;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .18s, color .18s, border-color .18s;
+  margin-bottom: .05rem;
+}
+.composer-attach:hover {
+  background: rgba(255,255,255,.06);
+  color: #9ba3b4;
+  border-color: rgba(255,255,255,.18);
+}
+
 /* ── Markdown ───────────────────────────────────────────────── */
 .markdown-body p { margin: 0 0 .8rem; }
 .markdown-body p:last-child { margin-bottom: 0; }

@@ -17,6 +17,8 @@ Commands:
 """
 
 import asyncio
+import base64
+import io
 import logging
 import time
 from collections import defaultdict
@@ -38,6 +40,7 @@ from app.data.model_catalog import iter_configured_models
 from app.db.stats_repository import get_usage_stats
 from app.dependencies.provider_factory import get_provider
 from app.schemas.chat import ChatCompletionRequest, ChatMessage
+from app.services.image_service import generate_image, ImageGenerationError, get_available_provider
 
 logger = logging.getLogger(__name__)
 
@@ -127,12 +130,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"  /agent — modalità agente (Multi-MCP orchestrator)\n"
         f"  /chat — torna alla chat normale\n"
         f"  /chat &lt;id&gt; — chat con un modello specifico\n"
+        f"  /imagine &lt;prompt&gt; — genera un'immagine\n"
         f"  /new — nuova conversazione\n"
         f"  /model — mostra modello corrente\n"
         f"  /model &lt;id&gt; — cambia modello\n"
         f"  /models — lista modelli disponibili\n"
         f"  /models &lt;query&gt; — filtra per provider, capability o nome\n"
-        f"  /stats — statistiche di utilizzo",
+        f"  /stats — statistiche di utilizzo\n\n"
+        f"📸 Invia una foto per usare la vision (image-to-text)",
         parse_mode=ParseMode.HTML,
     )
 
@@ -317,6 +322,160 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(chunk, parse_mode=ParseMode.HTML)
 
 
+# ── /imagine command ─────────────────────────────────────────────────────────
+
+async def cmd_imagine(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Generate an image from a text prompt: /imagine <prompt>"""
+    global _tg_messages_sent, _tg_errors
+
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        logger.warning("cmd_imagine: accesso negato user_id=%s", user.id)
+        return
+
+    prompt = ' '.join(context.args).strip() if context.args else ''
+    if not prompt:
+        await update.message.reply_text("Uso: /imagine <descrizione dell'immagine>")
+        return
+
+    chat_id = update.effective_chat.id
+    logger.info("cmd_imagine: chat_id=%s prompt=%r", chat_id, prompt[:80])
+
+    if not get_available_provider():
+        await update.message.reply_text("⚠ Nessun provider di generazione immagini configurato.")
+        return
+
+    await context.bot.send_chat_action(chat_id, ChatAction.UPLOAD_PHOTO)
+    sent = await update.message.reply_text("🎨 Generazione in corso…")
+
+    try:
+        result = await generate_image(prompt=prompt)
+        image_bytes = base64.b64decode(result["b64_json"])
+        await update.message.reply_photo(
+            photo=io.BytesIO(image_bytes),
+            caption=f"🎨 {prompt[:200]}\n\n<i>{result['provider']} · {result['model']}</i>",
+            parse_mode=ParseMode.HTML,
+        )
+        await sent.delete()
+        _tg_messages_sent += 1
+        logger.info("cmd_imagine: immagine generata chat_id=%s provider=%s", chat_id, result["provider"])
+    except ImageGenerationError as exc:
+        _tg_errors += 1
+        logger.warning("cmd_imagine: errore generazione chat_id=%s: %s", chat_id, exc)
+        try:
+            await sent.edit_text(f"⚠ Errore: {exc}")
+        except Exception:
+            pass
+    except Exception as exc:
+        _tg_errors += 1
+        logger.exception("cmd_imagine: errore imprevisto chat_id=%s", chat_id)
+        try:
+            await sent.edit_text(f"⚠ Errore: {exc}")
+        except Exception:
+            pass
+
+
+# ── Photo handler (image-to-text / vision) ──────────────────────────────────
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle photos sent to the bot — use a vision-capable model to describe them."""
+    global _tg_messages_received, _tg_messages_sent, _tg_errors
+
+    if not update.message or not update.message.photo:
+        return
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        logger.warning("handle_photo: accesso negato user_id=%s", user.id)
+        await update.message.reply_text("⛔ Accesso non autorizzato.")
+        return
+
+    _tg_messages_received += 1
+    chat_id = update.effective_chat.id
+    caption = (update.message.caption or "").strip() or "Descrivi questa immagine in dettaglio."
+    model = _models.get(chat_id, _default_model())
+    logger.info("handle_photo: chat_id=%s model=%s caption=%r", chat_id, model, caption[:60])
+
+    await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
+    sent = await update.message.reply_text("⏳")
+
+    # Download the highest-resolution photo
+    photo = update.message.photo[-1]
+    try:
+        file = await context.bot.get_file(photo.file_id)
+        photo_bytes = await file.download_as_bytearray()
+        b64_data = base64.b64encode(photo_bytes).decode()
+        data_url = f"data:image/jpeg;base64,{b64_data}"
+    except Exception as exc:
+        _tg_errors += 1
+        logger.error("handle_photo: download foto fallito chat_id=%s: %s", chat_id, exc)
+        try:
+            await sent.edit_text("⚠ Impossibile scaricare la foto.")
+        except Exception:
+            pass
+        return
+
+    # Build multimodal message content
+    vision_content = [
+        {"type": "text", "text": caption},
+        {"type": "image_url", "image_url": {"url": data_url}},
+    ]
+
+    session = _sessions[chat_id]
+    session.append({"role": "user", "content": vision_content})
+
+    if len(session) > _MAX_HISTORY:
+        _sessions[chat_id] = session[-_MAX_HISTORY:]
+        session = _sessions[chat_id]
+
+    provider = get_provider(model)
+    messages = [ChatMessage(role=m["role"], content=m["content"]) for m in session]
+    request = ChatCompletionRequest(model=model, messages=messages, max_tokens=2048)
+
+    full_content = ""
+    last_edit = time.monotonic()
+
+    try:
+        async for chunk in provider.stream(request):
+            if chunk.get("object") == "chat.completion.meta":
+                break
+            choices = chunk.get("choices") or []
+            if not choices:
+                continue
+            delta = (choices[0].get("delta") or {}).get("content") or ""
+            if not delta:
+                continue
+            full_content += delta
+            now = time.monotonic()
+            if now - last_edit >= 1.0:
+                try:
+                    await sent.edit_text(full_content + " ▌")
+                    last_edit = now
+                except Exception:
+                    pass
+
+        chunks = _split(full_content or "⚠ Nessuna risposta.")
+        await sent.edit_text(chunks[0])
+        for extra in chunks[1:]:
+            await update.message.reply_text(extra)
+
+        if full_content:
+            session.append({"role": "assistant", "content": full_content})
+            _tg_messages_sent += 1
+            logger.info("handle_photo: risposta completata chat_id=%s response_len=%d", chat_id, len(full_content))
+
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        _tg_errors += 1
+        logger.exception("handle_photo: errore chat_id=%s model=%s", chat_id, model)
+        try:
+            await sent.edit_text(f"⚠ Errore: {exc}")
+        except Exception:
+            pass
+        if session and session[-1]["role"] == "user":
+            session.pop()
+
+
 # ── Message handler ──────────────────────────────────────────────────────────
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -433,6 +592,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 _BOT_COMMANDS = [
     BotCommand("agent", "Modalità agente (Multi-MCP orchestrator)"),
     BotCommand("chat", "Torna alla chat normale (/chat <id> per un modello)"),
+    BotCommand("imagine", "Genera un'immagine (/imagine <prompt>)"),
     BotCommand("new", "Nuova conversazione"),
     BotCommand("model", "Mostra o cambia il modello (/model <id>)"),
     BotCommand("models", "Lista modelli disponibili (/models <query>)"),
@@ -468,6 +628,8 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("chat", cmd_chat))
     app.add_handler(CommandHandler("model", cmd_model))
     app.add_handler(CommandHandler("models", cmd_models))
+    app.add_handler(CommandHandler("imagine", cmd_imagine))
     app.add_handler(CommandHandler("stats", cmd_stats))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     return app

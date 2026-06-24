@@ -161,6 +161,12 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   copiedMessageIdx: number | null = null;
   sidebarOpen = this.savedPrefs.sidebarOpen;
 
+  /** Base64-encoded image attached by the user for vision input */
+  attachedImageB64: string | null = null;
+  attachedImageName: string | null = null;
+  /** True while an /imagine request is in-flight */
+  generatingImage = false;
+
   // Delegated to ChatStateService so state survives navigation away and back.
   get loading(): boolean { return this.chatState.loading(); }
   set loading(v: boolean) { this.chatState.loading.set(v); }
@@ -322,18 +328,34 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
 
   send(overrideMessages?: ChatMessage[]): void {
     const text = this.prompt.trim();
-    if (!overrideMessages && (!text || this.loading)) {
+    if (!overrideMessages && (!text && !this.attachedImageB64 || this.loading)) {
+      return;
+    }
+
+    // /imagine command → text-to-image generation
+    if (!overrideMessages && text.startsWith('/imagine ')) {
+      this.handleImagineCommand(text.slice(9).trim());
       return;
     }
 
     this.loading = true;
+    const attachedImage = this.attachedImageB64;
     if (!overrideMessages) {
       this.prompt = '';
+      this.attachedImageB64 = null;
+      this.attachedImageName = null;
     }
+
+    const userMsg: ChatMessage = {
+      role: 'user' as const,
+      content: text || (attachedImage ? 'Descrivi questa immagine.' : ''),
+      created_at: Math.floor(Date.now() / 1000),
+      image_b64: attachedImage ?? undefined,
+    };
 
     const baseMessages = overrideMessages ?? [
       ...this.messages(),
-      { role: 'user' as const, content: text, created_at: Math.floor(Date.now() / 1000) },
+      userMsg,
     ];
 
     const systemMsg = this.systemPrompt.trim();
@@ -366,9 +388,22 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     const temperature = this.temperature;
     const maxTokens = this.maxTokens > 0 ? this.maxTokens : undefined;
 
+    const apiMessages = userMessages.map(m => {
+      const { tool_events, image_b64, image_url, ...rest } = m as ChatMessage & Record<string, unknown>;
+      if (image_b64 && typeof image_b64 === 'string') {
+        const parts: Record<string, unknown>[] = [];
+        if (rest.content) {
+          parts.push({ type: 'text', text: rest.content });
+        }
+        parts.push({ type: 'image_url', image_url: { url: image_b64 } });
+        return { ...rest, content: parts };
+      }
+      return rest;
+    });
+
     this.streamSubscription = this.chatService.stream({
       model: this.model,
-      messages: userMessages.map(m => ({ ...m, tool_events: undefined })),
+      messages: apiMessages as ChatMessage[],
       stream: true,
       temperature,
       max_tokens: maxTokens,
@@ -584,6 +619,54 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     recognition.start();
   }
 
+  /** Open the native file picker for images. */
+  triggerImageUpload(): void {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/jpeg,image/png,image/webp,image/gif';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      if (file.size > 20 * 1024 * 1024) {
+        this.notifications.add('error', 'File troppo grande', 'Massimo 20 MB.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        this.attachedImageB64 = dataUrl;
+        this.attachedImageName = file.name;
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  }
+
+  removeAttachedImage(): void {
+    this.attachedImageB64 = null;
+    this.attachedImageName = null;
+  }
+
+  /** Handle paste events to capture pasted images. */
+  onPaste(event: ClipboardEvent): void {
+    const items = event.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (!file) continue;
+        event.preventDefault();
+        const reader = new FileReader();
+        reader.onload = () => {
+          this.attachedImageB64 = reader.result as string;
+          this.attachedImageName = file.name || 'pasted-image';
+        };
+        reader.readAsDataURL(file);
+        break;
+      }
+    }
+  }
+
   get hasSpeechRecognition(): boolean {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any;
@@ -614,6 +697,51 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     }
     this.loading = false;
     this.streaming = false;
+  }
+
+  /** Handle /imagine <prompt> — generate an image via the backend. */
+  private handleImagineCommand(prompt: string): void {
+    if (!prompt) return;
+    this.prompt = '';
+    this.loading = true;
+    this.generatingImage = true;
+
+    this.messages.update(items => [
+      ...items,
+      { role: 'user' as const, content: `/imagine ${prompt}`, created_at: Math.floor(Date.now() / 1000) },
+      { role: 'assistant' as const, content: 'Generazione immagine in corso…', model: 'image-gen', created_at: Math.floor(Date.now() / 1000) },
+    ]);
+    this.queueScrollToBottom();
+
+    const assistantIdx = this.messages().length - 1;
+
+    this.chatService.generateImage(prompt).subscribe({
+      next: (result) => {
+        const imageDataUrl = `data:image/png;base64,${result.b64_json}`;
+        this.messages.update(items =>
+          items.map((m, i) =>
+            i === assistantIdx
+              ? { ...m, content: '', image_url: imageDataUrl, provider: result.provider, model: result.model }
+              : m
+          )
+        );
+        this.loading = false;
+        this.generatingImage = false;
+        this.queueScrollToBottom();
+      },
+      error: (err: Error) => {
+        const detail = err?.message || 'Generazione immagine fallita.';
+        this.notifications.add('error', 'Errore immagine', detail);
+        this.messages.update(items =>
+          items.map((m, i) =>
+            i === assistantIdx ? { ...m, content: `⚠ ${detail}` } : m
+          )
+        );
+        this.loading = false;
+        this.generatingImage = false;
+        this.queueScrollToBottom();
+      },
+    });
   }
 
   /**
@@ -736,11 +864,11 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
    * User messages: plain-text HTML escape with newline-to-<br> conversion.
    */
   renderedContent(message: ChatMessage): SafeHtml {
-    const content = message.content ?? '';
+    const raw = message.content;
+    const content = typeof raw === 'string' ? raw : (raw ?? '');
     if (message.role !== 'assistant') {
       return this.sanitizer.bypassSecurityTrustHtml(this.escapeHtml(content).replace(/\n/g, '<br>'));
     }
-    // Pass async:false explicitly so TypeScript narrows the return type to string.
     const html = marked.parse(content, { async: false }) as string;
     const clean = DOMPurify.sanitize(html);
     return this.sanitizer.bypassSecurityTrustHtml(clean);

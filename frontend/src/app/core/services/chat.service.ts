@@ -9,7 +9,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
-import { ChatCompletionRequest, ChatCompletionResponse, ChatModel, ChatStreamEvent, ProviderStatus, ProviderSummary, ProviderTestResult, ToolDefinition } from '../models/chat.models';
+import { ChatCompletionRequest, ChatCompletionResponse, ChatModel, ChatStreamEvent, ImageGenerationResponse, ProviderStatus, ProviderSummary, ProviderTestResult, ToolDefinition } from '../models/chat.models';
 import { AppConfigService } from '../config/app-config.service';
 
 @Injectable({ providedIn: 'root' })
@@ -151,5 +151,10 @@ export class ChatService {
   /** Return the list of built-in tool definitions from the backend. */
   listTools(): Observable<ToolDefinition[]> {
     return this.http.get<ToolDefinition[]>(`${this.apiUrl}/tools`);
+  }
+
+  /** Generate an image from a text prompt. */
+  generateImage(prompt: string, width = 1024, height = 1024): Observable<ImageGenerationResponse> {
+    return this.http.post<ImageGenerationResponse>(`${this.apiUrl}/images/generations`, { prompt, width, height });
   }
 }

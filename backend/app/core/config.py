@@ -66,6 +66,19 @@ class Settings(BaseSettings):
     # Default model used by the Telegram bot (falls back to default_model)
     telegram_default_model: str | None = None
 
+    # Image generation provider chain — comma-separated "provider:model" pairs
+    # tried in order with automatic fallback.  Supported providers:
+    # gemini, huggingface, cloudflare, together_ai
+    image_generation_chain: str = (
+        "gemini:gemini-2.5-flash-image,"
+        "gemini:gemini-3.1-flash-image,"
+        "gemini:gemini-3-pro-image,"
+        "gemini:imagen-4.0-fast-generate-001,"
+        "huggingface:black-forest-labs/FLUX.1-schnell,"
+        "cloudflare:@cf/stabilityai/stable-diffusion-xl-base-1.0,"
+        "together_ai:black-forest-labs/FLUX.1-schnell-Free"
+    )
+
     # Logging level for the application (DEBUG, INFO, WARNING, ERROR, CRITICAL)
     log_level: str = "INFO"
 

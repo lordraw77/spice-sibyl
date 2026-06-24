@@ -65,6 +65,7 @@ spice-sibyl/
 │   │   │   ├── router.py
 │   │   │   └── endpoints/
 │   │   │       ├── chat.py
+│   │   │       ├── images.py
 │   │   │       ├── conversations.py
 │   │   │       ├── health.py
 │   │   │       ├── models.py
@@ -108,6 +109,7 @@ spice-sibyl/
 │   │   │   └── stats.py
 │   │   ├── services/
 │   │   │   ├── chat_service.py
+│   │   │   ├── image_service.py
 │   │   │   ├── key_resolver.py
 │   │   │   └── vault_service.py
 │   │   ├── tools/
@@ -204,7 +206,15 @@ On every boot: tables are created (idempotently), migrations applied (including 
 | `MISTRAL_API_KEY` | — | Mistral AI |
 | `CEREBRAS_API_KEY` | — | Cerebras Cloud |
 | `HF_TOKEN` | — | HuggingFace |
+| `NVIDIA_API_KEY` | — | NVIDIA NIM |
+| `IMAGE_GENERATION_CHAIN` | *(see below)* | Comma-separated `provider:model` pairs for text-to-image fallback chain |
 | `MODEL_CATALOG_PATH` | — | Explicit YAML path override |
+
+**`IMAGE_GENERATION_CHAIN` default:**
+```
+gemini:gemini-2.5-flash-image,gemini:gemini-3.1-flash-image,gemini:gemini-3-pro-image,gemini:imagen-4.0-fast-generate-001,huggingface:black-forest-labs/FLUX.1-schnell,cloudflare:@cf/stabilityai/stable-diffusion-xl-base-1.0,together_ai:black-forest-labs/FLUX.1-schnell-Free
+```
+Supported providers: `gemini`, `huggingface`, `cloudflare`, `together_ai`. Each entry is tried in order; unconfigured providers are skipped; on error the next entry is attempted.
 
 ---
 
@@ -215,6 +225,7 @@ On every boot: tables are created (idempotently), migrations applied (including 
 ```
 GET    /api/v1/health
 GET    /api/v1/models
+POST   /api/v1/images/generations
 GET    /api/v1/providers
 PATCH  /api/v1/providers/{id}
 PUT    /api/v1/providers/{id}/key
@@ -418,6 +429,9 @@ Routing rules evaluated in order on the model-ID prefix:
 #### `POST /api/v1/chat/completions`
 Supports both streaming (`stream: true` → SSE) and non-streaming. When `tools` is present in the request body, runs the server-side tool execution loop. Errors map to `429` (rate limit) or `500`.
 
+#### `POST /api/v1/images/generations`
+Body: `{ prompt: str, width?: int, height?: int, provider?: str }`. Generates an image from a text prompt using the configured provider chain (`IMAGE_GENERATION_CHAIN`). Returns `{ b64_json, provider, model }`. If `provider` is specified, only entries matching that provider are tried. Errors: `502` (all providers failed), `503` (no provider configured).
+
 #### `GET /api/v1/tools`
 Returns all built-in tool definitions in OpenAI function-calling format.
 
@@ -478,7 +492,8 @@ Two interceptors registered in order:
 
 | Interface | Description |
 |---|---|
-| `ChatMessage` | Conversation turn with optional telemetry and `tool_calls`/`tool_call_id`/`name` fields |
+| `ChatMessage` | Conversation turn with optional telemetry, `tool_calls`/`tool_call_id`/`name`, and UI-only `image_b64`/`image_url` fields |
+| `ImageGenerationResponse` | `{ b64_json, provider, model }` from `POST /images/generations` |
 | `ToolCall` / `ToolDefinition` / `ToolCallFunction` / `ToolFunction` | Tool calling types mirroring OpenAI format |
 | `ChatCompletionRequest` | OpenAI-compatible request envelope with `tools` field |
 | `ChatCompletionResponse` | Response envelope |
@@ -494,7 +509,7 @@ Two interceptors registered in order:
 ### 4.4 Services
 
 #### ChatService
-Wraps `POST /chat/completions`. Streaming uses raw `fetch` + `ReadableStream` (not `HttpClient`) to avoid buffering. Emits `{ event, data }` observables including `tool_call` and `tool_result` events. The `stream()` method returns a subscribable `Observable`; calling `unsubscribe()` on the subscription triggers the internal `AbortController`, cancelling the fetch immediately.
+Wraps `POST /chat/completions` and `POST /images/generations`. Streaming uses raw `fetch` + `ReadableStream` (not `HttpClient`) to avoid buffering. Emits `{ event, data }` observables including `tool_call` and `tool_result` events. The `stream()` method returns a subscribable `Observable`; calling `unsubscribe()` on the subscription triggers the internal `AbortController`, cancelling the fetch immediately. `generateImage(prompt, width, height)` calls the image generation endpoint.
 
 #### ConversationService
 HTTP client for all conversation endpoints.
@@ -588,7 +603,10 @@ Streaming errors arrive as `event: error` SSE frames → parsed by `ChatService`
 
 | Method | Description |
 |---|---|
-| `send()` | Appends user message, starts SSE stream, stores the `Subscription` in `streamSubscription`, updates messages on each chunk. Sends `tools` when enabled |
+| `send()` | Appends user message (with optional `image_b64`), starts SSE stream, stores the `Subscription` in `streamSubscription`, updates messages on each chunk. Sends `tools` when enabled. Detects `/imagine` prefix and routes to `handleImagineCommand()`. Transforms attached images into OpenAI multipart content format before sending |
+| `handleImagineCommand(prompt)` | Calls `chatService.generateImage()`, shows placeholder, displays generated image inline on success |
+| `triggerImageUpload()` | Opens native file picker for images; reads as base64 data URL |
+| `onPaste(event)` | Handles paste events to capture pasted images from clipboard |
 | `cancelStream()` | Unsubscribes `streamSubscription` (triggers `AbortController` in `ChatService`), resets `loading` and `streaming` to false. Shown as a red stop button in the composer during streaming |
 | `onEnter(event)` | Enter sends, Shift+Enter inserts newline |
 | `selectConversation(id)` | GET conversation → `messages.set(conv.messages)`, closes sidebar on mobile |

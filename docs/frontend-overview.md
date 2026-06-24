@@ -21,6 +21,10 @@ SpiceSibyl's frontend is an **Angular 18 single-page application** that provides
 - **Regenerate** — available on the last assistant message; removes it and re-sends the conversation to get a new response.
 - **Edit** — available on the last user message; loads it back into the composer and removes it (and subsequent messages) from the chat.
 
+**Image-to-text (vision)** — the composer includes an image attachment button (📎). Users can click to select an image, or paste one from the clipboard. The image is base64-encoded, shown as a preview bar above the composer, and sent as OpenAI-compatible multipart content alongside the text prompt. Attached images are displayed inline in user message bubbles.
+
+**Text-to-image generation** — typing `/imagine <prompt>` in the composer triggers a `POST /images/generations` request. A loading placeholder is shown while the image is being generated; the result is displayed inline as a full-width image in the assistant bubble with provider and model metadata.
+
 **Voice input** — the composer includes a microphone button (visible when the browser supports the Web Speech API). Clicking it starts speech recognition with a visual pulse animation; the transcribed text is appended to the current prompt.
 
 **Conversation export** — export buttons in the topbar allow downloading the current conversation as Markdown or JSON. The download is fetched from `GET /conversations/{id}/export`.
@@ -45,7 +49,7 @@ src/app/
 │   ├── models/        TypeScript interfaces mirroring backend Pydantic schemas
 │   └── services/      ChatService · ConversationService · ProfileService · NotificationService · StatsService
 ├── features/
-│   ├── chat/          main chat page (messages with actions, composer with voice/cancel, sidebar with system prompt + parameters + search + tools toggle)
+│   ├── chat/          main chat page (messages with actions + images, composer with voice/cancel/image-attach, sidebar with system prompt + parameters + search + tools toggle)
 │   ├── profile/       profile selector modal
 │   ├── discovery/     live model catalog discovery with YAML editor
 │   └── stats/         usage stats dashboard (summary cards, per-profile/provider/model tables)

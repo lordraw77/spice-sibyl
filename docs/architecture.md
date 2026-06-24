@@ -16,6 +16,8 @@
 - Conversation persistence on SQLite with per-profile history separation
 - Encrypted API key vault (Fernet) with environment variable fallback
 - System prompt, model parameters, voice input, message actions, conversation export, and syntax highlighting in the chat UI
+- Image-to-text (vision): image upload in web UI and photo handling in Telegram
+- Text-to-image generation via configurable provider chain (Gemini, Hugging Face, Cloudflare, Together AI)
 
 ---
 
@@ -26,6 +28,7 @@ spice-sibyl/
 ├── backend/app/
 │   ├── api/v1/endpoints/       # REST endpoints
 │   │   ├── chat.py             # POST /chat/completions
+│   │   ├── images.py           # POST /images/generations (text-to-image)
 │   │   ├── conversations.py    # CRUD conversations + messages + FTS5 search + export
 │   │   ├── profiles.py         # CRUD profiles
 │   │   ├── providers.py        # GET/PATCH/PUT/DELETE providers + key vault + real connectivity test
@@ -50,6 +53,7 @@ spice-sibyl/
 │   │   └── stats.py            # StatsResponse and related types
 │   ├── services/
 │   │   ├── chat_service.py     # SSE streaming orchestration + tool loop
+│   │   ├── image_service.py    # Text-to-image with configurable provider chain
 │   │   ├── key_resolver.py     # Vault → env fallback for API keys
 │   │   └── vault_service.py    # Fernet encrypt/decrypt + in-memory cache
 │   └── tools/
@@ -63,7 +67,7 @@ spice-sibyl/
 │   │   ├── models/             # TypeScript interfaces (mirror Pydantic)
 │   │   └── services/           # ChatService · ConversationService · ProfileService · StatsService · …
 │   ├── features/
-│   │   ├── chat/               # ChatPageComponent — main chat UI (system prompt, parameters, voice, message actions, export, stream cancel)
+│   │   ├── chat/               # ChatPageComponent — main chat UI (system prompt, parameters, voice, message actions, export, stream cancel, image upload, /imagine)
 │   │   ├── profile/            # ProfileModalComponent — profile selector
 │   │   ├── discovery/          # DiscoveryPageComponent
 │   │   └── stats/              # StatsPageComponent — usage dashboard
@@ -268,6 +272,54 @@ ToolRegistry.execute(name, arguments)
   │    read_url(url)          → plain-text page content (HTML stripped, max 4000 chars)
   ▼
 messages updated with tool and tool_result, then final call to provider
+```
+
+---
+
+## Image generation — text-to-image
+
+```
+Frontend: /imagine <prompt>
+  │  POST /api/v1/images/generations  { prompt, width, height }
+  ▼
+images.py → image_service.generate_image()
+  │  parses IMAGE_GENERATION_CHAIN ("provider:model,...")
+  │  for each entry:
+  │    ├── skip if provider key not configured
+  │    ├── try _CALLERS[provider](prompt, width, height, model)
+  │    └── on failure → log WARNING → try next entry
+  ▼
+Provider callers:
+  gemini       → generativelanguage.googleapis.com  (:generateContent or :predict)
+  huggingface  → api-inference.huggingface.co
+  cloudflare   → api.cloudflare.com/client/v4/accounts/{id}/ai/run/{model}
+  together_ai  → api.together.xyz/v1/images/generations
+  ▼
+{ b64_json, provider, model }
+  ▼
+Frontend: displays inline image in assistant bubble
+Telegram: sends as photo message with caption
+```
+
+### Configuration
+
+```env
+IMAGE_GENERATION_CHAIN=gemini:gemini-2.5-flash-image,gemini:gemini-3.1-flash-image,huggingface:black-forest-labs/FLUX.1-schnell,cloudflare:@cf/stabilityai/stable-diffusion-xl-base-1.0,together_ai:black-forest-labs/FLUX.1-schnell-Free
+```
+
+## Image-to-text — vision
+
+```
+Frontend: user attaches image via 📎 button or paste
+  │  image → FileReader → base64 data URL
+  │  message.content = [{"type":"text","text":"..."}, {"type":"image_url","image_url":{"url":"data:..."}}]
+  │  POST /api/v1/chat/completions  (standard streaming)
+  ▼
+Provider (must support vision: Gemini, Groq/Llama-4-Scout, etc.)
+  ▼
+Streamed text response describing the image
+
+Telegram: user sends photo → bot downloads → base64 → same multimodal content format
 ```
 
 ---

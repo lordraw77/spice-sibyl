@@ -28,19 +28,23 @@ SpiceSibyl's backend is a **FastAPI async gateway** that exposes an OpenAI-compa
 
 **Database performance** — indexes on `messages(conversation_id)`, `conversations(profile_id)`, `conversations(updated_at DESC)`, `messages(provider)`, and `messages(role)` ensure fast lookups as the database grows. Migrations are applied idempotently at startup with structured logging for skipped and failed statements.
 
-**Telegram bot** — an optional polling-based bot starts alongside the FastAPI server when `TELEGRAM_BOT_TOKEN` is set. It shares the same provider factory and key resolver as the HTTP API, supports per-chat conversation history, streams replies by progressively editing the Telegram message, and maintains in-memory counters (`messages_received`, `messages_sent`, `errors`, `active_chats`) exposed via `GET /stats`. Access can be restricted with `TELEGRAM_ALLOWED_USERS`. The command menu is registered automatically via `set_my_commands` (post-init). Commands: `/start` · `/help` · `/agent` (switch to the `agent/multi-mcp` orchestrator) · `/chat` (switch back to a normal chat model, `/chat <id>` for a specific one) · `/new` · `/model [<id>]` · `/models [<query>]` · `/stats`. `/agent` and `/chat` toggle the active model while remembering the previous chat model.
+**Image generation** — `POST /v1/images/generations` generates images from text prompts. The provider chain is configured via `IMAGE_GENERATION_CHAIN` (comma-separated `provider:model` pairs). Each entry is tried in order; unconfigured providers are skipped and failures fall back to the next entry. Supported providers: Gemini (generateContent for Flash Image models, predict for Imagen models), Hugging Face Inference API, Cloudflare Workers AI, Together AI. The service (`image_service.py`) resolves API keys through the same `key_resolver` used by chat providers.
+
+**Vision (image-to-text)** — `ChatMessage.content` accepts the OpenAI multipart format (`[{"type": "text", ...}, {"type": "image_url", ...}]`). Images are base64-encoded by the client and forwarded to vision-capable models through the existing provider pipeline. No backend changes were needed beyond what the schema already supported.
+
+**Telegram bot** — an optional polling-based bot starts alongside the FastAPI server when `TELEGRAM_BOT_TOKEN` is set. It shares the same provider factory and key resolver as the HTTP API, supports per-chat conversation history, streams replies by progressively editing the Telegram message, and maintains in-memory counters (`messages_received`, `messages_sent`, `errors`, `active_chats`) exposed via `GET /stats`. Access can be restricted with `TELEGRAM_ALLOWED_USERS`. The command menu is registered automatically via `set_my_commands` (post-init). Commands: `/start` · `/help` · `/agent` (switch to the `agent/multi-mcp` orchestrator) · `/chat` (switch back to a normal chat model, `/chat <id>` for a specific one) · `/imagine <prompt>` (generate an image) · `/new` · `/model [<id>]` · `/models [<query>]` · `/stats`. `/agent` and `/chat` toggle the active model while remembering the previous chat model. Sending a photo to the bot triggers the vision handler, which downloads the image, base64-encodes it, and sends it to the active model as multipart content.
 
 ## Structure
 
 ```
 app/
-├── api/v1/endpoints/   chat · conversations (+ export) · profiles · providers · stats · tools · discovery ×8
+├── api/v1/endpoints/   chat · images · conversations (+ export) · profiles · providers · stats · tools · discovery ×8
 ├── core/               pydantic-settings (env / .env)
 ├── db/                 SQLite schema + indexes · conversation / profile / vault / stats / search repositories
 ├── dependencies/       provider factory (FastAPI dependency)
 ├── providers/          BaseProvider · LiteLLM · Gemini · OpenRouter · Cloudflare · Cerebras · Mistral · Orchestrator · Mock
 ├── schemas/            Pydantic request/response models (chat · conversations · profiles · stats)
-├── services/           ChatService · VaultService · KeyResolver
+├── services/           ChatService · ImageService · VaultService · KeyResolver
 ├── tools/              ToolRegistry · built-in tools (get_datetime · calculator · web_search · read_url)
 └── telegram/           bot handlers and lifecycle
 ```

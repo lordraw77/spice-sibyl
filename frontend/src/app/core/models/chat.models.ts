@@ -11,6 +11,10 @@
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | null;
+  /** UI-only: base64 image attached by the user (vision input) */
+  image_b64?: string;
+  /** UI-only: URL of a generated image (text-to-image result) */
+  image_url?: string;
   /** UI-only: tool call/result events attached to this assistant message */
   tool_events?: ToolEvent[];
   model?: string;
@@ -128,6 +132,13 @@ export interface ProviderTestResult {
 export interface ChatStreamEvent {
   event: string;
   data: Record<string, unknown>;
+}
+
+/** Response from POST /api/v1/images/generations */
+export interface ImageGenerationResponse {
+  b64_json: string;
+  provider: string;
+  model: string;
 }
 
 /** Per-provider summary included in the GET /api/v1/models response */

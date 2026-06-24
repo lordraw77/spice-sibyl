@@ -273,7 +273,17 @@
           </ng-container>
         </ng-container>
 
-        <div class="bubble markdown-body" [innerHTML]="renderedContent(message)"></div>
+        <!-- User-attached image (vision input) -->
+        <div class="message-image" *ngIf="message.image_b64">
+          <img [src]="message.image_b64" alt="Immagine allegata" loading="lazy" />
+        </div>
+
+        <!-- Generated image (text-to-image result) -->
+        <div class="message-image generated" *ngIf="message.image_url">
+          <img [src]="message.image_url" alt="Immagine generata" loading="lazy" />
+        </div>
+
+        <div class="bubble markdown-body" *ngIf="message.content" [innerHTML]="renderedContent(message)"></div>
 
         <div class="meta" *ngIf="message.role === 'assistant' && (message.latency_ms || message.prompt_tokens || message.completion_tokens || message.tokens_per_second || message.provider || message.finish_reason || message.created_at || message.estimated_cost)">
           <span *ngIf="message.provider">{{ message.provider }}</span>
@@ -317,14 +327,35 @@
     </div>
 
     <div class="composer">
-      <div class="composer-inner">
+      <!-- Image attachment preview -->
+    <div class="attachment-preview" *ngIf="attachedImageB64">
+      <img [src]="attachedImageB64" alt="Anteprima" class="attachment-thumb" />
+      <span class="attachment-name">{{ attachedImageName }}</span>
+      <button class="attachment-remove" (click)="removeAttachedImage()" title="Rimuovi">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
+    <div class="composer-inner">
         <textarea
           class="composer-textarea"
           rows="2"
           [(ngModel)]="prompt"
-          placeholder="Scrivi il tuo prompt…"
+          placeholder="Scrivi il tuo prompt… (/imagine per generare immagini)"
           (keydown.enter)="onEnter($event)"
+          (paste)="onPaste($event)"
         ></textarea>
+        <button
+          *ngIf="!streaming"
+          class="composer-attach"
+          (click)="triggerImageUpload()"
+          title="Allega immagine (vision)"
+          aria-label="Allega immagine"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+          </svg>
+        </button>
         <button
           *ngIf="hasSpeechRecognition && !streaming"
           class="composer-mic"
@@ -364,7 +395,7 @@
           <span *ngIf="loading" class="send-spinner"></span>
         </button>
       </div>
-      <p class="composer-hint">Enter per inviare · Shift+Enter per andare a capo</p>
+      <p class="composer-hint">Enter per inviare · Shift+Enter per andare a capo · 📎 per vision · /imagine per generare</p>
     </div>
 
   </div>

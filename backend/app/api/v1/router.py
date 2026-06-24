@@ -27,6 +27,7 @@ from app.api.v1.endpoints import (
     gemini_discovery,
     groq_discovery,
     health,
+    images,
     mistral_discovery,
     models,
     nvidia_discovery,
@@ -52,6 +53,7 @@ api_router.include_router(cerebras_discovery.router, prefix="/cerebras-discovery
 api_router.include_router(mistral_discovery.router, prefix="/mistral-discovery", tags=["mistral-discovery"])
 api_router.include_router(nvidia_discovery.router, prefix="/nvidia-discovery", tags=["nvidia-discovery"])
 api_router.include_router(ollama_discovery.router, prefix="/ollama-discovery", tags=["ollama-discovery"])
+api_router.include_router(images.router, prefix="/images", tags=["images"])
 api_router.include_router(conversations.router, prefix="/conversations", tags=["conversations"])
 api_router.include_router(profiles.router, prefix="/profiles", tags=["profiles"])
 api_router.include_router(stats.router, prefix="/stats", tags=["stats"])

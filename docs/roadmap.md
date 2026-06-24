@@ -48,8 +48,14 @@
 - **Hardened error handling** — bare `except Exception` replaced with specific exception types across chat service, tools, and providers; improved logging levels (debug for normal ops, warning for failures)
 - **Vault security warning** — startup logs a SECURITY warning when VAULT_SECRET_KEY is still set to the default placeholder
 
+## Phase 7 ✓
+- **Image-to-text (vision)** — upload images in the web chat (click, drag, paste) or send photos to the Telegram bot; images are base64-encoded and forwarded as OpenAI-compatible multipart content to any vision-capable model (Gemini, Groq/Llama-4-Scout, etc.)
+- **Text-to-image generation** — `/imagine <prompt>` command in both web UI and Telegram; configurable provider fallback chain via `IMAGE_GENERATION_CHAIN` env var (format: `provider:model,...`); supported providers: Gemini (Imagen / Flash Image), Hugging Face (FLUX.1-schnell), Cloudflare Workers AI (SDXL), Together AI (FLUX.1-schnell-Free)
+- **Image generation endpoint** — `POST /v1/images/generations` with automatic provider fallback; each entry in the chain is tried in order, skipping unconfigured providers and falling back on errors
+- **Telegram `/imagine`** — generates an image and sends it as a Telegram photo with provider/model caption
+- **Telegram photo handler** — photos sent to the bot are automatically described by the active model via vision
+
 ## Backlog
-- Multi-modal support (image input)
 - RAG / document ingestion
 - Prompt templates library
 - Conversation branching / forking
