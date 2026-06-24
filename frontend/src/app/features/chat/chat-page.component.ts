@@ -167,6 +167,18 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   /** True while an /imagine request is in-flight */
   generatingImage = false;
 
+  /** Slash command autocomplete */
+  readonly slashCommands: { cmd: string; desc: string; insert: string }[] = [
+    { cmd: '/imagine', desc: 'Genera un\'immagine da un prompt', insert: '/imagine ' },
+    { cmd: '/new', desc: 'Nuova conversazione', insert: '/new' },
+    { cmd: '/model', desc: 'Mostra o cambia modello', insert: '/model ' },
+    { cmd: '/export md', desc: 'Esporta conversazione in Markdown', insert: '/export md' },
+    { cmd: '/export json', desc: 'Esporta conversazione in JSON', insert: '/export json' },
+  ];
+  showSlashMenu = false;
+  filteredSlashCommands: { cmd: string; desc: string; insert: string }[] = [];
+  slashMenuIndex = 0;
+
   // Delegated to ChatStateService so state survives navigation away and back.
   get loading(): boolean { return this.chatState.loading(); }
   set loading(v: boolean) { this.chatState.loading.set(v); }
@@ -320,13 +332,63 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   onEnter(event: KeyboardEvent): void {
+    if (this.showSlashMenu) {
+      event.preventDefault();
+      this.selectSlashCommand(this.filteredSlashCommands[this.slashMenuIndex]);
+      return;
+    }
     if (!event.shiftKey) {
       event.preventDefault();
       this.send();
     }
   }
 
+  onPromptInput(): void {
+    if (this.prompt.startsWith('/')) {
+      const query = this.prompt.toLowerCase();
+      this.filteredSlashCommands = this.slashCommands.filter(c => c.cmd.startsWith(query) || c.insert.toLowerCase().startsWith(query));
+      this.showSlashMenu = this.filteredSlashCommands.length > 0;
+      this.slashMenuIndex = 0;
+    } else {
+      this.showSlashMenu = false;
+    }
+  }
+
+  onComposerKeydown(event: KeyboardEvent): void {
+    if (!this.showSlashMenu) return;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      this.slashMenuIndex = (this.slashMenuIndex + 1) % this.filteredSlashCommands.length;
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.slashMenuIndex = (this.slashMenuIndex - 1 + this.filteredSlashCommands.length) % this.filteredSlashCommands.length;
+    } else if (event.key === 'Tab') {
+      event.preventDefault();
+      this.selectSlashCommand(this.filteredSlashCommands[this.slashMenuIndex]);
+    } else if (event.key === 'Escape') {
+      this.showSlashMenu = false;
+    }
+  }
+
+  selectSlashCommand(cmd: { cmd: string; desc: string; insert: string }): void {
+    if (!cmd) return;
+    this.prompt = cmd.insert;
+    this.showSlashMenu = false;
+    // Execute immediate commands
+    if (cmd.cmd === '/new') {
+      this.prompt = '';
+      this.newConversation();
+    } else if (cmd.cmd === '/export md') {
+      this.prompt = '';
+      this.exportConversation('md');
+    } else if (cmd.cmd === '/export json') {
+      this.prompt = '';
+      this.exportConversation('json');
+    }
+  }
+
   send(overrideMessages?: ChatMessage[]): void {
+    this.showSlashMenu = false;
     const text = this.prompt.trim();
     if (!overrideMessages && (!text && !this.attachedImageB64 || this.loading)) {
       return;

@@ -1,7 +1,8 @@
 DOCKER_USER   ?= lordraw
 BACKEND_IMAGE  = $(DOCKER_USER)/spice-sibyl-backend
 FRONTEND_IMAGE = $(DOCKER_USER)/spice-sibyl-frontend
-VERSION       ?= latest
+GIT_TAG       := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "latest")
+VERSION       ?= $(GIT_TAG)
 
 .PHONY: up down logs backend frontend test-backend install-backend install-frontend \
         build push release prod-up prod-down

@@ -336,13 +336,30 @@
       </button>
     </div>
 
+    <!-- Slash command autocomplete menu -->
+    <div class="slash-menu" *ngIf="showSlashMenu && filteredSlashCommands.length">
+      <button
+        *ngFor="let cmd of filteredSlashCommands; let i = index"
+        class="slash-menu-item"
+        [class.active]="i === slashMenuIndex"
+        (click)="selectSlashCommand(cmd)"
+        (mouseenter)="slashMenuIndex = i"
+        type="button"
+      >
+        <span class="slash-cmd">{{ cmd.cmd }}</span>
+        <span class="slash-desc">{{ cmd.desc }}</span>
+      </button>
+    </div>
+
     <div class="composer-inner">
         <textarea
           class="composer-textarea"
           rows="2"
           [(ngModel)]="prompt"
-          placeholder="Scrivi il tuo prompt… (/imagine per generare immagini)"
+          placeholder="Scrivi il tuo prompt… (/ per i comandi)"
           (keydown.enter)="onEnter($event)"
+          (keydown)="onComposerKeydown($event)"
+          (input)="onPromptInput()"
           (paste)="onPaste($event)"
         ></textarea>
         <button

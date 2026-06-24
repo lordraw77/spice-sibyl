@@ -979,6 +979,62 @@ select.form-select-sm:focus {
 .markdown-body pre { background: #0d1018; padding: 0; border-radius: .75rem; overflow: auto; border: 1px solid rgba(255,255,255,.07); }
 .markdown-body pre code { background: transparent; padding: .85rem; display: block; }
 
+/* ── Slash command menu ────────────────────────────────────── */
+.slash-menu {
+  display: flex;
+  flex-direction: column;
+  background: rgba(13, 15, 21, 0.98);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: .7rem;
+  padding: .3rem;
+  margin-bottom: .35rem;
+  max-height: 14rem;
+  overflow-y: auto;
+  box-shadow: 0 4px 20px rgba(0,0,0,.4);
+  animation: slash-menu-in .12s ease-out;
+}
+
+@keyframes slash-menu-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.slash-menu-item {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .5rem .7rem;
+  border: none;
+  border-radius: .5rem;
+  background: transparent;
+  color: #c4c9d4;
+  cursor: pointer;
+  text-align: left;
+  transition: background .1s;
+  font-size: .85rem;
+}
+
+.slash-menu-item:hover,
+.slash-menu-item.active {
+  background: rgba(214,178,121,.1);
+}
+
+.slash-cmd {
+  font-family: monospace;
+  font-weight: 600;
+  color: #d6b279;
+  flex-shrink: 0;
+  min-width: 6.5rem;
+}
+
+.slash-desc {
+  color: #6b7485;
+  font-size: .8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Composer ───────────────────────────────────────────────── */
 .composer {
   flex-shrink: 0;

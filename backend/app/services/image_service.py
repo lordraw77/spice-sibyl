@@ -72,7 +72,7 @@ async def generate_image(
             logger.info("Image generation: trying %s:%s", entry.provider, entry.model)
             result = await _CALLERS[entry.provider](prompt, width, height, entry.model)
             return result
-        except ImageGenerationError as exc:
+        except Exception as exc:
             logger.warning("Image generation: %s:%s failed: %s", entry.provider, entry.model, exc)
             errors.append(f"{entry.provider}:{entry.model} → {exc}")
 
