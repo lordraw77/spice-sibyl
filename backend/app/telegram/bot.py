@@ -195,9 +195,9 @@ async def cmd_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if context.args:
         target = context.args[0].strip()
     else:
-        target = _chat_models.get(chat_id) or settings.default_model
+        target = _chat_models.get(chat_id) or _default_model()
         if _is_agent_model(target):
-            target = settings.default_model  # never fall back into agent mode
+            target = _default_model()
 
     _models[chat_id] = target
     if not _is_agent_model(target):
