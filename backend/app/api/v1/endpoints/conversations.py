@@ -13,8 +13,12 @@ Profile identity is conveyed via the X-Profile-ID request header.
 Missing or empty header falls back to 'default'.
 """
 
+import json
+import time
+
 import aiosqlite
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi.responses import Response
 
 from app.db import conversation_repository as repo
 from app.db import search_repository as search_repo
@@ -81,12 +85,23 @@ async def rename_conversation(
     body: ConversationUpdate,
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    conv = await repo.get_conversation(db, conversation_id)
-    if not conv:
+    # Lightweight existence check — avoids loading all messages just to verify 404.
+    async with db.execute(
+        "SELECT id, profile_id, model, created_at FROM conversations WHERE id = ?",
+        (conversation_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    if not row:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    await repo.update_title(db, conversation_id, body.title)
-    updated = await repo.get_conversation(db, conversation_id)
-    return ConversationSummary(**updated.model_dump(exclude={"messages"}))
+
+    now = await repo.update_title(db, conversation_id, body.title)
+    return ConversationSummary(
+        id=row["id"],
+        title=body.title,
+        model=row["model"],
+        created_at=row["created_at"],
+        updated_at=now,
+    )
 
 
 @router.delete("/{conversation_id}", status_code=204)
@@ -95,6 +110,49 @@ async def delete_conversation(
     db: aiosqlite.Connection = Depends(get_db),
 ):
     await repo.delete_conversation(db, conversation_id)
+
+
+@router.get("/{conversation_id}/export")
+async def export_conversation(
+    conversation_id: str,
+    format: str = Query(default="md", pattern="^(md|json)$"),
+    db: aiosqlite.Connection = Depends(get_db),
+) -> Response:
+    conv = await repo.get_conversation(db, conversation_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    if format == "json":
+        body = conv.model_dump_json(indent=2)
+        return Response(
+            content=body,
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="conversation-{conversation_id}.json"'},
+        )
+
+    # Markdown export
+    ts = time.strftime("%Y-%m-%d %H:%M", time.gmtime(conv.created_at or 0))
+    lines = [
+        "---",
+        f"title: {conv.title}",
+        f"model: {conv.model}",
+        f"date: {ts}",
+        "---",
+        "",
+        f"# {conv.title}",
+        "",
+    ]
+    for msg in conv.messages:
+        role_label = "## User" if msg.role == "user" else f"## Assistant ({msg.model or 'AI'})"
+        content = msg.content if isinstance(msg.content, str) else json.dumps(msg.content)
+        lines += [role_label, "", content, ""]
+
+    body_md = "\n".join(lines)
+    return Response(
+        content=body_md,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="conversation-{conversation_id}.md"'},
+    )
 
 
 @router.post("/{conversation_id}/messages", status_code=204)

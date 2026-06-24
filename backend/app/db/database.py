@@ -1,5 +1,9 @@
+import logging
+
 import aiosqlite
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 _SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -47,6 +51,12 @@ CREATE TABLE IF NOT EXISTS messages (
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
 
+CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_profile_id ON conversations(profile_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_provider ON messages(provider);
+CREATE INDEX IF NOT EXISTS idx_messages_role ON messages(role);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
     id              UNINDEXED,
     conversation_id UNINDEXED,
@@ -85,13 +95,16 @@ async def init_db() -> None:
     async with aiosqlite.connect(settings.db_path) as db:
         await db.executescript(_SCHEMA)
         await db.commit()
-        # Apply migrations idempotently (ignore errors = column already exists)
         for stmt in _MIGRATIONS:
             try:
                 await db.execute(stmt)
                 await db.commit()
+            except aiosqlite.OperationalError as exc:
+                # Expected for "column already exists" or "table already exists" —
+                # migrations are intentionally idempotent.
+                logger.debug("Migration skipped (already applied): %s", exc)
             except Exception:
-                pass
+                logger.exception("Unexpected migration error; stmt=%s", stmt)
 
 
 async def get_db():

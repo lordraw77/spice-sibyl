@@ -17,8 +17,19 @@ from app.core.config import settings
 from app.db.database import get_db, init_db
 from app.db import vault_repository
 
+_INSECURE_DEFAULTS = frozenset({"change-me-in-production", "change-me", ""})
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
+    # Warn loudly if the vault encryption key is still the well-known default.
+    # Anyone with DB access could decrypt stored API keys using this value.
+    if settings.vault_secret_key in _INSECURE_DEFAULTS:
+        logging.getLogger(__name__).warning(
+            "SECURITY: vault_secret_key is set to the default placeholder. "
+            "Set VAULT_SECRET_KEY to a strong secret in production to protect stored API keys."
+        )
+
     await init_db()
     async for db in get_db():
         await vault_repository.load_all(db)

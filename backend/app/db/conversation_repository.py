@@ -88,12 +88,15 @@ async def create_conversation(
 
 async def update_title(
     db: aiosqlite.Connection, conversation_id: str, title: str
-) -> None:
+) -> int:
+    """Update the conversation title and return the new updated_at timestamp."""
+    now = int(time.time())
     await db.execute(
         "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
-        (title, int(time.time()), conversation_id),
+        (title, now, conversation_id),
     )
     await db.commit()
+    return now
 
 
 async def delete_conversation(

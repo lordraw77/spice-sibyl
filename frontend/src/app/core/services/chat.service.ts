@@ -59,7 +59,11 @@ export class ChatService {
             return;
           }
 
-          const reader = response.body!.getReader();
+          if (!response.body) {
+            subscriber.error(new Error('Streaming not supported: response body is null'));
+            return;
+          }
+          const reader = response.body.getReader();
           const decoder = new TextDecoder();
           let buffer = '';
           let currentEvent = 'message';

@@ -2,19 +2,20 @@
 
 ## Goals
 
-- Gateway unico verso più provider AI con routing trasparente lato client
-- API OpenAI-compatible su `/v1/chat/completions`
-- UI web stile chat moderna con telemetria per-messaggio in tempo reale
-- Supporto streaming SSE end-to-end con gestione errori strutturata
-- Tool calling con loop di esecuzione lato server (max 5 iterazioni)
+- Single gateway to multiple AI providers with transparent client-side routing
+- OpenAI-compatible API on `/v1/chat/completions`
+- Modern chat-style web UI with real-time per-message telemetry
+- End-to-end SSE streaming with structured error handling
+- Tool calling with server-side execution loop (max 5 iterations)
 - Multi-agent orchestration via the `agent/*` model family (Multi-MCP orchestrator sidecar)
 - Telegram bot with chat/agent mode toggle, reachable through the same gateway
-- Dashboard statistiche di utilizzo per profilo, provider e modello
-- Ricerca full-text dei messaggi tramite SQLite FTS5
-- Discovery live dei cataloghi modelli dai provider, con generazione YAML
-- Notifiche errori globali (toast) nel frontend
-- Persistenza conversazioni su SQLite con history separata per profilo
-- Vault chiavi API cifrate (Fernet) con fallback sulle env vars
+- Usage statistics dashboard per profile, provider, and model
+- Full-text message search via SQLite FTS5
+- Live model catalog discovery from providers with YAML generation
+- Global error notifications (toast) in the frontend
+- Conversation persistence on SQLite with per-profile history separation
+- Encrypted API key vault (Fernet) with environment variable fallback
+- System prompt, model parameters, voice input, message actions, conversation export, and syntax highlighting in the chat UI
 
 ---
 
@@ -23,49 +24,49 @@
 ```
 spice-sibyl/
 ├── backend/app/
-│   ├── api/v1/endpoints/       # Endpoint REST
+│   ├── api/v1/endpoints/       # REST endpoints
 │   │   ├── chat.py             # POST /chat/completions
-│   │   ├── conversations.py    # CRUD conversazioni + messaggi + ricerca FTS5
-│   │   ├── profiles.py         # CRUD profili
-│   │   ├── providers.py        # GET/PATCH/PUT/DELETE providers + key vault
-│   │   ├── stats.py            # GET /stats — statistiche utilizzo
-│   │   ├── tools.py            # GET /tools — definizioni tool built-in
-│   │   └── *_discovery.py      # Discovery × 6 provider
+│   │   ├── conversations.py    # CRUD conversations + messages + FTS5 search + export
+│   │   ├── profiles.py         # CRUD profiles
+│   │   ├── providers.py        # GET/PATCH/PUT/DELETE providers + key vault + real connectivity test
+│   │   ├── stats.py            # GET /stats — usage statistics
+│   │   ├── tools.py            # GET /tools — built-in tool definitions
+│   │   └── *_discovery.py      # Discovery × 8 providers (Cloudflare, OpenRouter, Gemini, Groq, Cerebras, Mistral, NVIDIA, Ollama)
 │   ├── core/config.py          # Settings (env / .env)
-│   ├── data/                   # Loader catalogo YAML
+│   ├── data/                   # YAML catalog loader
 │   ├── db/
-│   │   ├── database.py         # Schema SQLite, init_db(), get_db()
+│   │   ├── database.py         # SQLite schema + indexes, init_db(), get_db()
 │   │   ├── conversation_repository.py
 │   │   ├── profile_repository.py
-│   │   ├── vault_repository.py # Cifratura/decifratura chiavi API
-│   │   ├── stats_repository.py # Query aggregazione utilizzo
-│   │   └── search_repository.py # Query FTS5 full-text search
+│   │   ├── vault_repository.py # API key encryption/decryption
+│   │   ├── stats_repository.py # Usage aggregation queries
+│   │   └── search_repository.py # FTS5 full-text search queries
 │   ├── dependencies/           # provider_factory.py — FastAPI dependency
-│   ├── providers/              # BaseProvider + adapter concreti
+│   ├── providers/              # BaseProvider + concrete adapters
 │   ├── schemas/
 │   │   ├── chat.py             # ChatMessage, ToolCall, ToolDefinition, …
 │   │   ├── conversations.py    # ConversationSummary, SearchResult, …
 │   │   ├── profiles.py
-│   │   └── stats.py            # StatsResponse e tipi correlati
+│   │   └── stats.py            # StatsResponse and related types
 │   ├── services/
-│   │   ├── chat_service.py     # Orchestrazione SSE streaming + tool loop
-│   │   ├── key_resolver.py     # Vault → env fallback per le API key
-│   │   └── vault_service.py    # Fernet encrypt/decrypt + cache in-memory
+│   │   ├── chat_service.py     # SSE streaming orchestration + tool loop
+│   │   ├── key_resolver.py     # Vault → env fallback for API keys
+│   │   └── vault_service.py    # Fernet encrypt/decrypt + in-memory cache
 │   └── tools/
 │       ├── __init__.py
-│       ├── builtin.py          # get_datetime · calculator · web_search
-│       └── registry.py         # ToolRegistry — lookup per nome
+│       ├── builtin.py          # get_datetime · calculator · web_search · read_url
+│       └── registry.py         # ToolRegistry — lookup by name
 ├── frontend/src/app/
 │   ├── core/
 │   │   ├── config/             # AppConfigService (app-config.json runtime)
 │   │   ├── interceptors/       # error.interceptor · profile.interceptor
-│   │   ├── models/             # Interfacce TypeScript (mirror Pydantic)
+│   │   ├── models/             # TypeScript interfaces (mirror Pydantic)
 │   │   └── services/           # ChatService · ConversationService · ProfileService · StatsService · …
 │   ├── features/
-│   │   ├── chat/               # ChatPageComponent — UI chat principale
-│   │   ├── profile/            # ProfileModalComponent — selettore profili
+│   │   ├── chat/               # ChatPageComponent — main chat UI (system prompt, parameters, voice, message actions, export, stream cancel)
+│   │   ├── profile/            # ProfileModalComponent — profile selector
 │   │   ├── discovery/          # DiscoveryPageComponent
-│   │   └── stats/              # StatsPageComponent — dashboard utilizzo
+│   │   └── stats/              # StatsPageComponent — usage dashboard
 │   ├── shared/toast-container/
 │   └── layout/navbar.component.ts
 └── shared-config/provider_models.yaml
@@ -116,13 +117,13 @@ is documented in the `multi-mcp` project's `DEPLOY.md`.
 
 ## Database — SQLite
 
-Il backend mantiene un database SQLite (`spice_sibyl.db`, percorso configurabile via `DB_PATH`).
+The backend maintains a SQLite database (`spice_sibyl.db`, path configurable via `DB_PATH`).
 
 ### Schema
 
 ```sql
 profiles (
-    id         TEXT PRIMARY KEY,   -- UUID generato dal backend
+    id         TEXT PRIMARY KEY,   -- UUID generated by the backend
     name       TEXT NOT NULL,
     created_at INTEGER NOT NULL
 )
@@ -130,7 +131,7 @@ profiles (
 conversations (
     id         TEXT PRIMARY KEY,
     profile_id TEXT NOT NULL DEFAULT 'default',
-    title      TEXT NOT NULL,      -- primi 60 caratteri del primo messaggio utente
+    title      TEXT NOT NULL,      -- first 60 characters of the first user message
     model      TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
@@ -141,28 +142,38 @@ messages (
     conversation_id   TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
     role              TEXT NOT NULL,
     content           TEXT NOT NULL,
-    -- campi telemetria opzionali (model, provider, latency_ms, token counts, …)
+    -- optional telemetry fields (model, provider, latency_ms, token counts, …)
     created_at        INTEGER NOT NULL
 )
 
 api_keys (
     provider_id   TEXT PRIMARY KEY,
-    encrypted_key TEXT NOT NULL,   -- cifrato con Fernet
+    encrypted_key TEXT NOT NULL,   -- encrypted with Fernet
     updated_at    INTEGER NOT NULL
 )
 
--- Tabella virtuale FTS5 per ricerca full-text sui messaggi
+-- FTS5 virtual table for full-text search on messages
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
     id UNINDEXED,
     conversation_id UNINDEXED,
     content,
     tokenize='unicode61'
 );
--- Mantenuta in sync da 3 trigger: messages_fts_ai (INSERT),
+-- Kept in sync by 3 triggers: messages_fts_ai (INSERT),
 -- messages_fts_ad (DELETE), messages_fts_au (UPDATE)
 ```
 
-Il database viene inizializzato al boot tramite `lifespan` in `main.py`. Le migration additive (es. aggiunta colonna `profile_id`, creazione tabella FTS5) vengono applicate idempotentemente. Al primo avvio con la migrazione FTS5, la tabella viene popolata dai messaggi esistenti.
+### Indexes
+
+```sql
+CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
+CREATE INDEX idx_conversations_profile_id ON conversations(profile_id);
+CREATE INDEX idx_conversations_updated_at ON conversations(updated_at DESC);
+CREATE INDEX idx_messages_provider ON messages(provider);
+CREATE INDEX idx_messages_role ON messages(role);
+```
+
+The database is initialized at boot via `lifespan` in `main.py`. Additive migrations (e.g. adding the `profile_id` column, creating the FTS5 table) are applied idempotently with structured logging. On first run with the FTS5 migration, the table is populated from existing messages.
 
 ---
 
@@ -171,27 +182,30 @@ Il database viene inizializzato al boot tramite `lifespan` in `main.py`. Le migr
 ```
 Frontend (ChatPageComponent)
   │  POST /api/v1/chat/completions  (fetch + ReadableStream)
-  │  body include tools[] quando il toggle è attivo
+  │  body includes tools[] when the toggle is active
+  │  body includes temperature, max_tokens from sidebar controls
+  │  system prompt is prepended to messages when configured
   ▼
 FastAPI chat.py
   │  get_provider(model) → provider adapter
   ▼
 ChatService.stream()
-  │  se tools[] presenti → tool execution loop (max 5 iterazioni)
-  │    ├── provider.complete() → tool_calls nel response
-  │    ├── emette event: tool_call  (SSE)
+  │  if tools[] present → tool execution loop (max 5 iterations)
+  │    ├── provider.complete() → tool_calls in response
+  │    ├── emits event: tool_call  (SSE)
   │    ├── ToolRegistry.execute(name, arguments)
-  │    └── emette event: tool_result (SSE)
+  │    └── emits event: tool_result (SSE)
+  │  if loop exhausts iterations → emits event: error
   │  EventSourceResponse(event_generator())
   ▼
 Provider.stream()
   │  key_resolver.resolve(provider_id)
-  │    └── vault_service.get(id)  →  cache in-memory
+  │    └── vault_service.get(id)  →  in-memory cache
   │         └── fallback: settings.*_api_key
   ▼
-Provider API  (Groq / Gemini / Cloudflare / OpenRouter / Ollama / Mistral / Cerebras / …)
+Provider API  (Groq / Gemini / Cloudflare / OpenRouter / Ollama / Mistral / Cerebras / NVIDIA / …)
 
-  [stream completato]
+  [stream completed]
   │
   ▼
 Frontend.persistExchange()
@@ -199,17 +213,17 @@ Frontend.persistExchange()
   │  POST /api/v1/conversations/{id}/messages  { messages: [user, assistant] }
   ▼
 conversation_repository → SQLite
-  │  trigger messages_fts_ai aggiorna messages_fts automaticamente
+  │  trigger messages_fts_ai updates messages_fts automatically
 ```
 
 ### SSE event types
 
-| Event         | Emesso da         | Contenuto                                                        |
+| Event         | Emitted by        | Content                                                          |
 |---------------|-------------------|------------------------------------------------------------------|
-| `message`     | ChatService       | Chunk delta (`chat.completion.chunk`)                            |
-| `message`     | LiteLLMProvider   | Chunk finale `chat.completion.meta` con telemetria               |
-| `done`        | ChatService       | `[DONE]` — segnala fine stream                                   |
-| `error`       | ChatService       | `{"message": "..."}` — errore inside generator                   |
+| `message`     | ChatService       | Delta chunk (`chat.completion.chunk`)                            |
+| `message`     | LiteLLMProvider   | Final `chat.completion.meta` chunk with telemetry                |
+| `done`        | ChatService       | `[DONE]` — signals end of stream                                |
+| `error`       | ChatService       | `{"message": "..."}` — error inside generator or tool loop exhausted |
 | `tool_call`   | ChatService       | `{"id": "...", "name": "...", "arguments": {...}}`               |
 | `tool_result` | ChatService       | `{"id": "...", "name": "...", "result": "..."}`                  |
 
@@ -217,18 +231,19 @@ conversation_repository → SQLite
 
 ## Provider routing
 
-| Prefisso       | Adapter               | Nota                                        |
+| Prefix         | Adapter               | Notes                                       |
 |----------------|-----------------------|---------------------------------------------|
-| `cloudflare/`  | `CloudflareProvider`  | HTTP diretto, streaming emulato             |
+| `cloudflare/`  | `CloudflareProvider`  | Direct HTTP, emulated streaming             |
 | `openrouter/`  | `OpenRouterProvider`  | LiteLLM via OpenRouter                      |
 | `gemini/`      | `GeminiProvider`      | LiteLLM via Google Generative AI            |
-| `cerebras/`    | `CerebrasProvider`    | HTTP diretto, time_info per telemetria      |
-| `mistral/`     | `MistralProvider`     | HTTP diretto                                |
-| tutto il resto | `LiteLLMProvider`     | Ollama, Groq, Together, Fireworks, HF, …    |
+| `cerebras/`    | `CerebrasProvider`    | Direct HTTP, time_info for telemetry        |
+| `mistral/`     | `MistralProvider`     | Direct HTTP                                 |
+| `agent/`       | `OrchestratorProvider`| Routes to external Multi-MCP sidecar        |
+| everything else| `LiteLLMProvider`     | Ollama, Groq, Together, Fireworks, HF, NVIDIA, … |
 
-Tutte le API key vengono risolte via `key_resolver.resolve(provider_id)`:
-1. Controlla la cache in-memory del vault (chiave cifrata nel DB)
-2. Fallback sull'env var / `settings.*_api_key`
+All API keys are resolved via `key_resolver.resolve(provider_id)`:
+1. Check the in-memory vault cache (encrypted key in DB)
+2. Fallback to env var / `settings.*_api_key`
 
 ---
 
@@ -237,21 +252,22 @@ Tutte le API key vengono risolte via `key_resolver.resolve(provider_id)`:
 ```
 GET /api/v1/tools
   ▼
-tools/registry.py → lista definizioni in formato OpenAI function-calling
+tools/registry.py → list of definitions in OpenAI function-calling format
 
 POST /api/v1/chat/completions  { tools: [...] }
   ▼
 ChatService.stream()
-  │  provider.complete() — non streaming, sincrono dentro il loop
-  │  risposta contiene tool_calls[]
+  │  provider.complete() — non-streaming, synchronous inside the loop
+  │  response contains tool_calls[]
   ▼
 ToolRegistry.execute(name, arguments)
   │  builtin.py:
   │    get_datetime(timezone) → datetime ISO string
-  │    calculator(expression) → risultato numerico (AST safe eval)
-  │    web_search(query)      → risultati DuckDuckGo JSON API
+  │    calculator(expression) → numeric result (AST safe eval)
+  │    web_search(query)      → DuckDuckGo HTML scraping results (JSON API fallback)
+  │    read_url(url)          → plain-text page content (HTML stripped, max 4000 chars)
   ▼
-messages aggiornati con tool e tool_result, poi chiamata finale al provider
+messages updated with tool and tool_result, then final call to provider
 ```
 
 ---
@@ -259,16 +275,31 @@ messages aggiornati con tool e tool_result, poi chiamata finale al provider
 ## Conversation search — FTS5
 
 ```
-GET /api/v1/conversations/search?q=<termine>&profile_id=<uuid>
+GET /api/v1/conversations/search?q=<term>&profile_id=<uuid>
   ▼
 search_repository.search(db, q, profile_id)
-  │  query FTS5 prefix-match: messages_fts MATCH '<termine>*'
-  │  JOIN conversations per filtrare per profile_id
+  │  FTS5 prefix-match query: messages_fts MATCH '<term>*'
+  │  JOIN conversations to filter by profile_id
   ▼
 SearchResult[] { conversation_id, title, snippet, ... }
   ▼
-Frontend: barra di ricerca nella sidebar con debounce 300ms
-  │  risultati inline, Escape per cancellare
+Frontend: search bar in sidebar with 300ms debounce
+  │  inline results, Escape to clear
+```
+
+---
+
+## Conversation export
+
+```
+GET /api/v1/conversations/{id}/export?format=md|json
+  ▼
+conversation_repository.get_conversation(db, id)
+  ▼
+format == "json"  → full Conversation JSON with telemetry
+format == "md"    → Markdown with YAML front-matter + role headings
+  ▼
+Response with Content-Disposition: attachment
 ```
 
 ---
@@ -279,18 +310,18 @@ Frontend: barra di ricerca nella sidebar con debounce 300ms
 GET /api/v1/stats?profile_id=<uuid>
   ▼
 stats_repository.get_stats(db, profile_id)
-  │  aggregazioni SQL su messages + conversations
-  │  + get_telegram_stats() dai contatori in-memory del bot
+  │  SQL aggregations on messages + conversations
+  │  + get_telegram_stats() from the bot's in-memory counters
   ▼
 StatsResponse {
   global_totals,
   per_profile[],
-  per_provider[] (con drilldown per profilo),
-  per_model[]    (con drilldown per profilo),
+  per_provider[] (with per-profile drilldown),
+  per_model[]    (with per-profile drilldown),
   telegram { messages_received, messages_sent, errors, active_chats }
 }
   ▼
-StatsPageComponent: summary cards + tabelle espandibili
+StatsPageComponent: summary cards + expandable tables
 ```
 
 ---
@@ -305,38 +336,38 @@ vault_repository.store_key(db, provider_id, plaintext)
   │  vault_service.encrypt(plaintext, VAULT_SECRET_KEY)
   │    └── SHA-256(VAULT_SECRET_KEY) → Fernet key → ciphertext
   │  INSERT INTO api_keys ...
-  │  vault_service.put(provider_id, plaintext)  ← aggiorna cache
+  │  vault_service.put(provider_id, plaintext)  ← update cache
   ▼
-Al prossimo request: key_resolver.resolve(provider_id) → legge dalla cache (O(1))
+On next request: key_resolver.resolve(provider_id) → reads from cache (O(1))
 ```
 
-Al boot, `vault_repository.load_all()` decifra tutte le chiavi e le carica nella cache.
+At boot, `vault_repository.load_all()` decrypts all keys and loads them into the cache. If `VAULT_SECRET_KEY` is still set to the default placeholder, a `SECURITY` warning is logged.
 
 ---
 
 ## Profile system
 
 ```
-Prima visita → ProfileModalComponent (nessun profilo in localStorage)
+First visit → ProfileModalComponent (no profile in localStorage)
   │  POST /api/v1/profiles  { name: "Alessandro" }
   │  ← { id: "uuid", name: "Alessandro", created_at: ... }
   │  localStorage.setItem('spicesibyl_profile', JSON.stringify(profile))
   ▼
-profileInterceptor  (tutte le richieste HTTP successive)
-  │  legge ProfileService.currentId  → aggiunge header X-Profile-ID
+profileInterceptor  (all subsequent HTTP requests)
+  │  reads ProfileService.currentId  → adds X-Profile-ID header
   ▼
-  │  GET  /api/v1/conversations?profile_id=uuid   ← filtra per profilo
+  │  GET  /api/v1/conversations?profile_id=uuid   ← filtered by profile
   │  POST /api/v1/conversations  { ..., profile_id: uuid }
 ```
 
-I profili sono entità leggere senza password. L'UUID generato dal backend è il discriminatore univoco. I dati sono separati a livello DB (`WHERE profile_id = ?`), non a livello applicativo.
+Profiles are lightweight entities with no passwords. The UUID generated by the backend is the unique discriminator. Data is separated at the database level (`WHERE profile_id = ?`), not at the application level.
 
 ---
 
 ## Discovery flow
 
 ```
-DiscoveryPageComponent (tab: Cloudflare / OpenRouter / Gemini / Groq / Cerebras / Mistral)
+DiscoveryPageComponent (tabs: Cloudflare / OpenRouter / Gemini / Groq / Cerebras / Mistral / NVIDIA / Ollama)
   │  POST /api/v1/{provider}-discovery/run
   ▼
 discovery endpoint  (httpx → provider API)
@@ -346,9 +377,9 @@ discovery endpoint  (httpx → provider API)
   │
   ▼
 DiscoveryPageComponent
-  ├── YAML editor con syntax highlighting
-  ├── Stat cards (totale, free, capability uniche)
-  └── Model grid con badge capability
+  ├── YAML editor with syntax highlighting
+  ├── Stat cards (total, free, unique capabilities)
+  └── Model grid with capability badges
 ```
 
 ---
@@ -357,15 +388,15 @@ DiscoveryPageComponent
 
 ```
 HttpClient calls
-  │  errore HTTP
+  │  HTTP error
   ▼
 ErrorInterceptor  (error.interceptor.ts)
-  │  estrae detail FastAPI
+  │  extracts FastAPI detail
   ▼
 NotificationService.add('error', title, detail)
   │
   ▼
-ToastContainerComponent  (fixed top-right, auto-dismiss 6s)
+ToastContainerComponent  (fixed top-right, auto-dismiss 6s, clickable)
 
 Streaming fetch  (chat completions)
   │  event: error  SSE
@@ -375,16 +406,18 @@ chat.service.ts  →  subscriber.error(new Error(message))
   ▼
 ChatPageComponent.error handler
   ├── NotificationService.add(...)   → toast
-  └── messages.update(...)           → messaggio nella bubble
+  └── messages.update(...)           → message in the bubble
 ```
+
+Toast types: `error` (pink), `warning` (gold), `info` (blue), `success` (green).
 
 ---
 
-## Catalogo modelli
+## Model catalog
 
-Il catalogo è un file YAML condiviso (`shared-config/provider_models.yaml`) montato come volume in entrambi i container. Il backend lo rilegge ad ogni request (no cache disco).
+The catalog is a shared YAML file (`shared-config/provider_models.yaml`) mounted as a volume in both containers. The backend re-reads it on every request (no disk cache).
 
-Ordine di lookup:
+Lookup order:
 1. `MODEL_CATALOG_PATH` env var
-2. `/config/provider_models.yaml` (volume Docker)
-3. `backend/app/data/provider_models.yaml` (fallback bundled)
+2. `/config/provider_models.yaml` (Docker volume)
+3. `backend/app/data/provider_models.yaml` (bundled fallback)

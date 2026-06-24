@@ -7,6 +7,7 @@ for each tool invocation and result before streaming the final text reply.
 """
 
 import json
+import logging
 import time
 
 from sse_starlette.sse import EventSourceResponse
@@ -14,16 +15,23 @@ from sse_starlette.sse import EventSourceResponse
 from app.data.model_catalog import get_model_metadata
 from app.schemas.chat import ChatCompletionRequest, ChatMessage, ToolCall, ToolCallFunction
 from app.services.provider_factory import ProviderFactory
+from app.tools.registry import execute_tool
+
+logger = logging.getLogger(__name__)
 
 _MAX_TOOL_ITERATIONS = 5
 
 
 class ChatService:
+    """Orchestrates chat completions, streaming, and server-side tool execution."""
+
     async def complete(self, request: ChatCompletionRequest):
+        """Return a single non-streaming completion."""
         provider = ProviderFactory.get_provider(request.model)
         return await provider.complete(request)
 
     async def stream(self, request: ChatCompletionRequest):
+        """Return an SSE EventSourceResponse for a streaming completion."""
         provider = ProviderFactory.get_provider(request.model)
 
         # agent/* models orchestrate their own sub-agents; never wrap them in the
@@ -43,19 +51,20 @@ class ChatService:
                         event = chunk.pop("_sse_event")
                     yield {"event": event, "data": json.dumps(chunk)}
                 yield {"event": "done", "data": "[DONE]"}
-            except Exception as exc:
+            except (RuntimeError, OSError, ValueError) as exc:
                 yield {"event": "error", "data": json.dumps({"message": str(exc)})}
 
         return EventSourceResponse(_plain())
 
     async def _stream_with_tools(self, provider, request: ChatCompletionRequest):
-        from app.tools.registry import execute_tool
-
+        """Run the server-side tool-execution loop, yielding SSE-compatible dicts."""
         messages: list[ChatMessage] = list(request.messages)
 
         try:
             for _ in range(_MAX_TOOL_ITERATIONS):
-                call_req = request.model_copy(update={"messages": messages, "stream": False})
+                call_req = request.model_copy(
+                    update={"messages": messages, "stream": False}
+                )
                 response = await provider.complete(call_req)
 
                 choices = response.get("choices") or []
@@ -74,7 +83,13 @@ class ChatService:
                         "event": "message",
                         "data": json.dumps({
                             "object": "chat.completion.chunk",
-                            "choices": [{"index": 0, "delta": {"content": content}, "finish_reason": None}],
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {"content": content},
+                                    "finish_reason": None,
+                                }
+                            ],
                         }),
                     }
                     metrics = response.get("metrics") or {}
@@ -143,17 +158,21 @@ class ChatService:
 
                     yield {
                         "event": "tool_call",
-                        "data": json.dumps({"id": tc.id, "name": func_name, "arguments": func_args}),
+                        "data": json.dumps(
+                            {"id": tc.id, "name": func_name, "arguments": func_args}
+                        ),
                     }
 
                     try:
                         result = await execute_tool(func_name, func_args)
-                    except Exception as exc:
+                    except (RuntimeError, ValueError, OSError) as exc:
                         result = f"Error: {exc}"
 
                     yield {
                         "event": "tool_result",
-                        "data": json.dumps({"id": tc.id, "name": func_name, "result": result}),
+                        "data": json.dumps(
+                            {"id": tc.id, "name": func_name, "result": result}
+                        ),
                     }
 
                     messages.append(ChatMessage(
@@ -161,12 +180,29 @@ class ChatService:
                         tool_call_id=tc.id,
                         content=result,
                     ))
+            else:
+                # for-loop exhausted without a break — max iterations reached
+                logger.warning(
+                    "Tool loop hit max iterations (%d) for model=%s",
+                    _MAX_TOOL_ITERATIONS,
+                    request.model,
+                )
+                yield {
+                    "event": "error",
+                    "data": json.dumps({
+                        "message": (
+                            f"Tool call limit reached ({_MAX_TOOL_ITERATIONS} iterations). "
+                            "The model kept requesting tools without producing a final answer."
+                        )
+                    }),
+                }
 
             yield {"event": "done", "data": "[DONE]"}
 
-        except Exception as exc:
+        except (RuntimeError, OSError, ValueError) as exc:
             yield {"event": "error", "data": json.dumps({"message": str(exc)})}
 
     async def list_models(self, model: str):
+        """Return the model list from the provider that handles the given model id."""
         provider = ProviderFactory.get_provider(model)
         return await provider.list_models()

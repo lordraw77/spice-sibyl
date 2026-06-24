@@ -685,14 +685,198 @@ select.form-select-sm:focus {
   50% { opacity: 0; }
 }
 
+/* ── System prompt ──────────────────────────────────────────── */
+.system-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(10, 12, 18, 0.7);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: .55rem;
+  color: #e6e9ef;
+  font-size: .82rem;
+  font-family: inherit;
+  padding: .55rem .7rem;
+  resize: vertical;
+  outline: none;
+  line-height: 1.5;
+}
+.system-textarea:focus { border-color: rgba(214,178,121,.4); }
+.system-textarea::placeholder { color: #3a4050; }
+
+.system-actions {
+  display: flex;
+  gap: .4rem;
+  margin-top: .35rem;
+}
+
+.btn-system-save, .btn-system-clear {
+  flex: 1;
+  font-size: .76rem;
+  padding: .3rem .5rem;
+  border-radius: .4rem;
+  border: 1px solid;
+  cursor: pointer;
+  transition: background .15s;
+}
+
+.btn-system-save {
+  background: rgba(214,178,121,.12);
+  border-color: rgba(214,178,121,.25);
+  color: #e4c28f;
+}
+.btn-system-save:hover:not(:disabled) { background: rgba(214,178,121,.22); }
+.btn-system-save:disabled { opacity: .35; cursor: not-allowed; }
+
+.btn-system-clear {
+  background: transparent;
+  border-color: rgba(255,255,255,.08);
+  color: #5a6070;
+}
+.btn-system-clear:hover:not(:disabled) { color: #e07070; border-color: rgba(224,112,112,.25); }
+.btn-system-clear:disabled { opacity: .35; cursor: not-allowed; }
+
+/* ── Parameters ─────────────────────────────────────────────── */
+.param-row {
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  margin-bottom: .5rem;
+}
+.param-row:last-child { margin-bottom: 0; }
+
+.param-label {
+  font-size: .76rem;
+  color: #6b7485;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.param-value {
+  font-weight: 600;
+  color: #9ba3b4;
+  font-variant-numeric: tabular-nums;
+}
+
+.param-slider {
+  width: 100%;
+  accent-color: #c1a56b;
+  cursor: pointer;
+  height: 4px;
+}
+
+.param-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(10,12,18,.7);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: .45rem;
+  color: #e6e9ef;
+  font-size: .82rem;
+  padding: .3rem .6rem;
+  outline: none;
+}
+.param-input:focus { border-color: rgba(214,178,121,.4); }
+
+/* ── Message actions ────────────────────────────────────────── */
+.message-actions {
+  display: flex;
+  gap: .25rem;
+  margin-top: .35rem;
+  opacity: 0;
+  transition: opacity .15s;
+}
+
+.message:hover .message-actions { opacity: 1; }
+.message.user .message-actions { justify-content: flex-end; }
+
+.msg-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: .4rem;
+  border: 1px solid rgba(255,255,255,.07);
+  background: transparent;
+  color: #5a6475;
+  cursor: pointer;
+  transition: background .13s, color .13s, border-color .13s;
+}
+.msg-action-btn:hover {
+  background: rgba(255,255,255,.06);
+  color: #c4c9d4;
+  border-color: rgba(255,255,255,.14);
+}
+
+/* ── Topbar right ───────────────────────────────────────────── */
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+}
+
+.export-menu {
+  display: flex;
+  gap: .35rem;
+}
+
+.btn-export {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  font-size: .74rem;
+  padding: .2rem .55rem;
+  border-radius: .4rem;
+  border: 1px solid rgba(255,255,255,.09);
+  background: transparent;
+  color: #6b7485;
+  cursor: pointer;
+  transition: background .14s, color .14s, border-color .14s;
+}
+.btn-export:hover {
+  background: rgba(255,255,255,.05);
+  color: #9ba3b4;
+  border-color: rgba(255,255,255,.16);
+}
+
+/* ── Voice input button ─────────────────────────────────────── */
+.composer-mic {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: .6rem;
+  border: 1px solid rgba(255,255,255,.1);
+  background: transparent;
+  color: #6b7485;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .18s, color .18s, border-color .18s;
+  margin-bottom: .05rem;
+}
+.composer-mic:hover { background: rgba(255,255,255,.06); color: #9ba3b4; }
+.composer-mic.listening {
+  background: rgba(193,60,60,.15);
+  border-color: rgba(193,60,60,.35);
+  color: #e07070;
+  animation: mic-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(193,60,60,.3); }
+  50% { box-shadow: 0 0 0 5px rgba(193,60,60,.0); }
+}
+
 /* ── Markdown ───────────────────────────────────────────────── */
 .markdown-body p { margin: 0 0 .8rem; }
 .markdown-body p:last-child { margin-bottom: 0; }
 .markdown-body h1,.markdown-body h2,.markdown-body h3,.markdown-body h4 { margin: 0 0 .7rem; line-height: 1.25; }
 .markdown-body ul,.markdown-body ol { padding-left: 1.25rem; margin-bottom: .8rem; }
 .markdown-body code { background: rgba(255,255,255,.07); padding: .1rem .3rem; border-radius: .3rem; font-size: .92em; }
-.markdown-body pre { background: #0d1018; padding: .85rem; border-radius: .75rem; overflow: auto; border: 1px solid rgba(255,255,255,.07); }
-.markdown-body pre code { background: transparent; padding: 0; }
+.markdown-body pre { background: #0d1018; padding: 0; border-radius: .75rem; overflow: auto; border: 1px solid rgba(255,255,255,.07); }
+.markdown-body pre code { background: transparent; padding: .85rem; display: block; }
 
 /* ── Composer ───────────────────────────────────────────────── */
 .composer {
@@ -754,6 +938,23 @@ select.form-select-sm:focus {
 
 .composer-send:hover:not(:disabled) { background: #d6b97a; transform: scale(1.05); }
 .composer-send:disabled { opacity: .3; cursor: not-allowed; }
+
+.composer-cancel {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: .6rem;
+  border: none;
+  background: #7a2e2e;
+  color: #f7c6c6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .18s, transform .12s;
+  margin-bottom: .05rem;
+}
+.composer-cancel:hover { background: #a83232; transform: scale(1.05); }
 
 .send-spinner {
   width: 13px;

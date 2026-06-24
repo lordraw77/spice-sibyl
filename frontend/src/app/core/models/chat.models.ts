@@ -54,6 +54,7 @@ export interface ChatCompletionRequest {
   messages: ChatMessage[];
   stream?: boolean;
   temperature?: number;
+  max_tokens?: number;
   tools?: ToolDefinition[];
 }
 

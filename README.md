@@ -13,16 +13,18 @@ SpiceSibyl is an OpenAI-compatible multi-provider AI gateway with a built-in Ang
 5. [Configuration](#configuration)
 6. [API reference](#api-reference)
 7. [Conversation persistence](#conversation-persistence)
-8. [API key vault](#api-key-vault)
-9. [Profiles](#profiles)
-10. [Provider catalog](#provider-catalog)
-11. [Model discovery](#model-discovery)
-12. [Tool calling](#tool-calling)
-13. [Multi-MCP orchestrator (agent mode)](#multi-mcp-orchestrator-agent-mode)
-14. [Telegram bot](#telegram-bot)
-15. [Usage stats](#usage-stats)
-16. [Error handling](#error-handling)
-17. [Running tests](#running-tests)
+8. [Conversation export](#conversation-export)
+9. [API key vault](#api-key-vault)
+10. [Profiles](#profiles)
+11. [Provider catalog](#provider-catalog)
+12. [Model discovery](#model-discovery)
+13. [Tool calling](#tool-calling)
+14. [Multi-MCP orchestrator (agent mode)](#multi-mcp-orchestrator-agent-mode)
+15. [Telegram bot](#telegram-bot)
+16. [Usage stats](#usage-stats)
+17. [Chat UI features](#chat-ui-features)
+18. [Error handling](#error-handling)
+19. [Running tests](#running-tests)
 
 ---
 
@@ -62,7 +64,7 @@ FastAPI gateway  (/api/v1)   ── routing by model prefix ──►
 | Layer     | Technology                                                       |
 |-----------|------------------------------------------------------------------|
 | Backend   | Python 3.11 · FastAPI · LiteLLM · httpx · aiosqlite · cryptography |
-| Frontend  | Angular 18 · signals · marked · DOMPurify                        |
+| Frontend  | Angular 18 · signals · marked · DOMPurify · highlight.js         |
 | Dev env   | Docker Compose · Makefile                                        |
 
 ---
@@ -81,7 +83,7 @@ spice-sibyl/
 │   │   ├── providers/          # BaseProvider + concrete adapters
 │   │   ├── schemas/            # Pydantic request/response models
 │   │   ├── services/           # ChatService · VaultService · KeyResolver
-│   │   └── tools/              # Built-in tool definitions and registry
+│   │   └── tools/              # Built-in tool definitions and registry (get_datetime, calculator, web_search, read_url)
 │   ├── tests/
 │   ├── .env.example
 │   └── requirements.txt
@@ -251,8 +253,11 @@ Append messages to an existing conversation.
 ### `GET /conversations/search?q=&profile_id=`
 Full-text search over message content using SQLite FTS5 (prefix-match). Returns `SearchResult[]` with a snippet per hit.
 
+### `GET /conversations/{id}/export?format=md|json`
+Download the full conversation as Markdown or JSON. Returns the file as an attachment.
+
 ### Discovery endpoints
-`POST /{cloudflare|openrouter|gemini|groq|cerebras|mistral}-discovery/run`  
+`POST /{cloudflare|openrouter|gemini|groq|cerebras|mistral|nvidia|ollama}-discovery/run`  
 Each returns `{ model_count, yaml, models[] }`.
 
 ---
@@ -281,6 +286,17 @@ Every chat exchange is automatically saved to SQLite after the stream completes:
 Conversations are **scoped to a profile** — switching profiles shows only that profile's history.
 
 All messages are indexed automatically in the `messages_fts` FTS5 virtual table via database triggers, making them instantly searchable.
+
+---
+
+## Conversation export
+
+Any conversation can be exported as **Markdown** or **JSON** via `GET /conversations/{id}/export?format=md|json`.
+
+- **Markdown** — includes YAML front-matter (title, model, date) and renders each message under role-based headings (`## User` / `## Assistant`).
+- **JSON** — the full `Conversation` object with all messages and telemetry fields.
+
+The frontend surfaces this through export buttons in the topbar (visible when a conversation is active).
 
 ---
 
@@ -357,7 +373,8 @@ SpiceSibyl ships three built-in tools that any model supporting function calling
 |----------------|------------------------------------------------------|
 | `get_datetime` | Returns the current date/time for an IANA timezone   |
 | `calculator`   | Evaluates a math expression (AST-safe, no `eval`)    |
-| `web_search`   | Queries the DuckDuckGo JSON API and returns results  |
+| `web_search`   | Searches the web via DuckDuckGo (HTML scraping + instant-answer fallback) |
+| `read_url`     | Fetches a web page and returns plain-text content (up to 4 000 chars)     |
 
 Enable tools in the chat sidebar with the tools toggle. When enabled, tool definitions are sent with the completion request. `ChatService.stream()` runs a tool execution loop (max 5 iterations) and emits `tool_call` / `tool_result` SSE events before the final reply. These are rendered as colored bubbles above the assistant's response text.
 
@@ -425,12 +442,30 @@ The `/stats` page shows:
 
 ---
 
+## Chat UI features
+
+Beyond basic chat, the Angular frontend includes several quality-of-life features:
+
+| Feature | Description |
+|---|---|
+| **System prompt** | Persistent instructions stored in `localStorage`; collapsible sidebar section with save/clear |
+| **Temperature & max tokens** | Adjustable via sidebar controls; sent with every request |
+| **Syntax highlighting** | Code blocks rendered with highlight.js via a custom marked renderer |
+| **Voice input** | Microphone button using the Web Speech API; pulse animation while listening |
+| **Message copy** | Copy any message to clipboard with a checkmark confirmation |
+| **Regenerate** | Re-send the conversation to get a new assistant response |
+| **Edit last message** | Load the last user message back into the composer for editing |
+| **Stream cancellation** | Stop button aborts the in-flight request and resets the UI |
+| **Conversation export** | Download as Markdown or JSON from the topbar |
+
+---
+
 ## Error handling
 
 - **HTTP errors** are caught by `ErrorInterceptor` and shown as dismissible toast notifications.
 - **Streaming SSE errors** are signalled by an `event: error` frame. The frontend shows the error both as a toast and inline in the chat bubble.
 
-Toast types: `error` (pink), `warning` (gold), `info` (blue). Auto-dismiss after 6 s.
+Toast types: `error` (pink), `warning` (gold), `info` (blue), `success` (green). Auto-dismiss after 6 s. Toasts are clickable and can navigate to a route on click.
 
 ---
 

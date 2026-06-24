@@ -109,6 +109,19 @@ async def delete_provider_key(
     logger.info("vault: deleted key for provider '%s'", provider_id)
 
 
+_TEST_MODELS: dict[str, str] = {
+    'groq':         'groq/llama-3.1-8b-instant',
+    'openrouter':   'openrouter/openai/gpt-4o-mini',
+    'gemini':       'gemini/gemini-1.5-flash-latest',
+    'mistral':      'mistral/mistral-small-latest',
+    'cerebras':     'cerebras/llama3.1-8b',
+    'nvidia':       'nvidia/meta/llama-3.1-8b-instruct',
+    'openai':       'openai/gpt-4o-mini',
+}
+
+_TEST_MESSAGES = [{"role": "user", "content": "Reply with the single word: ok"}]
+
+
 @router.post('/{provider_id}/test')
 async def test_provider(provider_id: str) -> ProviderTestResult:
     if provider_id == 'mock':
@@ -129,14 +142,42 @@ async def test_provider(provider_id: str) -> ProviderTestResult:
                 latency_ms=latency_ms,
                 model_count=len(data.get('models', [])),
             )
-        except Exception as exc:
+        except (httpx.HTTPError, OSError) as exc:
             latency_ms = int((time.perf_counter() - started) * 1000)
             logger.warning('Ollama test failed: %s', exc)
-            return ProviderTestResult(provider_id=provider_id, ok=False, latency_ms=latency_ms, error=str(exc))
+            return ProviderTestResult(
+                provider_id=provider_id, ok=False, latency_ms=latency_ms, error=str(exc)
+            )
 
     if not key_resolver.is_configured(provider_id):
         meta = _PROVIDER_META.get(provider_id, {})
         hint = meta.get('key_hint') or 'API_KEY'
         return ProviderTestResult(provider_id=provider_id, ok=False, error=f'{hint} is not set')
 
-    return ProviderTestResult(provider_id=provider_id, ok=True)
+    # For cloud providers, send a minimal completion to verify the key actually works.
+    test_model = _TEST_MODELS.get(provider_id)
+    if not test_model:
+        # Provider known but no test model defined — key presence is the best we can do.
+        return ProviderTestResult(provider_id=provider_id, ok=True)
+
+    from app.dependencies.provider_factory import get_provider
+    from app.schemas.chat import ChatCompletionRequest, ChatMessage
+
+    started = time.perf_counter()
+    try:
+        provider = get_provider(test_model)
+        req = ChatCompletionRequest(
+            model=test_model,
+            messages=[ChatMessage(role="user", content="Reply with the single word: ok")],
+            max_tokens=5,
+            temperature=0.0,
+        )
+        await provider.complete(req)
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        return ProviderTestResult(provider_id=provider_id, ok=True, latency_ms=latency_ms)
+    except Exception as exc:  # noqa: BLE001 — surface any API error to the caller
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        logger.warning('Provider %s test completion failed: %s', provider_id, exc)
+        return ProviderTestResult(
+            provider_id=provider_id, ok=False, latency_ms=latency_ms, error=str(exc)
+        )

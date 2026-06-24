@@ -1,4 +1,4 @@
-from app.tools.builtin import calculator, get_datetime, web_search
+from app.tools.builtin import calculator, get_datetime, read_url, web_search
 
 TOOL_DEFINITIONS = [
     {
@@ -39,7 +39,10 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Searches the web using DuckDuckGo and returns a brief summary of results. Use for current events, factual lookups, or anything outside the training data.",
+            "description": (
+                "Searches the web using DuckDuckGo and returns a brief summary of results. "
+                "Use for current events, factual lookups, or anything outside the training data."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -56,12 +59,38 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_url",
+            "description": (
+                "Fetches a web page and returns its plain-text content. "
+                "Use when the user provides a URL or when web_search returns a link "
+                "that needs to be read in full."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The full URL to fetch (must start with http:// or https://)",
+                    },
+                    "max_chars": {
+                        "type": "integer",
+                        "description": "Maximum characters to return (default: 4000)",
+                    },
+                },
+                "required": ["url"],
+            },
+        },
+    },
 ]
 
 _HANDLERS = {
     "get_datetime": get_datetime,
     "calculator": calculator,
     "web_search": web_search,
+    "read_url": read_url,
 }
 
 

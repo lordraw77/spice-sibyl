@@ -25,7 +25,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { Subject, debounceTime, distinctUntilChanged, switchMap, of } from 'rxjs';
+import { Subject, Subscription, debounceTime, distinctUntilChanged, switchMap, of } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -38,9 +38,11 @@ import { ProfileService } from '../../core/services/profile.service';
 import { ProfileModalComponent } from '../profile/profile-modal.component';
 import { ChatCompletionResponse, ChatMessage, ChatModel, ConversationSummary, ProviderSummary, SearchResult, ToolDefinition, ToolEvent } from '../../core/models/chat.models';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import { marked } from 'marked';
+import { marked, Renderer } from 'marked';
 import DOMPurify from 'dompurify';
+import hljs from 'highlight.js';
 import { NotificationService } from '../../core/services/notification.service';
+import { AppConfigService } from '../../core/config/app-config.service';
 
 @Component({
   selector: 'app-chat-page',
@@ -57,6 +59,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly sanitizer = inject(DomSanitizer);
   private readonly notifications = inject(NotificationService);
   private readonly router = inject(Router);
+  private readonly appConfig = inject(AppConfigService);
   readonly availabilityFilter = signal<'all' | 'free'>('all');
   readonly toolsEnabled = signal(false);
   readonly availableTools = signal<ToolDefinition[]>([]);
@@ -64,10 +67,14 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   readonly conversationsOpen = signal(true);
   readonly modelOpen = signal(true);
   readonly providerOpen = signal(true);
+  readonly systemOpen = signal(false);
+  readonly paramsOpen = signal(false);
 
   toggleConversations(): void { this.conversationsOpen.update(v => !v); }
   toggleModel(): void { this.modelOpen.update(v => !v); }
   toggleProviderSection(): void { this.providerOpen.update(v => !v); }
+  toggleSystem(): void { this.systemOpen.update(v => !v); }
+  toggleParams(): void { this.paramsOpen.update(v => !v); }
 
   constructor() {
     // Reload the conversation list whenever the active profile changes.
@@ -96,6 +103,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   readonly isSearching = signal(false);
   private readonly searchSubject = new Subject<string>();
   private readonly destroy$ = new Subject<void>();
+  private streamSubscription: Subscription | null = null;
 
   /** Show profile selector modal when no profile is active */
   readonly showProfileModal = computed(() => !this.profileService.current());
@@ -140,6 +148,13 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
 
   prompt = '';
   model = 'ollama/qwen2.5:7b-instruct';
+  systemPrompt = '';
+  temperature = 0.7;
+  maxTokens = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  voiceRecognition: any = null;
+  isListening = false;
+  copiedMessageIdx: number | null = null;
   sidebarOpen = window.innerWidth >= 992;
 
   // Delegated to ChatStateService so state survives navigation away and back.
@@ -195,7 +210,17 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   ngOnInit(): void {
-    marked.setOptions({ breaks: true, gfm: true });
+    this.systemPrompt = localStorage.getItem('spicesibyl_system_prompt') ?? '';
+
+    const renderer = new Renderer();
+    // marked v12 still uses old positional signature: (code, lang, escaped)
+    (renderer as unknown as Record<string, unknown>)['code'] =
+      (code: string, lang: string | undefined): string => {
+        const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext';
+        const highlighted = hljs.highlight(code, { language }).value;
+        return `<pre><code class="hljs language-${language}">${highlighted}</code></pre>`;
+      };
+    marked.use({ renderer, breaks: true, gfm: true });
 
     this.chatService.listTools().subscribe({
       next: tools => this.availableTools.set(tools),
@@ -267,40 +292,58 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     }
   }
 
-  send(): void {
+  send(overrideMessages?: ChatMessage[]): void {
     const text = this.prompt.trim();
-    if (!text || this.loading) {
+    if (!overrideMessages && (!text || this.loading)) {
       return;
     }
 
     this.loading = true;
-    this.prompt = '';
+    if (!overrideMessages) {
+      this.prompt = '';
+    }
 
-    const userMessages = [
+    const baseMessages = overrideMessages ?? [
       ...this.messages(),
       { role: 'user' as const, content: text, created_at: Math.floor(Date.now() / 1000) },
     ];
 
-    // Add user message + empty assistant placeholder for streaming
-    this.messages.set([
-      ...userMessages,
-      { role: 'assistant' as const, content: '', model: this.model, created_at: Math.floor(Date.now() / 1000) },
-    ]);
+    const systemMsg = this.systemPrompt.trim();
+    const userMessages = systemMsg
+      ? [{ role: 'system' as const, content: systemMsg }, ...baseMessages.filter(m => m.role !== 'system')]
+      : baseMessages.filter(m => m.role !== 'system');
+
+    if (!overrideMessages) {
+      // Add user message + empty assistant placeholder for streaming
+      this.messages.set([
+        ...baseMessages,
+        { role: 'assistant' as const, content: '', model: this.model, created_at: Math.floor(Date.now() / 1000) },
+      ]);
+    } else {
+      this.messages.update(items => [
+        ...items,
+        { role: 'assistant' as const, content: '', model: this.model, created_at: Math.floor(Date.now() / 1000) },
+      ]);
+    }
     this.streaming = true;
     this.queueScrollToBottom();
 
     // Index of the assistant placeholder in the messages array
-    const streamingIdx = userMessages.length;
+    const streamingIdx = this.messages().length - 1;
 
     const tools = this.toolsEnabled() && this.availableTools().length
       ? this.availableTools()
       : undefined;
 
-    this.chatService.stream({
+    const temperature = this.temperature;
+    const maxTokens = this.maxTokens > 0 ? this.maxTokens : undefined;
+
+    this.streamSubscription = this.chatService.stream({
       model: this.model,
       messages: userMessages.map(m => ({ ...m, tool_events: undefined })),
       stream: true,
-      temperature: 0.7,
+      temperature,
+      max_tokens: maxTokens,
       tools,
     }).subscribe({
       next: ({ event, data }) => {
@@ -401,15 +444,148 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
         this.queueScrollToBottom();
       },
       complete: () => {
+        this.streamSubscription = null;
         this.loading = false;
         this.streaming = false;
         this.queueScrollToBottom();
-        this.persistExchange(userMessages[userMessages.length - 1], streamingIdx);
+        const lastUserMsg = baseMessages.filter(m => m.role === 'user').pop();
+        if (lastUserMsg) {
+          this.persistExchange(lastUserMsg, streamingIdx);
+        }
         if (!this.router.url.startsWith('/chat')) {
           this.notifications.add('success', 'Risposta ricevuta', 'Il modello ha terminato la risposta.', 6000, () => this.router.navigate(['/chat']));
         }
       },
     });
+  }
+
+  saveSystemPrompt(): void {
+    localStorage.setItem('spicesibyl_system_prompt', this.systemPrompt);
+    this.notifications.add('success', 'Sistema salvato', 'Il system prompt è stato aggiornato.');
+  }
+
+  clearSystemPrompt(): void {
+    this.systemPrompt = '';
+    localStorage.removeItem('spicesibyl_system_prompt');
+  }
+
+  copyMessage(message: ChatMessage, idx: number): void {
+    const text = typeof message.content === 'string' ? message.content : JSON.stringify(message.content);
+    navigator.clipboard.writeText(text).then(() => {
+      this.copiedMessageIdx = idx;
+      setTimeout(() => { this.copiedMessageIdx = null; }, 1800);
+    }).catch(() => {
+      this.notifications.add('error', 'Copia fallita', 'Impossibile accedere agli appunti.');
+    });
+  }
+
+  regenerate(): void {
+    if (this.loading) return;
+    const msgs = this.messages();
+    // Remove the last assistant message (and any trailing assistant messages)
+    const lastUserIdx = [...msgs].reverse().findIndex(m => m.role === 'user');
+    if (lastUserIdx === -1) return;
+    const cutIdx = msgs.length - lastUserIdx;
+    const historyWithoutLastAssistant = msgs.slice(0, cutIdx);
+    this.messages.set(historyWithoutLastAssistant);
+    this.send(historyWithoutLastAssistant);
+  }
+
+  editLastUserMessage(): void {
+    if (this.loading) return;
+    const msgs = this.messages();
+    const lastUserIdx = [...msgs].map((m, i) => ({ m, i })).reverse().find(x => x.m.role === 'user');
+    if (!lastUserIdx) return;
+    this.prompt = typeof lastUserIdx.m.content === 'string' ? lastUserIdx.m.content : '';
+    // Remove the last user message and everything after it
+    this.messages.set(msgs.slice(0, lastUserIdx.i));
+  }
+
+  exportConversation(format: 'md' | 'json'): void {
+    if (!this.currentConversationId) return;
+    const url = `${this.appConfig.apiUrl}/conversations/${this.currentConversationId}/export?format=${format}`;
+    fetch(url, { headers: { 'X-Profile-ID': this.profileService.currentId } })
+      .then(r => r.blob())
+      .then(blob => {
+        const ext = format === 'json' ? 'json' : 'md';
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `conversation-${this.currentConversationId}.${ext}`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      })
+      .catch(() => this.notifications.add('error', 'Esportazione fallita', 'Impossibile scaricare la conversazione.'));
+  }
+
+  startVoiceInput(): void {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    const SpeechRecognitionAPI = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+
+    if (!SpeechRecognitionAPI) return;
+
+    if (this.isListening && this.voiceRecognition) {
+      this.voiceRecognition.stop();
+      return;
+    }
+
+    const recognition = new SpeechRecognitionAPI();
+    recognition.lang = 'it-IT';
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    this.voiceRecognition = recognition;
+    this.isListening = true;
+
+    let base = this.prompt;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from<any>(event.results)
+        .map((r: any) => r[0].transcript)
+        .join('');
+      this.prompt = base + transcript;
+    };
+    recognition.onend = () => {
+      this.isListening = false;
+      this.voiceRecognition = null;
+      base = this.prompt;
+    };
+    recognition.onerror = () => {
+      this.isListening = false;
+      this.voiceRecognition = null;
+    };
+    recognition.start();
+  }
+
+  get hasSpeechRecognition(): boolean {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    return !!(w.SpeechRecognition || w.webkitSpeechRecognition);
+  }
+
+  get lastUserMessageIdx(): number {
+    const msgs = this.messages();
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user') return i;
+    }
+    return -1;
+  }
+
+  get lastAssistantMessageIdx(): number {
+    const msgs = this.messages();
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'assistant') return i;
+    }
+    return -1;
+  }
+
+  /** Abort the in-flight streaming request and reset the UI to idle. */
+  cancelStream(): void {
+    if (this.streamSubscription) {
+      this.streamSubscription.unsubscribe();
+      this.streamSubscription = null;
+    }
+    this.loading = false;
+    this.streaming = false;
   }
 
   /**
@@ -536,7 +712,8 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     if (message.role !== 'assistant') {
       return this.sanitizer.bypassSecurityTrustHtml(this.escapeHtml(content).replace(/\n/g, '<br>'));
     }
-    const html = marked.parse(content) as string;
+    // Pass async:false explicitly so TypeScript narrows the return type to string.
+    const html = marked.parse(content, { async: false }) as string;
     const clean = DOMPurify.sanitize(html);
     return this.sanitizer.bypassSecurityTrustHtml(clean);
   }

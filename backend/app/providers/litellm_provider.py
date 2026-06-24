@@ -108,7 +108,7 @@ class LiteLLMProvider(BaseProvider):
         started_at = time.perf_counter()
         kwargs = self._build_call_kwargs(request)
 
-        logger.warning(
+        logger.debug(
             'Calling LiteLLM model=%s api_base=%s temperature=%s',
             kwargs['model'],
             kwargs.get('api_base'),
@@ -132,7 +132,8 @@ class LiteLLMProvider(BaseProvider):
 
         payload['metrics'] = {
             'latency_ms': latency_ms,
-            'first_token_ms': latency_ms,
+            # first_token_ms is not meaningful for non-streaming calls
+            'first_token_ms': None,
             'tokens_per_second': tokens_per_second,
             'provider': request.model.split('/', 1)[0] if '/' in request.model else 'unknown',
             'estimated_cost': hidden.get('response_cost'),
@@ -233,7 +234,7 @@ class LiteLLMProvider(BaseProvider):
         """
         models = []
         url = f"{settings.ollama_api_base.rstrip('/')}/api/tags"
-        logger.warning('Fetching Ollama models from %s', url)
+        logger.debug('Fetching Ollama models from %s', url)
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -241,7 +242,7 @@ class LiteLLMProvider(BaseProvider):
                 resp.raise_for_status()
                 payload = resp.json()
 
-            logger.warning('Ollama /api/tags payload: %s', payload)
+            logger.debug('Ollama /api/tags returned %d model(s)', len(payload.get('models', [])))
 
             for item in payload.get('models', []):
                 model_name = item.get('model') or item.get('name')
@@ -264,8 +265,8 @@ class LiteLLMProvider(BaseProvider):
                             'capabilities': capabilities,
                         }
                     )
-        except Exception as exc:
-            logger.exception('Unable to load Ollama models: %s', exc)
+        except (httpx.HTTPError, OSError, ValueError) as exc:
+            logger.warning('Unable to load Ollama models: %s', exc)
 
         # Append static models from the YAML catalog
         models.extend(iter_configured_models())

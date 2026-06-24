@@ -1,6 +1,6 @@
 # SpiceSibyl — Developer Guide
 
-> **Version:** 0.5.0  
+> **Version:** 0.6.0  
 > **Stack:** Python 3.11 · FastAPI · LiteLLM · aiosqlite · cryptography · Angular 18 · Docker Compose
 
 ---
@@ -163,6 +163,9 @@ The FastAPI application is created with an `asynccontextmanager` lifespan that r
 ```python
 @asynccontextmanager
 async def lifespan(application: FastAPI):
+    # Emit a WARNING if vault_secret_key is the well-known default placeholder.
+    if settings.vault_secret_key in _INSECURE_DEFAULTS:
+        logger.warning("SECURITY: VAULT_SECRET_KEY is set to the default placeholder ...")
     await init_db()                    # create tables, run migrations (incl. FTS5)
     async for db in get_db():
         await vault_repository.load_all(db)  # decrypt keys → warm in-memory cache
@@ -170,6 +173,8 @@ async def lifespan(application: FastAPI):
 ```
 
 On every boot: tables are created (idempotently), migrations applied (including `messages_fts` FTS5 table and its triggers, populated from existing messages on first run), vault keys decrypted and cached.
+
+> **Security note:** Always set `VAULT_SECRET_KEY` to a strong random value in production. The startup warning serves as a reminder; the default value is publicly known and would allow any DB reader to decrypt stored API keys.
 
 ---
 
@@ -306,13 +311,25 @@ load_all(db)                           # decrypt all rows → warm_cache (called
 
 ```python
 async def init_db() -> None:
-    # executescript(_SCHEMA) — creates tables if not exist
-    # applies _MIGRATIONS idempotently (ALTER TABLE ADD COLUMN, FTS5 table + triggers, etc.)
+    # executescript(_SCHEMA) — creates tables and indexes if not exist
+    # applies _MIGRATIONS idempotently:
+    #   - OperationalError (column/table already exists) → logged at DEBUG, silently skipped
+    #   - Any other exception → logged at ERROR (never silently swallowed)
     # populates messages_fts from existing messages on first FTS migration
 
 async def get_db():  # FastAPI dependency
     # yields aiosqlite.Connection with row_factory=Row and foreign_keys=ON
 ```
+
+**Indexes** — the schema includes the following indexes to keep queries fast as data grows:
+
+| Index | Column(s) | Used by |
+|---|---|---|
+| `idx_messages_conversation_id` | `messages.conversation_id` | `get_conversation`, `append_messages` |
+| `idx_conversations_profile_id` | `conversations.profile_id` | `list_conversations`, stats queries |
+| `idx_conversations_updated_at` | `conversations.updated_at DESC` | `list_conversations` (ORDER BY) |
+| `idx_messages_provider` | `messages.provider` | stats queries (GROUP BY provider) |
+| `idx_messages_role` | `messages.role` | stats queries (WHERE role = 'assistant') |
 
 **Repositories:**
 
@@ -346,7 +363,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
 |---|---|
 | `get_datetime` | Returns current date/time for an IANA timezone string |
 | `calculator` | Evaluates a math expression using AST parsing (no `eval`) |
-| `web_search` | Queries DuckDuckGo JSON API and returns results |
+| `web_search` | Searches via DuckDuckGo HTML endpoint (real snippets); falls back to the DDG instant-answer JSON API if the HTML scrape yields nothing |
 
 **`backend/app/tools/registry.py`**
 
@@ -363,6 +380,7 @@ When `tools` are present in the request, `stream()` enters a loop (max 5 iterati
    - Append tool and result messages
 3. Loop back to step 1 with updated messages
 4. When no more tool calls, stream the final response normally
+5. If all 5 iterations are exhausted without a final answer, emit `event: error` with a descriptive message and log a WARNING
 
 ---
 
@@ -408,6 +426,9 @@ Returns `StatsResponse` with global totals, per-profile breakdown, per-provider 
 
 #### `GET /api/v1/conversations/search?q=&profile_id=`
 FTS5 prefix-match search over message content. `profile_id` is optional. Returns `SearchResult[]` including a text snippet for each hit.
+
+#### `POST /api/v1/providers/{id}/test`
+Tests provider connectivity. For Ollama: queries `/api/tags`. For all configured cloud providers (groq, openrouter, gemini, mistral, cerebras, nvidia, openai): sends a minimal 5-token completion to verify the API key actually works, not just that it is present. Returns `{ ok, latency_ms, error? }`.
 
 #### `PUT /api/v1/providers/{id}/key`
 Encrypts the supplied key with Fernet and stores it in `api_keys`. Updates the in-memory vault cache immediately. Returns `{ ok, configured, vaulted }`.
@@ -473,7 +494,7 @@ Two interceptors registered in order:
 ### 4.4 Services
 
 #### ChatService
-Wraps `POST /chat/completions`. Streaming uses raw `fetch` + `ReadableStream` (not `HttpClient`) to avoid buffering. Emits `{ event, data }` observables including `tool_call` and `tool_result` events.
+Wraps `POST /chat/completions`. Streaming uses raw `fetch` + `ReadableStream` (not `HttpClient`) to avoid buffering. Emits `{ event, data }` observables including `tool_call` and `tool_result` events. The `stream()` method returns a subscribable `Observable`; calling `unsubscribe()` on the subscription triggers the internal `AbortController`, cancelling the fetch immediately.
 
 #### ConversationService
 HTTP client for all conversation endpoints.
@@ -567,7 +588,8 @@ Streaming errors arrive as `event: error` SSE frames → parsed by `ChatService`
 
 | Method | Description |
 |---|---|
-| `send()` | Appends user message, starts SSE stream, updates messages on each chunk. Sends `tools` when enabled |
+| `send()` | Appends user message, starts SSE stream, stores the `Subscription` in `streamSubscription`, updates messages on each chunk. Sends `tools` when enabled |
+| `cancelStream()` | Unsubscribes `streamSubscription` (triggers `AbortController` in `ChatService`), resets `loading` and `streaming` to false. Shown as a red stop button in the composer during streaming |
 | `onEnter(event)` | Enter sends, Shift+Enter inserts newline |
 | `selectConversation(id)` | GET conversation → `messages.set(conv.messages)`, closes sidebar on mobile |
 | `newConversation()` | Resets to welcome state, closes sidebar on mobile |
@@ -595,7 +617,7 @@ effect(() => {
 Fires when the active profile changes. `allowSignalWrites: true` is required because `newConversation()` writes to the `messages` signal.
 
 #### XSS safety
-Assistant HTML: `marked` → `DOMPurify` → `DomSanitizer.bypassSecurityTrustHtml`.  
+Assistant HTML: `marked.parse(content, { async: false })` (explicit sync overload, avoids unsafe `as string` cast) → `DOMPurify.sanitize` → `DomSanitizer.bypassSecurityTrustHtml`.  
 User messages: HTML-escaped + newlines → `<br>`.
 
 ---

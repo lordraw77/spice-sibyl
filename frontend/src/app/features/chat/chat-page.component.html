@@ -122,6 +122,48 @@
         </ng-container>
       </div>
 
+      <!-- System Prompt -->
+      <div class="sidebar-section">
+        <div class="section-header">
+          <button class="section-collapse-btn" (click)="toggleSystem()" [attr.aria-expanded]="systemOpen()">
+            <span class="section-label">Sistema</span>
+            <svg class="section-chevron" [class.open]="systemOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+        <ng-container *ngIf="systemOpen()">
+          <textarea
+            class="system-textarea"
+            rows="4"
+            placeholder="Istruzioni persistenti per il modello (es: 'Rispondi sempre in italiano…')"
+            [(ngModel)]="systemPrompt"
+          ></textarea>
+          <div class="system-actions">
+            <button class="btn-system-save" (click)="saveSystemPrompt()" [disabled]="!systemPrompt.trim()">Salva</button>
+            <button class="btn-system-clear" (click)="clearSystemPrompt()" [disabled]="!systemPrompt">Cancella</button>
+          </div>
+        </ng-container>
+      </div>
+
+      <!-- Parameters -->
+      <div class="sidebar-section">
+        <div class="section-header">
+          <button class="section-collapse-btn" (click)="toggleParams()" [attr.aria-expanded]="paramsOpen()">
+            <span class="section-label">Parametri</span>
+            <svg class="section-chevron" [class.open]="paramsOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+        <ng-container *ngIf="paramsOpen()">
+          <div class="param-row">
+            <label class="param-label">Temperature <span class="param-value">{{ temperature.toFixed(1) }}</span></label>
+            <input type="range" min="0" max="2" step="0.1" [(ngModel)]="temperature" class="param-slider" />
+          </div>
+          <div class="param-row">
+            <label class="param-label">Max tokens <span class="param-value">{{ maxTokens === 0 ? '∞' : maxTokens }}</span></label>
+            <input type="number" min="0" step="256" [(ngModel)]="maxTokens" class="param-input" placeholder="0 = illimitato" />
+          </div>
+        </ng-container>
+      </div>
+
       <!-- Tools -->
       <div class="sidebar-section" *ngIf="availableTools().length">
         <div class="section-header">
@@ -192,13 +234,25 @@
         </button>
         <h1 class="topbar-title">Console</h1>
       </div>
-      <span class="status" [class.live]="!loading">{{ loading ? 'Thinking…' : 'Ready' }}</span>
+      <div class="topbar-right">
+        <span class="status" [class.live]="!loading">{{ loading ? 'Thinking…' : 'Ready' }}</span>
+        <div class="export-menu" *ngIf="currentConversationId">
+          <button class="btn-export" title="Esporta conversazione" (click)="exportConversation('md')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            MD
+          </button>
+          <button class="btn-export" title="Esporta come JSON" (click)="exportConversation('json')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            JSON
+          </button>
+        </div>
+      </div>
     </header>
 
     <div class="messages" #messagesContainer (scroll)="onMessagesScroll()">
       <div
         class="message"
-        *ngFor="let message of messages(); let last = last"
+        *ngFor="let message of messages(); let i = index; let last = last"
         [class.user]="message.role === 'user'"
         [class.streaming]="streaming && last && message.role === 'assistant'"
       >
@@ -238,6 +292,20 @@
           <span class="badge-chip free" *ngIf="message.free">free</span>
           <span class="badge-chip" *ngFor="let capability of message.capabilities || []">{{ capability }}</span>
         </div>
+
+        <!-- Message action buttons -->
+        <div class="message-actions" *ngIf="!streaming">
+          <button class="msg-action-btn" (click)="copyMessage(message, i)" [title]="copiedMessageIdx === i ? 'Copiato!' : 'Copia'">
+            <svg *ngIf="copiedMessageIdx !== i" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <svg *ngIf="copiedMessageIdx === i" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
+          <button class="msg-action-btn" *ngIf="message.role === 'assistant' && last" (click)="regenerate()" title="Rigenera risposta">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3"/></svg>
+          </button>
+          <button class="msg-action-btn" *ngIf="message.role === 'user' && i === lastUserMessageIdx" (click)="editLastUserMessage()" title="Modifica messaggio">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+        </div>
       </div>
 
       <div class="message" *ngIf="loading && !streaming">
@@ -258,6 +326,33 @@
           (keydown.enter)="onEnter($event)"
         ></textarea>
         <button
+          *ngIf="hasSpeechRecognition && !streaming"
+          class="composer-mic"
+          [class.listening]="isListening"
+          (click)="startVoiceInput()"
+          title="Input vocale"
+          aria-label="Input vocale"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </button>
+        <button
+          *ngIf="streaming"
+          class="composer-cancel"
+          (click)="cancelStream()"
+          title="Annulla risposta"
+          aria-label="Annulla risposta"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="5" y="5" width="14" height="14" rx="2"/>
+          </svg>
+        </button>
+        <button
+          *ngIf="!streaming"
           class="composer-send"
           [disabled]="loading || !prompt.trim()"
           (click)="send()"
