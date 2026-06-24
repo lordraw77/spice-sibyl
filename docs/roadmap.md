@@ -55,9 +55,52 @@
 - **Telegram `/imagine`** — generates an image and sends it as a Telegram photo with provider/model caption
 - **Telegram photo handler** — photos sent to the bot are automatically described by the active model via vision
 
-## Backlog
-- RAG / document ingestion
-- Prompt templates library
-- Conversation branching / forking
-- Mobile-optimized layout
-- Authentication and access control
+## Phase 8 ✓
+- **Nginx reverse proxy** — unified `nginx` service in `docker-compose.prod.yml` serves the Angular static build on `/` and proxies `/api` to the backend; frontend and backend no longer exposed on separate ports
+- **Relative API URL** — default `apiUrl` changed to `/api/v1` so the browser always talks to the same host it loaded the page from; no more hardcoded IPs in `app-config.json`
+- **Dynamic CORS** — `PUBLIC_URL` env var (e.g. `https://sibyl.example.com`) automatically added to `cors_origins` alongside the default `localhost` entries; both local dev and DDNS access work without duplicating config
+- **HTTPS / TLS termination** — entrypoint auto-detects TLS certs in `nginx/ssl/`; optional Certbot sidecar for Let's Encrypt; graceful fallback to HTTP-only when no certs are mounted
+- **Production Dockerfile** — multi-stage build (`node:20-alpine` → `ng build --configuration production` → `nginx:1.27-alpine`); eliminates the dev-server in production
+- **Environment documentation** — deployment guide (`docs/deploy.md`) rewritten with `PUBLIC_URL`, `VAULT_SECRET_KEY`, DDNS setup, TLS options, and architecture diagram
+
+## Phase 9 — Telegram UX & Voice
+- **Inline keyboards for model selection** — `/model` presents tappable buttons instead of requiring the user to type model IDs; callback query handler for selection
+- **Voice message support** — receive Telegram voice/audio messages, transcribe via Whisper (Groq / provider), and reply to the transcribed text
+- **Quick action buttons** — inline keyboard buttons after each assistant reply: Regenerate, Translate, Summarize, Continue
+- **Conversation history in Telegram** — `/history` to list recent conversations; `/search <query>` to full-text search past messages from within Telegram
+
+## Phase 10 — Chat experience
+- **Prompt templates library** — saved and reusable system prompts (e.g. "Translate to English", "Code review", "ELI5"); manage via sidebar panel; one-click apply
+- **Conversation folders and tags** — organize conversations with color-coded tags or folders; filter sidebar by tag
+- **Message bookmarks / pins** — pin important messages inside a conversation; quick-jump to pinned messages
+- **Conversation branching / forking** — regenerate keeps both responses as parallel branches; tree navigation to switch between alternatives
+- **Drag-and-drop file upload** — drop images (and eventually PDF/text) directly onto the chat area
+
+## Phase 11 — Cross-platform & analytics
+- **Telegram ↔ web profile linking** — associate a Telegram user with a web profile so conversations and stats are shared across channels
+- **Cost and usage charts** — time-series graphs (daily/weekly) of tokens and costs on the Stats page
+- **Inline model comparison** — send the same prompt to 2–3 models in parallel and display responses side by side
+- **TTS (text-to-speech)** — play button on assistant messages using Web Speech API
+- **Dark / light theme toggle** — switch between dark and light themes, or follow system preference
+
+## Phase 12 — Power user & extensibility
+- **Global keyboard shortcuts** — `Ctrl+K` conversation search, `Ctrl+N` new chat, `Ctrl+Shift+S` toggle sidebar
+- **Telegram inline query mode** — `@bot query` to get answers directly in any Telegram chat without opening the bot conversation
+- **Telegram document upload** — accept PDF, TXT, DOCX files; extract text and send as context to the model
+- **Conversation sharing** — generate a read-only shareable link for a conversation; export as image or PDF
+- **Custom theme accent color** — let users pick their own accent color in the UI
+
+## Phase 13 — Security & access
+- **Authentication and access control** — user accounts with login (email/password or OAuth); role-based permissions (admin, user, read-only); JWT session tokens
+- **Rate limiting** — per-user and per-provider request rate limits; HTTP 429 with `Retry-After` header; rate-limit visibility in both web UI and Telegram
+- **Audit log** — record who did what and when (model changes, key updates, conversation deletions); viewable by admins
+
+## Phase 14 — Knowledge & RAG
+- **RAG / document ingestion** — upload documents (PDF, TXT, DOCX, Markdown) to a knowledge base; chunk, embed, and store in a vector index; retrieve relevant context at query time and inject into the prompt
+- **Telegram scheduled reminders** — `/remind 18:00 Check backups` schedules a message; bot sends it at the specified time with optional LLM-generated context
+- **Telegram multi-language support** — `/lang en|it|...` switches the bot's UI language per chat; all bot messages and command descriptions adapt to the selected locale
+
+## Phase 15 — Mobile & polish
+- **Mobile-optimized layout** — responsive redesign of sidebar, chat area, and composer for small screens; swipe gestures for sidebar toggle; touch-friendly action buttons
+- **PWA support** — installable progressive web app with offline shell, push notifications for long-running generations, and home-screen icon
+- **Onboarding flow** — first-time guided tour highlighting key features (model selection, tools, system prompt, slash commands)

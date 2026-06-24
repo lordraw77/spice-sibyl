@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # Comma-separated list of allowed CORS origins
     cors_origins: str = 'http://localhost:4200,http://127.0.0.1:4200'
 
+    # Public URL for DDNS / reverse-proxy access (e.g. https://sibyl.example.com).
+    # Automatically added to cors_origins so both local dev and external access work.
+    public_url: str | None = None
+
     # Model selected when the caller does not specify one
     default_model: str = 'ollama/qwen2.5:7b-instruct'
 

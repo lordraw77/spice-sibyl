@@ -8,6 +8,7 @@ on:
 env:
   BACKEND_IMAGE: lordraw/spice-sibyl-backend
   FRONTEND_IMAGE: lordraw/spice-sibyl-frontend
+  NGINX_IMAGE: lordraw/spice-sibyl-nginx
 
 jobs:
   build-and-push:
@@ -53,9 +54,22 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           provenance: false
-
           tags: |
             ${{ env.FRONTEND_IMAGE }}:latest
             ${{ env.FRONTEND_IMAGE }}:${{ steps.meta.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push nginx
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./nginx/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          tags: |
+            ${{ env.NGINX_IMAGE }}:latest
+            ${{ env.NGINX_IMAGE }}:${{ steps.meta.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

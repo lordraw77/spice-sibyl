@@ -30,7 +30,10 @@
       "Bash(python -c \"from app.api.v1.endpoints.images import router; print\\('images endpoint OK'\\)\")",
       "Bash(python -c \"from app.api.v1.router import api_router; print\\('router OK'\\)\")",
       "Bash(python3 -c \"from app.services.image_service import generate_image, get_available_provider; print\\('OK'\\)\")",
-      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/opt/spice-sibyl/backend/app/services/image_service.py'\\).read\\(\\)\\); print\\('OK'\\)\")"
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/opt/spice-sibyl/backend/app/services/image_service.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(docker image *)",
+      "Bash(curl -s \"https://hub.docker.com/v2/repositories/certbot/certbot/tags/?page_size=10&ordering=last_updated\")",
+      "Bash(docker run *)"
     ],
     "additionalDirectories": [
       "/opt/multi-mcp"

@@ -19,7 +19,7 @@ services:
       dockerfile: Dockerfile
     container_name: spice-sibyl-frontend
     environment:
-      API_URL: ${FRONTEND_API_URL:-http://192.168.0.215:8000/api/v1}
+      API_URL: ${FRONTEND_API_URL:-http://localhost:8000/api/v1}
     ports:
       - "4200:4200"
     volumes:

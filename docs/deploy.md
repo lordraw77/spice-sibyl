@@ -58,86 +58,158 @@ make push    VERSION=v1.2.3   # solo push
 
 ---
 
-## 2. Deploy su un server
+## 2. Architettura produzione
+
+In produzione un singolo container **nginx** serve sia il frontend Angular (file statici) sia fa da reverse proxy verso il backend. Frontend e backend non sono esposti su porte separate.
+
+```
+                 ┌──────────────────────────┐
+  :80 / :443 ──►│        nginx              │
+                 │  /        → Angular SPA   │
+                 │  /api/*   → backend:8000  │
+                 └──────────┬───────────────┘
+                            │
+                     ┌──────▼──────┐
+                     │   backend   │
+                     │   :8000     │
+                     └─────────────┘
+```
+
+---
+
+## 3. Deploy su un server
 
 ### Preparazione (una-tantum)
 
 ```bash
-# Copia i file minimi sul server
-scp backend/.env.example user@server:~/spice-sibyl/backend/.env
-scp docker-compose.prod.yml user@server:~/spice-sibyl/
-scp -r shared-config user@server:~/spice-sibyl/
+# Clona o copia il progetto sul server
+git clone <repo> ~/spice-sibyl
+cd ~/spice-sibyl
+
+cp backend/.env.example backend/.env
+# Edita backend/.env con i valori reali (vedi sotto)
 ```
 
-### Configurazione `.env`
-
-Modifica `backend/.env` con i valori reali:
+### Configurazione `backend/.env`
 
 ```env
 # Obbligatori
+APP_ENV=production
 API_KEY=una-stringa-segreta-lunga
 VAULT_SECRET_KEY=un-altra-stringa-segreta-lunga
-CORS_ORIGINS=https://tuodominio.com
+
+# PUBLIC_URL — dominio pubblico DDNS / reverse proxy.
+# Aggiunto automaticamente ai CORS origins.
+PUBLIC_URL=https://sibyl.example.com
 
 # Almeno un provider
 GROQ_API_KEY=gsk_...
 
 # Telegram (opzionale)
 TELEGRAM_BOT_TOKEN=1234567890:AAF...
-TELEGRAM_ALLOWED_USERS=18278029           # opzionale: limita gli user ID
+TELEGRAM_ALLOWED_USERS=18278029
 TELEGRAM_DEFAULT_MODEL=groq/llama-3.3-70b-versatile
 
-# Multi-MCP orchestrator (opzionale — abilita i modelli agent/*)
+# Multi-MCP orchestrator (opzionale)
 ORCHESTRATOR_BASE_URL=http://host.docker.internal:8910/v1
 ```
 
 > **`VAULT_SECRET_KEY`** cifra le chiavi API salvate tramite UI. Se lo cambi, le chiavi vaultate esistenti diventano illeggibili — imposta un valore stabile e conservalo.
 
+> **`PUBLIC_URL`** viene aggiunto automaticamente alla lista `CORS_ORIGINS` del backend, così sia `localhost` che l'accesso esterno funzionano senza duplicare configurazioni.
+
 ### Avvio
 
 ```bash
 cd ~/spice-sibyl
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 Servizi in ascolto:
 
 | Servizio | Porta | URL |
 |---|---|---|
-| Frontend (nginx) | 80 | `http://server` |
-| Backend (FastAPI) | 8000 | `http://server:8000/api/v1` |
+| Nginx (frontend + proxy) | 80, 443 | `http://server` o `https://server` |
+| Backend (interno) | — | non esposto, raggiunto via nginx |
 
-### Variabile `FRONTEND_API_URL`
+> Il frontend usa URL API relative (`/api/v1`) — non serve più configurare `FRONTEND_API_URL`. Funziona automaticamente con qualsiasi dominio/IP.
 
-Il frontend deve sapere dove raggiungere il backend **dal browser** (non dall'interno di Docker).
+---
+
+## 4. HTTPS / TLS
+
+### Opzione A: Certificati manuali
+
+Copia `fullchain.pem` e `privkey.pem` nella cartella `nginx/ssl/`:
 
 ```bash
-# Esempio con IP pubblico o dominio
-FRONTEND_API_URL=http://tuodominio.com:8000/api/v1 \
-  docker compose -f docker-compose.prod.yml up -d
+cp /path/to/fullchain.pem nginx/ssl/
+cp /path/to/privkey.pem   nginx/ssl/
+docker compose -f docker-compose.prod.yml restart nginx
 ```
 
-Oppure nel file `.env` della root del progetto:
+L'entrypoint rileva automaticamente i certificati e attiva il server HTTPS.
+
+### Opzione B: Let's Encrypt (Certbot)
+
+1. Decommenta il servizio `certbot` in `docker-compose.prod.yml`
+2. Esegui il primo rilascio manuale:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d nginx
+
+docker run --rm \
+  -v ./nginx/ssl:/etc/letsencrypt \
+  -v certbot-www:/var/www/certbot \
+  certbot/certbot certonly \
+    --webroot -w /var/www/certbot \
+    -d sibyl.example.com \
+    --agree-tos -m tuaemail@example.com
+
+docker compose -f docker-compose.prod.yml restart nginx
+```
+
+3. Il sidecar `certbot` rinnova automaticamente ogni 12h.
+
+### Opzione C: Solo HTTP
+
+Se non monti certificati in `nginx/ssl/`, nginx serve solo su porta 80 senza redirect. Utile per reti locali o se termini TLS altrove (Cloudflare, Caddy, ecc.).
+
+---
+
+## 5. DDNS / Accesso remoto
+
+Per esporre SpiceSibyl su Internet con un dominio dinamico:
+
+1. Configura il servizio DDNS sul tuo router (DuckDNS, No-IP, Dynu, ecc.)
+2. Apri le porte **80** e **443** (port forwarding) verso il server
+3. Imposta `PUBLIC_URL` in `backend/.env`:
 
 ```env
-FRONTEND_API_URL=http://tuodominio.com:8000/api/v1
+PUBLIC_URL=https://sibyl.duckdns.org
+```
+
+4. (Opzionale) Configura TLS con Let's Encrypt (vedi sopra)
+5. Riavvia:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 ---
 
-## 3. Aggiornamento
+## 6. Aggiornamento
 
 ```bash
 docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-Il volume `spice-sibyl-db` persiste il database SQLite (conversazioni, profili, chiavi vault) tra gli aggiornamenti.
+Il volume `/opt/data` persiste il database SQLite (conversazioni, profili, chiavi vault) tra gli aggiornamenti.
 
 ---
 
-## 4. Sviluppo locale
+## 7. Sviluppo locale
 
 ```bash
 cp backend/.env.example backend/.env
@@ -147,6 +219,8 @@ make up          # docker compose up --build  (hot-reload backend + ng serve fro
 make down        # ferma tutto
 make logs        # segui i log
 ```
+
+In dev, frontend e backend girano su porte separate (4200 e 8000). Il file `app-config.json` punta a `http://localhost:8000/api/v1`.
 
 Oppure senza Docker:
 
@@ -160,7 +234,7 @@ make frontend   # ng serve :4200
 
 ---
 
-## 5. Struttura immagini
+## 8. Struttura immagini
 
 ### Backend (`lordraw/spice-sibyl-backend`)
 
@@ -168,84 +242,49 @@ make frontend   # ng serve :4200
 - Utente non-root (`app`)
 - Volume `/data` → SQLite DB (impostare `DB_PATH=/data/spice_sibyl.db`)
 - Healthcheck su `GET /api/v1/health`
-- Porta `8000`
+- Porta `8000` (interna)
 
-### Frontend (`lordraw/spice-sibyl-frontend`)
+### Nginx (`spice-sibyl-nginx`)
 
-- Build: `node:20-alpine` → `ng build --configuration production`
-- Serve: `nginx:alpine`
-- `API_URL` iniettata via `envsubst` all'avvio del container in `config/app-config.json`
-- Porta `80`
+- Multi-stage: `node:20-alpine` (build Angular) → `nginx:1.27-alpine`
+- Serve il frontend Angular su `/` e proxy `/api/*` al backend
+- `API_URL` iniettata via `envsubst` all'avvio in `config/app-config.json`
+- TLS abilitato automaticamente se `nginx/ssl/fullchain.pem` + `privkey.pem` presenti
+- Porte `80` e `443`
 
 ---
 
-## 6. Multi-MCP orchestrator sidecar (optional, agent mode)
+## 9. Variabili d'ambiente
 
-To enable the `agent/multi-mcp` model (the multi-agent orchestrator), deploy the
-**orchestrator sidecar** from the `multi-mcp` project next to (or alongside) the
-gateway, then point the backend at it.
+| Variabile | Dove | Descrizione |
+|---|---|---|
+| `PUBLIC_URL` | `backend/.env` | URL pubblica (DDNS/dominio); aggiunta ai CORS origins |
+| `VAULT_SECRET_KEY` | `backend/.env` | Chiave master per cifratura API keys nel vault |
+| `API_KEY` | `backend/.env` | Bearer token per autenticare le richieste API |
+| `CORS_ORIGINS` | `backend/.env` | Lista origini CORS aggiuntive (comma-separated) |
+| `API_URL` | `nginx` env | URL API iniettata nel frontend (default: `/api/v1`) |
 
-1. **Run the sidecar** (OpenAI-compatible, port `8910`). It launches its MCP
-   sub-agents on the host Docker daemon (Docker-out-of-Docker), so it mounts
-   `/var/run/docker.sock`. Full instructions — image build, host-path volumes for
-   Synology `nas_config.json` and Linux SSH keys, networking — are in the
-   `multi-mcp` project's `DEPLOY.md`.
+---
+
+## 10. Multi-MCP orchestrator sidecar (opzionale, agent mode)
+
+Per abilitare il modello `agent/multi-mcp` (orchestratore multi-agente), deploya il **sidecar orchestrator** dal progetto `multi-mcp` e punta il backend ad esso.
+
+1. **Avvia il sidecar** (compatibile OpenAI, porta `8910`):
 
    ```bash
    cd /opt/multi-mcp
-   cp .env.example .env && $EDITOR .env     # MAIN_AGENT_* keys + sub-agent hosts
-   make docker-up                           # build + run on :8910
-   curl http://localhost:8910/health        # {"status":"ok",...}
+   cp .env.example .env && $EDITOR .env
+   make docker-up
+   curl http://localhost:8910/health
    ```
 
-2. **Wire the backend** — set `ORCHESTRATOR_BASE_URL` in `backend/.env` to a URL
-   the backend container can reach (use the host IP or `host.docker.internal`,
-   **not** `localhost`):
+2. **Collega il backend** — imposta `ORCHESTRATOR_BASE_URL` in `backend/.env`:
 
    ```env
    ORCHESTRATOR_BASE_URL=http://<orchestrator-host>:8910/v1
    ```
 
-3. **Register the model** — make sure the catalog the backend reads (the
-   `provider_models.yaml` mounted at `/config`) contains an `agent` provider
-   block with `agent/multi-mcp`, then `docker compose restart backend`.
+3. **Registra il modello** — assicurati che il catalogo (`provider_models.yaml` in `/config`) contenga un blocco `agent` con `agent/multi-mcp`, poi `docker compose restart backend`.
 
-Once wired, select **agent/multi-mcp** in the web model picker, or use `/agent`
-in Telegram. The orchestrator streams its delegation progress as `tool_call` /
-`tool_result` bubbles (web) and progressive status edits (Telegram).
-
----
-
-## 7. Reverse proxy (opzionale)
-
-Per esporre tutto su HTTPS con un unico dominio, esempio con **nginx** o **Caddy** sul server host:
-
-### Caddy (`Caddyfile`)
-
-```
-tuodominio.com {
-    reverse_proxy /api/* localhost:8000
-    reverse_proxy localhost:80
-}
-```
-
-### nginx (`/etc/nginx/sites-available/spice-sibyl`)
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name tuodominio.com;
-
-    location /api/ {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-    }
-
-    location / {
-        proxy_pass http://localhost:80;
-        proxy_set_header Host $host;
-    }
-}
-```
-
-Con reverse proxy puoi impostare `FRONTEND_API_URL=https://tuodominio.com/api/v1` e non esporre la porta `8000` all'esterno.
+Seleziona **agent/multi-mcp** nel picker modelli web, o usa `/agent` in Telegram.

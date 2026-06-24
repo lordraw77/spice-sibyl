@@ -65,6 +65,12 @@ logging.getLogger('litellm').setLevel(logging.WARNING)
 # Parse comma-separated origins from settings (supports env override)
 origins = [item.strip() for item in settings.cors_origins.split(',') if item.strip()]
 
+# Append PUBLIC_URL to CORS origins so DDNS / reverse-proxy access works
+if settings.public_url:
+    public = settings.public_url.rstrip('/')
+    if public not in origins:
+        origins.append(public)
+
 app = FastAPI(
     title=settings.app_name,
     version='0.2.0',

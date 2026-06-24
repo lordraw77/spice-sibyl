@@ -1,6 +1,7 @@
 DOCKER_USER   ?= lordraw
 BACKEND_IMAGE  = $(DOCKER_USER)/spice-sibyl-backend
 FRONTEND_IMAGE = $(DOCKER_USER)/spice-sibyl-frontend
+NGINX_IMAGE    = $(DOCKER_USER)/spice-sibyl-nginx
 GIT_TAG       := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "latest")
 VERSION       ?= $(GIT_TAG)
 
@@ -43,16 +44,28 @@ prod-down:
 build:
 	docker build -t $(BACKEND_IMAGE):$(VERSION) ./backend
 	docker build -f ./frontend/Dockerfile.prod -t $(FRONTEND_IMAGE):$(VERSION) ./frontend
+	docker build -f ./nginx/Dockerfile -t $(NGINX_IMAGE):$(VERSION) .
 
 push:
 	docker push $(BACKEND_IMAGE):$(VERSION)
 	docker push $(FRONTEND_IMAGE):$(VERSION)
+	docker push $(NGINX_IMAGE):$(VERSION)
+	docker tag $(BACKEND_IMAGE):$(VERSION)  $(BACKEND_IMAGE):latest
+	docker tag $(FRONTEND_IMAGE):$(VERSION) $(FRONTEND_IMAGE):latest
+	docker tag $(NGINX_IMAGE):$(VERSION)    $(NGINX_IMAGE):latest
+	docker push $(BACKEND_IMAGE):latest
+	docker push $(FRONTEND_IMAGE):latest
+	docker push $(NGINX_IMAGE):latest
+
 
 # Build, tag as latest + version, and push  — usage: make release VERSION=v1.2.3
 release: build
 	docker tag $(BACKEND_IMAGE):$(VERSION)  $(BACKEND_IMAGE):latest
 	docker tag $(FRONTEND_IMAGE):$(VERSION) $(FRONTEND_IMAGE):latest
+	docker tag $(NGINX_IMAGE):$(VERSION)    $(NGINX_IMAGE):latest
 	docker push $(BACKEND_IMAGE):$(VERSION)
 	docker push $(BACKEND_IMAGE):latest
 	docker push $(FRONTEND_IMAGE):$(VERSION)
 	docker push $(FRONTEND_IMAGE):latest
+	docker push $(NGINX_IMAGE):$(VERSION)
+	docker push $(NGINX_IMAGE):latest

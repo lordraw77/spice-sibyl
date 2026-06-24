@@ -3,21 +3,40 @@ services:
     image: lordraw/spice-sibyl-backend:latest
     container_name: spice-sibyl-backend
     env_file: ./backend/.env
-    ports:
-      - "8000:8000"
     volumes:
-      - /opt/data:/data:rw
+      - ./data:/data:rw
       - ./shared-config:/config:ro
+    expose:
+      - "8000"
     restart: unless-stopped
 
-  frontend:
-    image: lordraw/spice-sibyl-frontend:latest
-    container_name: spice-sibyl-frontend
+  nginx:
+    image: lordraw/spice-sibyl-nginx:latest
+    container_name: spice-sibyl-nginx
     environment:
-      API_URL: ${FRONTEND_API_URL:-http://localhost:8000/api/v1}
+      API_URL: /api/v1
     ports:
-      - "80:80"
+      - "8888:80"
+      - "8443:443"
+    volumes:
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - certbot-www:/var/www/certbot:ro
     depends_on:
       - backend
     restart: unless-stopped
- 
+
+  # Automatic Let's Encrypt renewal via DuckDNS DNS challenge.
+  # Set DUCKDNS_TOKEN, DUCKDNS_DOMAIN and CERTBOT_EMAIL in .env or below.
+  certbot:
+    image: certbot/certbot:v5.6.0
+    container_name: spice-sibyl-certbot
+    environment:
+      DUCKDNS_TOKEN: ${DUCKDNS_TOKEN}
+      DUCKDNS_DOMAIN: ${DUCKDNS_DOMAIN:-lordraw}
+      CERTBOT_EMAIL: ${CERTBOT_EMAIL:-alessandro.pioli@gmail.com}
+    volumes:
+      - ./nginx/ssl:/etc/letsencrypt:rw
+      - ./nginx/ssl:/etc/nginx/ssl:rw
+      - ./nginx/certbot:/opt/certbot-scripts:ro
+    entrypoint: /bin/sh /opt/certbot-scripts/renew.sh
+    restart: unless-stopped

@@ -18,7 +18,7 @@ import { AppConfig } from './app-config.model';
 export class AppConfigService {
   // Sensible default for local development without Docker
   private config: AppConfig = {
-    apiUrl: 'http://localhost:8000/api/v1'
+    apiUrl: '/api/v1'
   };
 
   constructor(private http: HttpClient) {}
