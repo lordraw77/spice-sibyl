@@ -285,6 +285,42 @@
         </ul>
       </div>
 
+      <!-- Knowledge base (RAG) -->
+      <div class="sidebar-section">
+        <div class="section-header">
+          <button class="section-collapse-btn" (click)="toggleKnowledge()" [attr.aria-expanded]="knowledgeOpen()">
+            <span class="section-label">Knowledge base</span>
+            <svg class="section-chevron" [class.open]="knowledgeOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <button class="tools-toggle" [class.enabled]="ragEnabled()" (click)="toggleRag()" title="Abilita / disabilita RAG">
+            {{ ragEnabled() ? 'ON' : 'OFF' }}
+          </button>
+        </div>
+        <ng-container *ngIf="knowledgeOpen()">
+          <p class="kb-hint">I documenti caricati vengono indicizzati e usati come contesto quando il RAG è attivo.</p>
+
+          <!-- Upload -->
+          <label class="btn-save-as-template kb-upload" [class.disabled]="kbUploading()">
+            <svg *ngIf="!kbUploading()" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            {{ kbUploading() ? 'Caricamento…' : 'Carica documento' }}
+            <input type="file" accept=".pdf,.txt,.md,.markdown,.docx" (change)="onKbFileSelected($event)" hidden [disabled]="kbUploading()" />
+          </label>
+
+          <!-- Document list -->
+          <ul class="kb-list" *ngIf="kbDocuments().length">
+            <li *ngFor="let doc of kbDocuments()" class="kb-item">
+              <span class="kb-status" [class.ready]="doc.status === 'ready'" [class.pending]="doc.status === 'pending'" [class.error]="doc.status === 'error'" [title]="doc.error || doc.status"></span>
+              <span class="kb-name" [title]="doc.filename">{{ doc.filename }}</span>
+              <span class="kb-chunks" *ngIf="doc.status === 'ready'">{{ doc.chunk_count }}</span>
+              <button class="conv-delete" (click)="deleteKbDocument(doc.id, $event)" title="Elimina">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </li>
+          </ul>
+          <p class="no-convs" *ngIf="!kbDocuments().length">Nessun documento caricato.</p>
+        </ng-container>
+      </div>
+
       <!-- Tag Manager -->
       <div class="sidebar-section">
         <div class="section-header">
@@ -460,6 +496,15 @@
         </div>
 
         <div class="bubble markdown-body" *ngIf="message.content" [innerHTML]="renderedContent(message)"></div>
+
+        <!-- RAG citations: knowledge-base chunks used to ground this reply -->
+        <div class="rag-sources" *ngIf="message.rag_sources?.length">
+          <span class="rag-sources-label">Fonti:</span>
+          <span class="rag-chip" *ngFor="let s of message.rag_sources" [title]="s.snippet">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            {{ s.filename }}<span class="rag-chip-idx">#{{ s.chunk_index }}</span>
+          </span>
+        </div>
 
         <div class="meta" *ngIf="message.role === 'assistant' && (message.latency_ms || message.prompt_tokens || message.completion_tokens || message.tokens_per_second || message.provider || message.finish_reason || message.created_at || message.estimated_cost)">
           <span *ngIf="message.provider">{{ message.provider }}</span>

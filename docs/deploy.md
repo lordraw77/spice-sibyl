@@ -263,6 +263,16 @@ make frontend   # ng serve :4200
 | `API_KEY` | `backend/.env` | Bearer token per autenticare le richieste API |
 | `CORS_ORIGINS` | `backend/.env` | Lista origini CORS aggiuntive (comma-separated) |
 | `API_URL` | `nginx` env | URL API iniettata nel frontend (default: `/api/v1`) |
+| `EMBEDDING_CHAIN` | `backend/.env` | RAG embedding provider fallback chain (`provider:model,...`); default `ollama:nomic-embed-text,gemini:text-embedding-004,mistral:mistral-embed` |
+| `TIMEZONE` | `backend/.env` | IANA timezone for Telegram reminders (default `Europe/Rome`) |
+
+> **Phase 14 (RAG + reminders)** adds Python dependencies (`numpy`, `python-multipart`, `python-telegram-bot[job-queue]`). After pulling these changes you must **rebuild** the backend image so they are installed:
+>
+> ```bash
+> docker compose up -d --build backend
+> ```
+>
+> RAG embeddings need at least one reachable embedding provider — local Ollama is the zero-cost default (`ollama pull nomic-embed-text`). Telegram reminders use the `JobQueue` (APScheduler) provided by the `[job-queue]` extra; without it `/remind` reports that the scheduler is unavailable.
 
 ---
 

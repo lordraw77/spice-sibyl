@@ -10,6 +10,7 @@ export interface UserPreferences {
   temperature: number;
   maxTokens: number;
   toolsEnabled: boolean;
+  ragEnabled: boolean;
   sidebarOpen: boolean;
   sectionsOpen: {
     conversations: boolean;
@@ -17,6 +18,7 @@ export interface UserPreferences {
     provider: boolean;
     system: boolean;
     params: boolean;
+    knowledge: boolean;
   };
 }
 
@@ -28,6 +30,7 @@ const DEFAULTS: UserPreferences = {
   temperature: 0.7,
   maxTokens: 0,
   toolsEnabled: false,
+  ragEnabled: false,
   sidebarOpen: window.innerWidth >= 992,
   sectionsOpen: {
     conversations: true,
@@ -35,6 +38,7 @@ const DEFAULTS: UserPreferences = {
     provider: true,
     system: false,
     params: false,
+    knowledge: false,
   },
 };
 

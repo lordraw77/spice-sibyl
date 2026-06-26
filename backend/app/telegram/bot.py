@@ -15,16 +15,24 @@ Commands:
   /history          — list recent conversations in this chat
   /search <query>   — full-text search past messages
   /stats            — show global usage statistics
+  /remind <when> <t>— schedule a reminder (HH:MM or +30m/2h/1d), persisted + JobQueue
+  /reminders        — list pending reminders; /unremind <id> cancels
+  /lang             — switch the bot UI language per chat (it/en)
   Any text          — sent to the active model, reply streamed back
   Voice/audio       — transcribed via Whisper, then processed as text
+
+Localized user-facing strings live in app/telegram/i18n.py.
 """
 
 import asyncio
 import base64
 import io
 import logging
+import re
 import time
 from collections import defaultdict
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import aiosqlite
 import httpx
@@ -45,6 +53,10 @@ from app.core.config import settings
 from app.data.model_catalog import iter_configured_models
 from app.db.search_repository import search_conversations
 from app.db.stats_repository import get_usage_stats
+from app.db import telegram_reminder_repository as reminder_repo
+from app.db import telegram_prefs_repository as prefs_repo
+from app.telegram import i18n
+from app.telegram.i18n import t
 from app.dependencies.provider_factory import get_provider
 from app.schemas.chat import ChatCompletionRequest, ChatMessage
 from app.services.image_service import generate_image, ImageGenerationError, get_available_provider
@@ -72,6 +84,14 @@ _callback_models: dict[int, list[str]] = {}
 
 # message_id → chat_id mapping for quick-action buttons
 _action_messages: dict[int, int] = {}
+
+# chat_id → UI locale (warm-started from telegram_prefs at boot, updated on /lang)
+_locales: dict[int, str] = {}
+
+
+def _locale(chat_id: int) -> str:
+    """Resolve the UI locale for a chat (synchronous, cache-backed)."""
+    return _locales.get(chat_id, i18n.DEFAULT_LOCALE)
 
 # Temporary link codes: code → {telegram_id, username, expires}
 import secrets
@@ -138,28 +158,11 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_allowed(user.id):
         logger.warning("cmd_start: accesso negato user_id=%s username=%s", user.id, user.username)
         return
-    logger.info("cmd_start: user_id=%s username=%s chat_id=%s", user.id, user.username, update.effective_chat.id)
-    model = _models.get(update.effective_chat.id, _default_model())
+    chat_id = update.effective_chat.id
+    logger.info("cmd_start: user_id=%s username=%s chat_id=%s locale=%s", user.id, user.username, chat_id, _locale(chat_id))
+    model = _models.get(chat_id, _default_model())
     await update.message.reply_text(
-        f"👋 Ciao! Sono SpiceSibyl.\n\n"
-        f"Modello attivo: <code>{model}</code>\n\n"
-        f"Comandi:\n"
-        f"  /agent — modalità agente (Multi-MCP orchestrator)\n"
-        f"  /chat — torna alla chat normale\n"
-        f"  /chat &lt;id&gt; — chat con un modello specifico\n"
-        f"  /imagine &lt;prompt&gt; — genera un'immagine\n"
-        f"  /new — nuova conversazione\n"
-        f"  /model — scegli modello (tastiera inline)\n"
-        f"  /model &lt;id&gt; — cambia modello direttamente\n"
-        f"  /models — lista modelli disponibili\n"
-        f"  /models &lt;query&gt; — filtra per provider, capability o nome\n"
-        f"  /history — mostra conversazione corrente\n"
-        f"  /search &lt;testo&gt; — cerca nelle conversazioni salvate\n"
-        f"  /stats — statistiche di utilizzo\n\n"
-        f"📸 Invia una foto per usare la vision\n"
-        f"🎙️ Invia un vocale per trascriverlo e rispondere\n"
-        f"📄 Invia un file PDF, TXT o DOCX per analizzarlo\n"
-        f"✨ Usa <code>@botname query</code> in qualsiasi chat per risposte inline",
+        t(_locale(chat_id), "start", model=model),
         parse_mode=ParseMode.HTML,
     )
 
@@ -171,7 +174,7 @@ async def cmd_new(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     logger.info("cmd_new: reset sessione chat_id=%s user_id=%s", update.effective_chat.id, user.id)
     _sessions[update.effective_chat.id].clear()
-    await update.message.reply_text("✅ Conversazione azzerata.")
+    await update.message.reply_text(t(_locale(update.effective_chat.id), "new_cleared"))
 
 
 async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1153,6 +1156,225 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await _stream_reply(chat_id, session, model, reply_sent, update)
 
 
+# ── Reminders (/remind) ───────────────────────────────────────────────────────
+
+_REL_RE = re.compile(r"^\+?(\d+)\s*([mhd])$", re.IGNORECASE)
+_ABS_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
+_REL_UNIT_SECONDS = {"m": 60, "h": 3600, "d": 86400}
+
+
+def _tz() -> ZoneInfo:
+    """Configured display/parsing timezone (independent of the container TZ)."""
+    try:
+        return ZoneInfo(settings.timezone)
+    except Exception:
+        logger.warning("Timezone %r non valida, uso UTC", settings.timezone)
+        return ZoneInfo("UTC")
+
+
+def _fmt_when(fire_at: int) -> str:
+    return datetime.fromtimestamp(fire_at, _tz()).strftime("%d/%m %H:%M")
+
+
+def _parse_when(token: str) -> int | None:
+    """Parse a time token into an absolute unix timestamp.
+
+    Times are interpreted in the configured timezone (settings.timezone), so
+    "/remind 15:50" means 15:50 local regardless of the container's system TZ.
+    Accepts relative ("+30m", "2h", "1d") and absolute ("15:50") forms.  For an
+    absolute time already past today, schedules the next day.  Returns None if
+    the token isn't a recognized time.
+    """
+    now = datetime.now(_tz())
+    rel = _REL_RE.match(token)
+    if rel:
+        amount = int(rel.group(1))
+        unit = rel.group(2).lower()
+        return int((now + timedelta(seconds=amount * _REL_UNIT_SECONDS[unit])).timestamp())
+
+    absolute = _ABS_RE.match(token)
+    if absolute:
+        hour, minute = int(absolute.group(1)), int(absolute.group(2))
+        if hour > 23 or minute > 59:
+            return None
+        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if target <= now:
+            target += timedelta(days=1)
+        return int(target.timestamp())
+
+    return None
+
+
+async def _fire_reminder(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """JobQueue callback: deliver a reminder and mark it fired."""
+    data = context.job.data or {}
+    reminder_id = data.get("id")
+    chat_id = data.get("chat_id")
+    text = data.get("text", "")
+    logger.info("_fire_reminder: delivering id=%s chat_id=%s", reminder_id, chat_id)
+    try:
+        await context.bot.send_message(chat_id=chat_id, text=t(_locale(chat_id), "remind_fired", text=text))
+    except Exception:
+        logger.exception("_fire_reminder: send failed id=%s chat_id=%s", reminder_id, chat_id)
+    finally:
+        if reminder_id:
+            await reminder_repo.mark_fired(reminder_id)
+
+
+def _schedule_reminder(job_queue, reminder_id: str, chat_id: int, text: str, fire_at: int) -> None:
+    """Register a JobQueue job that fires at fire_at (or immediately if past)."""
+    delay = max(fire_at - int(time.time()), 0)
+    job_queue.run_once(
+        _fire_reminder,
+        when=delay,
+        data={"id": reminder_id, "chat_id": chat_id, "text": text},
+        name=f"reminder:{reminder_id}",
+    )
+
+
+async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        logger.warning("cmd_remind: accesso negato user_id=%s", user.id)
+        return
+    chat_id = update.effective_chat.id
+    loc = _locale(chat_id)
+
+    if not context.args or len(context.args) < 2:
+        await update.message.reply_text(t(loc, "remind_usage"), parse_mode=ParseMode.HTML)
+        return
+
+    if context.job_queue is None:
+        logger.error("cmd_remind: JobQueue non disponibile (manca l'extra python-telegram-bot[job-queue])")
+        await update.message.reply_text(t(loc, "remind_unavailable"))
+        return
+
+    when_token = context.args[0]
+    text = " ".join(context.args[1:]).strip()
+    fire_at = _parse_when(when_token)
+    if fire_at is None:
+        await update.message.reply_text(t(loc, "remind_invalid_time"), parse_mode=ParseMode.HTML)
+        return
+
+    reminder_id = await reminder_repo.create(chat_id, user.id, text, fire_at)
+    _schedule_reminder(context.job_queue, reminder_id, chat_id, text, fire_at)
+    when_str = _fmt_when(fire_at)
+    logger.info("cmd_remind: scheduled chat_id=%s fire_at=%s (in %ds) id=%s", chat_id, when_str, max(fire_at - int(time.time()), 0), reminder_id)
+    await update.message.reply_text(
+        t(loc, "remind_set", when=when_str, text=text, short_id=reminder_id[:8]),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def cmd_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        return
+    chat_id = update.effective_chat.id
+    loc = _locale(chat_id)
+    rows = await reminder_repo.list_pending(chat_id)
+    if not rows:
+        await update.message.reply_text(t(loc, "reminders_none"))
+        return
+    lines = [t(loc, "reminders_header")]
+    for row in rows:
+        lines.append(f"<code>{row['id'][:8]}</code> — {_fmt_when(row['fire_at'])} — {row['text']}")
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+
+
+async def cmd_unremind(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        return
+    chat_id = update.effective_chat.id
+    loc = _locale(chat_id)
+    if not context.args:
+        await update.message.reply_text(t(loc, "unremind_usage"), parse_mode=ParseMode.HTML)
+        return
+
+    prefix = context.args[0]
+    rows = await reminder_repo.list_pending(chat_id)
+    match = next((r for r in rows if r["id"].startswith(prefix)), None)
+    if not match:
+        await update.message.reply_text(t(loc, "unremind_not_found"))
+        return
+
+    await reminder_repo.delete(match["id"], chat_id)
+    # Cancel the scheduled job if still pending
+    if context.job_queue is not None:
+        for job in context.job_queue.get_jobs_by_name(f"reminder:{match['id']}"):
+            job.schedule_removal()
+    logger.info("cmd_unremind: cancelled id=%s chat_id=%s", match["id"], chat_id)
+    await update.message.reply_text(t(loc, "unremind_done"))
+
+
+# ── Language (/lang) ──────────────────────────────────────────────────────────
+
+async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        return
+    chat_id = update.effective_chat.id
+    loc = _locale(chat_id)
+
+    # /lang <code> sets directly; bare /lang shows an inline keyboard.
+    if context.args:
+        code = context.args[0].strip().lower()
+        if code in i18n.SUPPORTED_LOCALES:
+            await _set_locale(chat_id, code)
+            await update.message.reply_text(
+                t(code, "lang_set", label=i18n.SUPPORTED_LOCALES[code]), parse_mode=ParseMode.HTML
+            )
+            return
+
+    buttons = [
+        [InlineKeyboardButton(label, callback_data=f"lang:{code}")]
+        for code, label in i18n.SUPPORTED_LOCALES.items()
+    ]
+    await update.message.reply_text(
+        t(loc, "lang_choose"), reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+
+async def _cb_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    code = query.data.removeprefix("lang:")
+    chat_id = query.message.chat_id
+    if code not in i18n.SUPPORTED_LOCALES:
+        return
+    await _set_locale(chat_id, code)
+    await query.edit_message_text(
+        t(code, "lang_set", label=i18n.SUPPORTED_LOCALES[code]), parse_mode=ParseMode.HTML
+    )
+
+
+async def _set_locale(chat_id: int, code: str) -> None:
+    _locales[chat_id] = code
+    await prefs_repo.set_locale(chat_id, code)
+
+
+async def _load_locales() -> None:
+    """Warm-start the locale cache from telegram_prefs at boot."""
+    try:
+        _locales.update(await prefs_repo.load_all())
+        logger.info("_load_locales: %d preferenze lingua caricate", len(_locales))
+    except Exception:
+        logger.exception("_load_locales: caricamento preferenze lingua fallito")
+
+
+async def _reload_reminders(app: Application) -> None:
+    """Re-schedule pending reminders persisted across a restart."""
+    if app.job_queue is None:
+        logger.warning("_reload_reminders: JobQueue non disponibile, reminder disabilitati")
+        return
+    rows = await reminder_repo.list_all_pending()
+    for row in rows:
+        _schedule_reminder(app.job_queue, row["id"], row["chat_id"], row["text"], row["fire_at"])
+    if rows:
+        logger.info("_reload_reminders: %d promemoria ripristinati", len(rows))
+
+
 # ── Bot lifecycle ─────────────────────────────────────────────────────────────
 
 _BOT_COMMANDS = [
@@ -1165,6 +1387,10 @@ _BOT_COMMANDS = [
     BotCommand("history", "Mostra la conversazione corrente"),
     BotCommand("search", "Cerca nelle conversazioni (/search <testo>)"),
     BotCommand("stats", "Statistiche di utilizzo"),
+    BotCommand("remind", "Imposta un promemoria (/remind 15:50 testo)"),
+    BotCommand("reminders", "Mostra i promemoria in programma"),
+    BotCommand("unremind", "Annulla un promemoria (/unremind <id>)"),
+    BotCommand("lang", "Cambia lingua del bot / change bot language"),
     BotCommand("link", "Collega al profilo web"),
     BotCommand("unlink", "Scollega dal profilo web"),
     BotCommand("help", "Mostra l'elenco dei comandi"),
@@ -1176,6 +1402,8 @@ async def _post_init(app: Application) -> None:
     bot_info = await app.bot.get_me()
     logger.info("Bot avviato: @%s (id=%s) — %d comandi registrati", bot_info.username, bot_info.id, len(_BOT_COMMANDS))
     await app.bot.set_my_commands(_BOT_COMMANDS)
+    await _load_locales()
+    await _reload_reminders(app)
 
 
 def build_application() -> Application:
@@ -1203,6 +1431,10 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("history", cmd_history))
     app.add_handler(CommandHandler("search", cmd_search))
     app.add_handler(CommandHandler("stats", cmd_stats))
+    app.add_handler(CommandHandler("remind", cmd_remind))
+    app.add_handler(CommandHandler("reminders", cmd_reminders))
+    app.add_handler(CommandHandler("unremind", cmd_unremind))
+    app.add_handler(CommandHandler("lang", cmd_lang))
     app.add_handler(CommandHandler("link", cmd_link))
     app.add_handler(CommandHandler("unlink", cmd_unlink))
     # Callback query handlers (inline keyboards)
@@ -1210,6 +1442,7 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(_cb_model_back, pattern=r"^mp:__back__$"))
     app.add_handler(CallbackQueryHandler(_cb_model_select, pattern=r"^ms:\d+$"))
     app.add_handler(CallbackQueryHandler(_cb_quick_action, pattern=r"^qa:"))
+    app.add_handler(CallbackQueryHandler(_cb_lang, pattern=r"^lang:"))
     # Inline query handler
     app.add_handler(InlineQueryHandler(handle_inline_query))
     # Message handlers

@@ -83,6 +83,19 @@ class Settings(BaseSettings):
         "together_ai:black-forest-labs/FLUX.1-schnell-Free"
     )
 
+    # Embedding provider chain for RAG — comma-separated "provider:model" pairs
+    # tried in order with automatic fallback.  Supported providers:
+    # ollama, gemini, mistral.  Ollama is local and free (default first entry).
+    embedding_chain: str = (
+        "ollama:nomic-embed-text,"
+        "gemini:text-embedding-004,"
+        "mistral:mistral-embed"
+    )
+
+    # IANA timezone used for Telegram reminder parsing and display (/remind).
+    # Keeps reminders correct regardless of the container's system TZ.
+    timezone: str = "Europe/Rome"
+
     # Logging level for the application (DEBUG, INFO, WARNING, ERROR, CRITICAL)
     log_level: str = "INFO"
 

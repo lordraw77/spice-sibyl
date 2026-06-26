@@ -1567,3 +1567,98 @@ select.form-select-sm:focus {
   .message .bubble { padding: .75rem .9rem; max-width: 96%; }
   .message .meta { font-size: .7rem; }
 }
+
+/* ── Knowledge base (RAG) ─────────────────────────────── */
+.kb-hint {
+  margin: .4rem 0 .5rem;
+  font-size: .72rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+.kb-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  cursor: pointer;
+}
+.kb-upload.disabled {
+  opacity: .6;
+  pointer-events: none;
+}
+.kb-list {
+  list-style: none;
+  margin: .5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+}
+.kb-item {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .35rem .45rem;
+  border-radius: .4rem;
+  font-size: .8rem;
+  color: var(--text-secondary);
+}
+.kb-item:hover { background: var(--bg-hover, rgba(127,127,127,.08)); }
+.kb-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--text-muted);
+}
+.kb-status.ready { background: #4caf50; }
+.kb-status.pending { background: #e0a800; animation: kb-pulse 1.2s ease-in-out infinite; }
+.kb-status.error { background: #e07070; }
+@keyframes kb-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+.kb-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kb-chunks {
+  flex: 0 0 auto;
+  font-size: .68rem;
+  color: var(--text-muted);
+  padding: .05rem .35rem;
+  border-radius: .35rem;
+  background: rgba(127,127,127,.12);
+}
+
+/* ── RAG citation chips ───────────────────────────────── */
+.rag-sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .35rem;
+  margin-top: .5rem;
+}
+.rag-sources-label {
+  font-size: .7rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.rag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .15rem .5rem;
+  border-radius: .9rem;
+  font-size: .7rem;
+  background: rgba(214,178,121,.12);
+  border: 1px solid rgba(214,178,121,.28);
+  color: var(--accent);
+  cursor: default;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rag-chip-idx {
+  opacity: .6;
+  margin-left: .15rem;
+}

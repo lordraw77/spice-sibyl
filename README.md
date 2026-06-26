@@ -167,6 +167,10 @@ All backend settings are read from environment variables or `backend/.env`.
 | `TELEGRAM_BOT_TOKEN`    | —                                    | Telegram bot token — leave empty to disable the bot  |
 | `TELEGRAM_ALLOWED_USERS`| —                                    | Comma-separated Telegram user IDs allowed to use the bot (empty = everyone) |
 | `TELEGRAM_DEFAULT_MODEL`| —                                    | Default model for the bot (falls back to `DEFAULT_MODEL`); set to `agent/multi-mcp` to default to agent mode |
+| `EMBEDDING_CHAIN`       | `ollama:nomic-embed-text,gemini:text-embedding-004,mistral:mistral-embed` | RAG embedding provider fallback chain (`provider:model`, tried in order) |
+| `TIMEZONE`              | `Europe/Rome`                        | IANA timezone for Telegram reminder parsing and display |
+
+> **RAG embeddings** require at least one reachable embedding provider. The default first entry is local Ollama (`ollama pull nomic-embed-text`) — free and offline; Gemini/Mistral are used as fallbacks if their keys are set.
 
 ---
 
@@ -204,7 +208,7 @@ Remove a vaulted key. The provider falls back to the env variable.
 Tests connectivity to a provider.
 
 ### `POST /chat/completions`
-OpenAI-compatible chat completion (streaming or non-streaming). Pass `tools: [...]` to enable tool calling.
+OpenAI-compatible chat completion (streaming or non-streaming). Pass `tools: [...]` to enable tool calling. Set `rag: true` (with `profile_id`) to ground the answer on the profile's knowledge base.
 
 ```jsonc
 {
@@ -213,7 +217,10 @@ OpenAI-compatible chat completion (streaming or non-streaming). Pass `tools: [..
   "stream": false,
   "temperature": 0.7,
   "max_tokens": 1024,
-  "tools": []
+  "tools": [],
+  "rag": false,           // enable retrieval-augmented generation
+  "rag_top_k": 4,         // chunks to retrieve (default 4)
+  "profile_id": "default" // RAG scope (streaming fetch bypasses the X-Profile-ID header)
 }
 ```
 
@@ -256,6 +263,18 @@ Full-text search over message content using SQLite FTS5 (prefix-match). Returns 
 ### `GET /conversations/{id}/export?format=md|json`
 Download the full conversation as Markdown or JSON. Returns the file as an attachment.
 
+### `GET /knowledge/documents?profile_id=`
+List the knowledge-base documents for a profile. Returns `KbDocument[]` (`id`, `filename`, `status`, `chunk_count`, …).
+
+### `POST /knowledge/documents`
+`multipart/form-data` upload (`file`, optional `profile_id`). Extracts text, chunks, embeds and indexes the document. Accepts PDF, TXT, DOCX, Markdown (max 20 MB). Returns the created `KbDocument`.
+
+### `DELETE /knowledge/documents/{id}`
+Delete a document and all its chunks (cascade).
+
+### `POST /knowledge/search`
+Body `{ query, top_k?, profile_id? }`. Retrieval test: returns the ranked `RagSource[]` (cosine similarity) without calling an LLM.
+
 ### Discovery endpoints
 `POST /{cloudflare|openrouter|gemini|groq|cerebras|mistral|nvidia|ollama}-discovery/run`  
 Each returns `{ model_count, yaml, models[] }`.
@@ -271,6 +290,7 @@ Each returns `{ model_count, yaml, models[] }`.
 | `error`       | `{"message": "..."}`                                             |
 | `tool_call`   | `{"id": "...", "name": "...", "arguments": {...}}` — tool being invoked |
 | `tool_result` | `{"id": "...", "name": "...", "result": "..."}` — tool execution result |
+| `rag_context` | `{"sources": RagSource[]}` — knowledge-base chunks used to ground the reply (sent first when `rag:true`) |
 
 ---
 
@@ -380,6 +400,22 @@ Enable tools in the chat sidebar with the tools toggle. When enabled, tool defin
 
 ---
 
+## Knowledge base (RAG)
+
+Ground answers on your own documents. Upload PDF, TXT, DOCX or Markdown files (per profile) from the **Knowledge base** sidebar panel; the backend extracts text, splits it into overlapping chunks (≈800 chars / 120 overlap), embeds each chunk and stores the float32 vectors in SQLite (`kb_documents`, `kb_chunks`).
+
+**Pipeline**
+
+1. **Embeddings** — `embedding_service` tries each entry of `EMBEDDING_CHAIN` in order (`provider:model`), skipping unconfigured providers and falling back on error. Supported: `ollama` (local, default), `gemini`, `mistral`. The model that produced the vectors is stored per chunk.
+2. **Retrieval** — with the **RAG toggle ON**, the chat request carries `rag: true`. The backend embeds the last user message, ranks the profile's chunks by cosine similarity (numpy), keeps the top-k above a similarity threshold, and **folds the retrieved context into the last user message** (robust across chat templates that ignore mid-thread system messages).
+3. **Citations** — the sources are streamed back as an SSE `rag_context` frame and rendered as citation chips under the grounded reply (the chunk text shows in the chip tooltip).
+
+**Endpoints** — `GET/POST/DELETE /v1/knowledge/documents`, `POST /v1/knowledge/search` (retrieval test, no LLM). Uploads are capped at 20 MB.
+
+> Embeddings need at least one reachable provider. The zero-cost default is local Ollama: `ollama pull nomic-embed-text`. If no provider is available, the upload fails and the document is marked `status: error` with a message. Changing the embedding model later requires re-indexing — chunks with a different vector dimension are skipped at retrieval (logged as a warning).
+
+---
+
 ## Multi-MCP orchestrator (agent mode)
 
 SpiceSibyl can expose an external **multi-agent orchestrator** (the [`multi-mcp`](../multi-mcp) project) as a first-class model, so it is reachable from both the web console and Telegram with no channel-specific code. The orchestrator delegates each request to specialized sub-agents — Proxmox, Synology NAS, Linux SSH fleet, Home Assistant, and WatchYourLAN — each backed by its own MCP server.
@@ -426,8 +462,16 @@ The command menu is registered automatically (visible under the Telegram `/` but
 | `/models`         | List available models grouped by provider                          |
 | `/models <query>` | Filter models by provider, capability, or name                     |
 | `/stats`          | Global usage statistics                                            |
+| `/remind <when> <text>` | Schedule a reminder — absolute `HH:MM` or relative `+30m` / `2h` / `1d` |
+| `/reminders`      | List pending reminders for this chat                               |
+| `/unremind <id>`  | Cancel a reminder by its short id                                 |
+| `/lang`           | Switch the bot UI language (inline keyboard, or `/lang en\|it`)     |
 
 Switching between `/agent` and `/chat` toggles the active model and clears the conversation (agent and chat contexts are kept separate). The bot maintains in-memory counters (`messages_received`, `messages_sent`, `errors`, `active_chats`) exposed via `GET /stats`.
+
+**Reminders** are persisted in SQLite (`telegram_reminders`) and scheduled on the python-telegram-bot `JobQueue` (the `[job-queue]` extra / APScheduler), so they survive a restart — pending ones are reloaded and rescheduled on boot. Times are interpreted in `TIMEZONE` (default `Europe/Rome`), independent of the container's system clock.
+
+**Language** — `/lang` stores a per-chat locale in `telegram_prefs` (warm-cached at boot). Localized strings live in `app/telegram/i18n.py` (`it` is the default, `en` available); add a locale by extending `MESSAGES` and `SUPPORTED_LOCALES`.
 
 ---
 

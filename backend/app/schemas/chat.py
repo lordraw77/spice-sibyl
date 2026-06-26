@@ -82,6 +82,12 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int | None = Field(default=1024, alias="max_tokens")
     tools: list[ToolDefinition] | None = None
     tool_choice: str | None = None
+    # RAG — when true, retrieve context from the profile's knowledge base and
+    # inject it before the model call. profile_id scopes the retrieval (sent by
+    # the frontend since the streaming fetch bypasses the X-Profile-ID interceptor).
+    rag: bool = False
+    rag_top_k: int | None = None
+    profile_id: str | None = None
 
 
 class ChatCompletionChoice(BaseModel):

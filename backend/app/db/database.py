@@ -98,6 +98,53 @@ CREATE TABLE IF NOT EXISTS shared_conversations (
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS telegram_prefs (
+    chat_id    INTEGER PRIMARY KEY,
+    locale     TEXT    NOT NULL DEFAULT 'it',
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS telegram_reminders (
+    id          TEXT    PRIMARY KEY,
+    chat_id     INTEGER NOT NULL,
+    user_id     INTEGER,
+    text        TEXT    NOT NULL,
+    fire_at     INTEGER NOT NULL,
+    created_at  INTEGER NOT NULL,
+    fired       INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_telegram_reminders_fire ON telegram_reminders(fire_at);
+CREATE INDEX IF NOT EXISTS idx_telegram_reminders_chat ON telegram_reminders(chat_id);
+
+CREATE TABLE IF NOT EXISTS kb_documents (
+    id          TEXT    PRIMARY KEY,
+    profile_id  TEXT    NOT NULL DEFAULT 'default',
+    filename    TEXT    NOT NULL,
+    mime        TEXT,
+    size_bytes  INTEGER,
+    chunk_count INTEGER NOT NULL DEFAULT 0,
+    status      TEXT    NOT NULL DEFAULT 'pending',
+    error       TEXT,
+    created_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS kb_chunks (
+    id           TEXT    PRIMARY KEY,
+    document_id  TEXT    NOT NULL,
+    profile_id   TEXT    NOT NULL DEFAULT 'default',
+    chunk_index  INTEGER NOT NULL,
+    content      TEXT    NOT NULL,
+    embedding    BLOB,
+    embed_model  TEXT,
+    created_at   INTEGER NOT NULL,
+    FOREIGN KEY (document_id) REFERENCES kb_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_kb_documents_profile ON kb_documents(profile_id);
+CREATE INDEX IF NOT EXISTS idx_kb_chunks_profile ON kb_chunks(profile_id);
+CREATE INDEX IF NOT EXISTS idx_kb_chunks_document ON kb_chunks(document_id);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
     id              UNINDEXED,
     conversation_id UNINDEXED,

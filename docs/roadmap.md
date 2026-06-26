@@ -95,10 +95,10 @@
 - **Rate limiting** — per-user and per-provider request rate limits; HTTP 429 with `Retry-After` header; rate-limit visibility in both web UI and Telegram
 - **Audit log** — record who did what and when (model changes, key updates, conversation deletions); viewable by admins
 
-## Phase 14 — Knowledge & RAG
-- **RAG / document ingestion** — upload documents (PDF, TXT, DOCX, Markdown) to a knowledge base; chunk, embed, and store in a vector index; retrieve relevant context at query time and inject into the prompt
-- **Telegram scheduled reminders** — `/remind 18:00 Check backups` schedules a message; bot sends it at the specified time with optional LLM-generated context
-- **Telegram multi-language support** — `/lang en|it|...` switches the bot's UI language per chat; all bot messages and command descriptions adapt to the selected locale
+## Phase 14 — Knowledge & RAG ✓
+- **RAG / document ingestion** — upload documents (PDF, TXT, DOCX, Markdown) to a per-profile knowledge base; text is extracted, chunked (800 chars / 120 overlap), embedded via a provider fallback chain (`EMBEDDING_CHAIN`: Ollama `nomic-embed-text` → Gemini → Mistral) and stored as float32 BLOB vectors in SQLite (`kb_documents` / `kb_chunks`). `GET/POST/DELETE /v1/knowledge/documents` + `POST /v1/knowledge/search`. At query time, when `rag:true` is set, the top-k chunks (cosine similarity in numpy) are folded into the last user message and the sources are streamed back as an SSE `rag_context` frame. Web UI: "Knowledge base" sidebar panel with upload/list/delete, a RAG ON/OFF toggle, and citation chips under each grounded reply
+- **Telegram scheduled reminders** — `/remind 15:50 Check backups` (absolute `HH:MM` or relative `+30m` / `2h` / `1d`); persisted in `telegram_reminders` and scheduled on the PTB `JobQueue` (requires the `python-telegram-bot[job-queue]` extra), so they survive a restart (reloaded on boot). `/reminders` lists pending, `/unremind <id>` cancels. Times use the configurable `TIMEZONE` (default `Europe/Rome`) regardless of the container's system clock
+- **Telegram multi-language support** — `/lang` (inline keyboard) or `/lang en|it` switches the bot's UI language per chat; locale persisted in `telegram_prefs` and warm-cached at boot. Strings live in `app/telegram/i18n.py` (`it` default, `en`); `t(locale, key)` with fallback to the default locale
 
 ## Phase 15 — Mobile & polish
 - **Mobile-optimized layout** — responsive redesign of sidebar, chat area, and composer for small screens; swipe gestures for sidebar toggle; touch-friendly action buttons

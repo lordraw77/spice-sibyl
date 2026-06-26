@@ -38,15 +38,15 @@ SpiceSibyl's backend is a **FastAPI async gateway** that exposes an OpenAI-compa
 
 ```
 app/
-├── api/v1/endpoints/   chat · images · conversations (+ export) · profiles · providers · stats · tools · discovery ×8
+├── api/v1/endpoints/   chat · images · knowledge (RAG) · conversations (+ export) · profiles · providers · stats · tools · discovery ×8
 ├── core/               pydantic-settings (env / .env)
-├── db/                 SQLite schema + indexes · conversation / profile / vault / stats / search repositories
+├── db/                 SQLite schema + indexes · conversation / profile / vault / stats / search / kb / telegram_reminder / telegram_prefs repositories
 ├── dependencies/       provider factory (FastAPI dependency)
 ├── providers/          BaseProvider · LiteLLM · Gemini · OpenRouter · Cloudflare · Cerebras · Mistral · Orchestrator · Mock
-├── schemas/            Pydantic request/response models (chat · conversations · profiles · stats)
-├── services/           ChatService · ImageService · VaultService · KeyResolver
+├── schemas/            Pydantic request/response models (chat · conversations · profiles · stats · knowledge)
+├── services/           ChatService · ImageService · VaultService · KeyResolver · EmbeddingService · RagService
 ├── tools/              ToolRegistry · built-in tools (get_datetime · calculator · web_search · read_url)
-└── telegram/           bot handlers and lifecycle
+└── telegram/           bot handlers and lifecycle · i18n (it/en)
 ```
 
 ## Technology choices

@@ -38,8 +38,9 @@ import { ConversationService } from '../../core/services/conversation.service';
 import { ProfileService } from '../../core/services/profile.service';
 import { TemplateService } from '../../core/services/template.service';
 import { TagService } from '../../core/services/tag.service';
+import { KnowledgeService } from '../../core/services/knowledge.service';
 import { ProfileModalComponent } from '../profile/profile-modal.component';
-import { ChatCompletionResponse, ChatMessage, ChatModel, ConversationSummary, PromptTemplate, ProviderSummary, SearchResult, Tag, TelegramLinkStatus, ToolDefinition, ToolEvent } from '../../core/models/chat.models';
+import { ChatCompletionResponse, ChatMessage, ChatModel, ConversationSummary, KbDocument, PromptTemplate, ProviderSummary, RagSource, SearchResult, Tag, TelegramLinkStatus, ToolDefinition, ToolEvent } from '../../core/models/chat.models';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked, Renderer } from 'marked';
 import DOMPurify from 'dompurify';
@@ -67,11 +68,17 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly userPrefs = inject(UserPreferencesService);
   private readonly templateService = inject(TemplateService);
   private readonly tagService = inject(TagService);
+  private readonly knowledgeService = inject(KnowledgeService);
 
   private readonly savedPrefs = this.userPrefs.get();
   readonly availabilityFilter = signal<'all' | 'free'>(this.savedPrefs.availabilityFilter);
   readonly toolsEnabled = signal(this.savedPrefs.toolsEnabled);
   readonly availableTools = signal<ToolDefinition[]>([]);
+
+  // Knowledge base / RAG
+  readonly ragEnabled = signal(this.savedPrefs.ragEnabled);
+  readonly kbDocuments = signal<KbDocument[]>([]);
+  readonly kbUploading = signal(false);
 
   readonly conversationsOpen = signal(this.savedPrefs.sectionsOpen.conversations);
   readonly modelOpen = signal(this.savedPrefs.sectionsOpen.model);
@@ -80,6 +87,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   readonly paramsOpen = signal(this.savedPrefs.sectionsOpen.params);
   readonly templatesOpen = signal(false);
   readonly tagsOpen = signal(false);
+  readonly knowledgeOpen = signal(this.savedPrefs.sectionsOpen.knowledge);
 
   // Prompt templates
   readonly templates = signal<PromptTemplate[]>([]);
@@ -111,6 +119,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   toggleParams(): void { this.paramsOpen.update(v => !v); this.userPrefs.setSection('params', this.paramsOpen()); }
   toggleTemplates(): void { this.templatesOpen.update(v => !v); }
   toggleTags(): void { this.tagsOpen.update(v => !v); }
+  toggleKnowledge(): void { this.knowledgeOpen.update(v => !v); this.userPrefs.setSection('knowledge', this.knowledgeOpen()); }
 
   /** Conversations filtered by the selected tag */
   readonly filteredConversations = computed(() => {
@@ -131,6 +140,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
         this.loadConversationList();
         this.loadTemplates();
         this.loadTags();
+        this.loadKbDocuments();
         if (profile.id !== this.chatState.lastActiveProfileId) {
           this.chatState.lastActiveProfileId = profile.id;
           this.currentConversationId = null;
@@ -287,6 +297,11 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   toggleTools(): void {
     this.toolsEnabled.update(v => !v);
     this.userPrefs.set('toolsEnabled', this.toolsEnabled());
+  }
+
+  toggleRag(): void {
+    this.ragEnabled.update(v => !v);
+    this.userPrefs.set('ragEnabled', this.ragEnabled());
   }
 
   onModelChange(modelId: string): void {
@@ -562,9 +577,22 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
       temperature,
       max_tokens: maxTokens,
       tools,
+      rag: this.ragEnabled() || undefined,
+      profile_id: this.ragEnabled() ? this.profileService.currentId : undefined,
     }).subscribe({
       next: ({ event, data }) => {
         if (event === 'done') {
+          return;
+        }
+
+        // RAG context event — knowledge-base chunks used to ground the reply
+        if (event === 'rag_context') {
+          const sources = (data['sources'] as RagSource[] | undefined) ?? [];
+          if (sources.length) {
+            this.messages.update(items =>
+              items.map((m, i) => (i === streamingIdx ? { ...m, rag_sources: sources } : m))
+            );
+          }
           return;
         }
 
@@ -673,6 +701,52 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
           this.notifications.add('success', 'Risposta ricevuta', 'Il modello ha terminato la risposta.', 6000, () => this.router.navigate(['/chat']));
         }
       },
+    });
+  }
+
+  // ── Knowledge base (RAG) ───────────────────────────────────
+  loadKbDocuments(): void {
+    this.knowledgeService.listDocuments(this.profileService.currentId).subscribe({
+      next: docs => this.kbDocuments.set(docs),
+      error: () => {},
+    });
+  }
+
+  onKbFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+
+    const allowed = /\.(pdf|txt|md|markdown|docx)$/i;
+    if (!allowed.test(file.name)) {
+      this.notifications.add('error', 'Formato non supportato', 'Usa PDF, TXT, DOCX o Markdown.');
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      this.notifications.add('error', 'File troppo grande', 'Dimensione massima 20 MB.');
+      return;
+    }
+
+    this.kbUploading.set(true);
+    this.knowledgeService.uploadDocument(file, this.profileService.currentId).subscribe({
+      next: doc => {
+        this.kbDocuments.update(docs => [doc, ...docs.filter(d => d.id !== doc.id)]);
+        this.kbUploading.set(false);
+        this.notifications.add('success', 'Documento aggiunto', `"${doc.filename}" indicizzato (${doc.chunk_count} chunk).`);
+      },
+      error: (err: Error) => {
+        this.kbUploading.set(false);
+        this.notifications.add('error', 'Upload fallito', err?.message || 'Impossibile indicizzare il documento.');
+      },
+    });
+  }
+
+  deleteKbDocument(id: string, event: Event): void {
+    event.stopPropagation();
+    this.knowledgeService.deleteDocument(id).subscribe({
+      next: () => this.kbDocuments.update(docs => docs.filter(d => d.id !== id)),
+      error: () => {},
     });
   }
 

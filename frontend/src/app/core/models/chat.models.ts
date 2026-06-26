@@ -43,6 +43,8 @@ export interface ChatMessage {
   branch_index?: number;
   /** Total number of branches for this parent (UI-only) */
   branch_count?: number;
+  /** UI-only: knowledge-base chunks retrieved via RAG for this assistant reply */
+  rag_sources?: RagSource[];
 }
 
 /** Tool call inside an assistant message */
@@ -62,6 +64,28 @@ export interface ToolEvent {
   result?: string;
 }
 
+/** A document stored in the knowledge base (RAG). */
+export interface KbDocument {
+  id: string;
+  profile_id: string;
+  filename: string;
+  mime?: string;
+  size_bytes?: number;
+  chunk_count: number;
+  status: 'pending' | 'ready' | 'error';
+  error?: string;
+  created_at: number;
+}
+
+/** A retrieved knowledge-base chunk used to ground an assistant reply. */
+export interface RagSource {
+  document_id: string;
+  filename: string;
+  chunk_index: number;
+  score: number;
+  snippet: string;
+}
+
 /** Body sent to POST /api/v1/chat/completions */
 export interface ChatCompletionRequest {
   model: string;
@@ -70,6 +94,12 @@ export interface ChatCompletionRequest {
   temperature?: number;
   max_tokens?: number;
   tools?: ToolDefinition[];
+  /** Enable retrieval-augmented generation against the profile's knowledge base */
+  rag?: boolean;
+  /** Number of chunks to retrieve when rag is enabled */
+  rag_top_k?: number;
+  /** Profile scope for RAG retrieval (the streaming fetch bypasses the interceptor) */
+  profile_id?: string;
 }
 
 /** Token consumption reported by the provider */

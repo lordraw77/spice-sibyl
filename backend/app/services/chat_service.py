@@ -22,26 +22,133 @@ logger = logging.getLogger(__name__)
 _MAX_TOOL_ITERATIONS = 5
 
 
+def _message_text(content) -> str:
+    """Extract plain text from a message content (string or multimodal parts)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(
+            part.get("text", "")
+            for part in content
+            if isinstance(part, dict) and part.get("type") == "text"
+        )
+    return ""
+
+
 class ChatService:
     """Orchestrates chat completions, streaming, and server-side tool execution."""
 
+    async def _apply_rag(self, request: ChatCompletionRequest):
+        """If RAG is enabled, retrieve context and return (request, sources).
+
+        The retrieved context is folded into the *last user message* rather than a
+        separate system message: many chat templates (e.g. Nemotron) only honor a
+        single leading system message and silently drop ones inserted mid-thread,
+        so augmenting the user turn is the reliable cross-provider grounding point.
+        Returns the original request and an empty list when RAG is disabled or
+        nothing relevant is found.  Retrieval failures are logged and swallowed.
+        """
+        if not request.rag:
+            return request, []
+
+        # Lazy imports keep RAG optional and avoid a hard numpy dependency on the
+        # hot path when the feature is unused.
+        import aiosqlite
+        from app.core.config import settings
+        from app.services import rag_service
+
+        # Find the last user message and a plain-text query for retrieval.
+        last_idx = next(
+            (i for i in range(len(request.messages) - 1, -1, -1)
+             if request.messages[i].role == "user"),
+            None,
+        )
+        if last_idx is None:
+            return request, []
+        last_user = request.messages[last_idx]
+        query = _message_text(last_user.content)
+        if not query.strip():
+            return request, []
+
+        profile_id = request.profile_id or "default"
+        top_k = request.rag_top_k or 4
+        try:
+            db = await aiosqlite.connect(settings.db_path)
+            db.row_factory = aiosqlite.Row
+            try:
+                await db.execute("PRAGMA foreign_keys=ON")
+                sources = await rag_service.retrieve(
+                    db, profile_id, query, top_k=top_k
+                )
+            finally:
+                await db.close()
+        except Exception:
+            logger.exception("RAG retrieval failed; continuing without context")
+            return request, []
+
+        if not sources:
+            logger.info("RAG: enabled but no relevant context for profile=%s model=%s", profile_id, request.model)
+            return request, []
+
+        logger.info(
+            "RAG: injecting %d source(s) into model=%s profile=%s — %s",
+            len(sources), request.model, profile_id,
+            ", ".join(f"{s.filename}#{s.chunk_index}({s.score:.2f})" for s in sources),
+        )
+        context = rag_service.build_context_block(sources)
+        augmented = f"{context}\n\n---\n\nDomanda dell'utente:\n{query}"
+
+        messages = list(request.messages)
+        original = messages[last_idx]
+        if isinstance(original.content, list):
+            # Multimodal: replace the leading text part (or prepend one) with the
+            # augmented text, preserving image parts.
+            new_parts: list = []
+            text_done = False
+            for part in original.content:
+                if not text_done and isinstance(part, dict) and part.get("type") == "text":
+                    new_parts.append({"type": "text", "text": augmented})
+                    text_done = True
+                else:
+                    new_parts.append(part)
+            if not text_done:
+                new_parts.insert(0, {"type": "text", "text": augmented})
+            new_content: object = new_parts
+        else:
+            new_content = augmented
+        messages[last_idx] = original.model_copy(update={"content": new_content})
+        new_request = request.model_copy(update={"messages": messages})
+        return new_request, sources
+
+    @staticmethod
+    def _rag_frame(sources) -> dict:
+        """Build an SSE control frame carrying the RAG sources for the UI."""
+        return {
+            "event": "rag_context",
+            "data": json.dumps({"sources": [s.model_dump() for s in sources]}),
+        }
+
     async def complete(self, request: ChatCompletionRequest):
         """Return a single non-streaming completion."""
+        request, _ = await self._apply_rag(request)
         provider = ProviderFactory.get_provider(request.model)
         return await provider.complete(request)
 
     async def stream(self, request: ChatCompletionRequest):
         """Return an SSE EventSourceResponse for a streaming completion."""
+        request, rag_sources = await self._apply_rag(request)
         provider = ProviderFactory.get_provider(request.model)
 
         # agent/* models orchestrate their own sub-agents; never wrap them in the
         # server-side tool loop — they stream their own tool_call/tool_result frames.
         is_agent = bool(request.model and request.model.startswith("agent/"))
         if request.tools and not is_agent:
-            return EventSourceResponse(self._stream_with_tools(provider, request))
+            return EventSourceResponse(self._stream_with_tools(provider, request, rag_sources))
 
         async def _plain():
             try:
+                if rag_sources:
+                    yield self._rag_frame(rag_sources)
                 async for chunk in provider.stream(request):
                     # A provider may emit control frames carrying a named SSE event
                     # (e.g. the orchestrator's tool_call / tool_result progress).
@@ -56,11 +163,13 @@ class ChatService:
 
         return EventSourceResponse(_plain())
 
-    async def _stream_with_tools(self, provider, request: ChatCompletionRequest):
+    async def _stream_with_tools(self, provider, request: ChatCompletionRequest, rag_sources=None):
         """Run the server-side tool-execution loop, yielding SSE-compatible dicts."""
         messages: list[ChatMessage] = list(request.messages)
 
         try:
+            if rag_sources:
+                yield self._rag_frame(rag_sources)
             for _ in range(_MAX_TOOL_ITERATIONS):
                 call_req = request.model_copy(
                     update={"messages": messages, "stream": False}

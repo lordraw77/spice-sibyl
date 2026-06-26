@@ -28,6 +28,7 @@ from app.api.v1.endpoints import (
     groq_discovery,
     health,
     images,
+    knowledge,
     mistral_discovery,
     models,
     nvidia_discovery,
@@ -62,6 +63,7 @@ api_router.include_router(conversations.router, prefix="/conversations", tags=["
 api_router.include_router(profiles.router, prefix="/profiles", tags=["profiles"])
 api_router.include_router(stats.router, prefix="/stats", tags=["stats"])
 api_router.include_router(tools.router, prefix="/tools", tags=["tools"])
+api_router.include_router(knowledge.router, prefix="/knowledge", tags=["knowledge"])
 api_router.include_router(templates.router, prefix="/templates", tags=["templates"])
 api_router.include_router(tags.router, prefix="/tags", tags=["tags"])
 api_router.include_router(telegram_link.router, prefix="/telegram", tags=["telegram"])
