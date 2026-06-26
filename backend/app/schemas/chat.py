@@ -65,6 +65,12 @@ class ChatMessage(BaseModel):
     capabilities: list[str] | None = None
     free: bool | None = None
 
+    # Persistence fields
+    id: str | None = None
+    pinned: bool | None = None
+    parent_id: str | None = None
+    branch_index: int | None = None
+
 
 class ChatCompletionRequest(BaseModel):
     """Incoming request body for POST /chat/completions."""

@@ -21,7 +21,12 @@ def _row_to_summary(row: aiosqlite.Row) -> ConversationSummary:
 def _row_to_message(row: aiosqlite.Row) -> ChatMessage:
     caps = row["capabilities"]
     free_val = row["free"]
+    keys = row.keys()
+    pinned_val = row["pinned"] if "pinned" in keys else None
+    parent_id = row["parent_id"] if "parent_id" in keys else None
+    branch_index = row["branch_index"] if "branch_index" in keys else None
     return ChatMessage(
+        id=row["id"],
         role=row["role"],
         content=row["content"],
         model=row["model"],
@@ -37,6 +42,9 @@ def _row_to_message(row: aiosqlite.Row) -> ChatMessage:
         created_at=row["created_at"],
         capabilities=json.loads(caps) if caps else None,
         free=bool(free_val) if free_val is not None else None,
+        pinned=bool(pinned_val) if pinned_val is not None else None,
+        parent_id=parent_id,
+        branch_index=branch_index,
     )
 
 
@@ -106,6 +114,45 @@ async def delete_conversation(
     await db.commit()
 
 
+async def toggle_pin(
+    db: aiosqlite.Connection, message_id: str
+) -> bool:
+    async with db.execute(
+        "SELECT pinned FROM messages WHERE id = ?", (message_id,)
+    ) as cursor:
+        row = await cursor.fetchone()
+    if not row:
+        return False
+    new_val = 0 if row["pinned"] else 1
+    await db.execute(
+        "UPDATE messages SET pinned = ? WHERE id = ?", (new_val, message_id)
+    )
+    await db.commit()
+    return bool(new_val)
+
+
+async def get_pinned_messages(
+    db: aiosqlite.Connection, conversation_id: str
+) -> list[ChatMessage]:
+    async with db.execute(
+        "SELECT * FROM messages WHERE conversation_id = ? AND pinned = 1 ORDER BY created_at ASC",
+        (conversation_id,),
+    ) as cursor:
+        rows = await cursor.fetchall()
+    return [_row_to_message(r) for r in rows]
+
+
+async def get_branch_siblings(
+    db: aiosqlite.Connection, conversation_id: str, parent_id: str
+) -> list[ChatMessage]:
+    async with db.execute(
+        "SELECT * FROM messages WHERE conversation_id = ? AND parent_id = ? ORDER BY branch_index ASC",
+        (conversation_id, parent_id),
+    ) as cursor:
+        rows = await cursor.fetchall()
+    return [_row_to_message(r) for r in rows]
+
+
 async def append_messages(
     db: aiosqlite.Connection, conversation_id: str, messages: list[ChatMessage]
 ) -> None:
@@ -116,15 +163,16 @@ async def append_messages(
             if isinstance(msg.content, str)
             else json.dumps(msg.content)
         )
+        msg_id = msg.id or str(uuid.uuid4())
         await db.execute(
             """INSERT INTO messages
                (id, conversation_id, role, content, model, provider,
                 latency_ms, first_token_ms, prompt_tokens, completion_tokens,
                 total_tokens, tokens_per_second, finish_reason, estimated_cost,
-                created_at, capabilities, free)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                created_at, capabilities, free, pinned, parent_id, branch_index)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                str(uuid.uuid4()),
+                msg_id,
                 conversation_id,
                 msg.role,
                 content,
@@ -141,6 +189,9 @@ async def append_messages(
                 msg.created_at or now,
                 json.dumps(msg.capabilities) if msg.capabilities else None,
                 int(msg.free) if msg.free is not None else None,
+                int(msg.pinned) if msg.pinned else 0,
+                msg.parent_id,
+                msg.branch_index or 0,
             ),
         )
     await db.execute(

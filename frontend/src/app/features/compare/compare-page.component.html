@@ -1,0 +1,64 @@
+<div class="compare-shell">
+
+  <header class="compare-header">
+    <h1>Confronta modelli</h1>
+    <p class="subtitle">Invia lo stesso prompt a più modelli e confronta le risposte.</p>
+  </header>
+
+  <!-- Model selectors -->
+  <div class="model-selectors">
+    <div class="model-selector" *ngFor="let m of selectedModels; let i = index; trackBy: trackByIndex">
+      <select class="form-select" [ngModel]="m" (ngModelChange)="updateModel(i, $event)">
+        <option value="">— Seleziona modello —</option>
+        <option *ngFor="let model of models()" [value]="model.id">{{ model.label || model.id }}</option>
+      </select>
+      <button class="remove-model-btn" *ngIf="selectedModels.length > 2" (click)="removeSlot(i)" title="Rimuovi">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <button class="add-model-btn" *ngIf="selectedModels.length < 4" (click)="addSlot()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Aggiungi modello
+    </button>
+  </div>
+
+  <!-- Prompt input -->
+  <div class="compare-composer">
+    <textarea
+      class="compare-textarea"
+      rows="3"
+      placeholder="Scrivi il prompt da confrontare…"
+      [(ngModel)]="prompt"
+      (keydown.enter)="$event.shiftKey ? null : compare()"
+    ></textarea>
+    <div class="compare-actions">
+      <button class="compare-send" [disabled]="loading || !prompt.trim()" (click)="compare()">
+        {{ loading ? 'In corso…' : 'Confronta' }}
+      </button>
+      <button class="compare-cancel" *ngIf="loading" (click)="cancelAll()">Stop</button>
+    </div>
+  </div>
+
+  <!-- Results grid -->
+  <div class="compare-results" *ngIf="slots.length" [style.grid-template-columns]="'repeat(' + slots.length + ', 1fr)'">
+    <div class="compare-column" *ngFor="let slot of slots">
+      <div class="compare-column-header">
+        <span class="compare-model-name">{{ modelLabel(slot.model) }}</span>
+        <span class="compare-provider" *ngIf="slot.provider">{{ slot.provider }}</span>
+        <span class="compare-streaming" *ngIf="slot.streaming">
+          <span class="dot-spin-sm"></span>
+        </span>
+      </div>
+      <div class="compare-body markdown-body" *ngIf="slot.content" [innerHTML]="renderContent(slot.content)"></div>
+      <div class="compare-error" *ngIf="slot.error">{{ slot.error }}</div>
+      <div class="compare-meta" *ngIf="slot.done && !slot.error">
+        <span *ngIf="slot.latency_ms">{{ (slot.latency_ms / 1000).toFixed(2) }}s</span>
+        <span *ngIf="slot.tokens_per_second"> · {{ slot.tokens_per_second.toFixed(1) }} t/s</span>
+        <span *ngIf="slot.prompt_tokens !== undefined"> · in {{ slot.prompt_tokens }}</span>
+        <span *ngIf="slot.completion_tokens !== undefined"> · out {{ slot.completion_tokens }}</span>
+        <span *ngIf="slot.estimated_cost !== undefined && slot.estimated_cost !== null"> · {{ formatCost(slot.estimated_cost) }}</span>
+      </div>
+    </div>
+  </div>
+
+</div>

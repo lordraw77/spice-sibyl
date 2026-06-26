@@ -22,6 +22,7 @@ from fastapi.responses import Response
 
 from app.db import conversation_repository as repo
 from app.db import search_repository as search_repo
+from app.db import tag_repository as tag_repo
 from app.db.database import get_db
 from app.schemas.conversations import (
     AppendMessagesRequest,
@@ -55,7 +56,12 @@ async def list_conversations(
     profile_id: str = Query(default=_DEFAULT_PROFILE),
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    return await repo.list_conversations(db, profile_id)
+    convs = await repo.list_conversations(db, profile_id)
+    conv_ids = [c.id for c in convs]
+    tags_map = await tag_repo.get_tags_for_conversations(db, conv_ids)
+    for c in convs:
+        c.tags = tags_map.get(c.id, [])
+    return convs
 
 
 @router.post("", response_model=ConversationSummary, status_code=201)
@@ -165,3 +171,30 @@ async def append_messages(
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     await repo.append_messages(db, conversation_id, body.messages)
+
+
+@router.patch("/{conversation_id}/messages/{message_id}/pin")
+async def toggle_pin(
+    conversation_id: str,
+    message_id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    pinned = await repo.toggle_pin(db, message_id)
+    return {"pinned": pinned}
+
+
+@router.get("/{conversation_id}/pins", response_model=list)
+async def get_pinned_messages(
+    conversation_id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    return await repo.get_pinned_messages(db, conversation_id)
+
+
+@router.get("/{conversation_id}/branches")
+async def get_branches(
+    conversation_id: str,
+    parent_id: str = Query(...),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    return await repo.get_branch_siblings(db, conversation_id, parent_id)

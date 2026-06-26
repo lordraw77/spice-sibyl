@@ -36,6 +36,33 @@
       </div>
     </div>
 
+    <!-- Usage charts -->
+    <section class="charts-section">
+      <div class="charts-header">
+        <h2>Andamento</h2>
+        <div class="chart-range-btns">
+          <button [class.active]="chartDays() === 7" (click)="setChartDays(7)">7g</button>
+          <button [class.active]="chartDays() === 30" (click)="setChartDays(30)">30g</button>
+          <button [class.active]="chartDays() === 90" (click)="setChartDays(90)">90g</button>
+        </div>
+      </div>
+      <div class="charts-grid">
+        <div class="chart-card">
+          <span class="chart-title">Token per giorno</span>
+          <div class="chart-container">
+            <canvas #tokensChart></canvas>
+          </div>
+        </div>
+        <div class="chart-card">
+          <span class="chart-title">Costo per giorno</span>
+          <div class="chart-container">
+            <canvas #costChart></canvas>
+          </div>
+        </div>
+      </div>
+      <p class="no-data-msg" *ngIf="!dailyStats().length">Nessun dato disponibile per il periodo selezionato.</p>
+    </section>
+
     <!-- By profile -->
     <section class="table-section" *ngIf="s.by_profile.length">
       <h2>Per profilo</h2>

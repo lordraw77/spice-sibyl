@@ -8,12 +8,15 @@ tokens arrive (throttled to ~1 edit/s to stay within Telegram rate limits).
 Commands:
   /start            — welcome message
   /new              — clear conversation history for this chat
-  /model            — show the current model
+  /model            — inline keyboard to pick a model
   /model <id>       — switch to a different model
   /models           — list all available models grouped by provider
   /models <query>   — filter models by provider, capability or name
+  /history          — list recent conversations in this chat
+  /search <query>   — full-text search past messages
   /stats            — show global usage statistics
   Any text          — sent to the active model, reply streamed back
+  Voice/audio       — transcribed via Whisper, then processed as text
 """
 
 import asyncio
@@ -24,19 +27,23 @@ import time
 from collections import defaultdict
 
 import aiosqlite
-from telegram import BotCommand, Update
+import httpx
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent, Update
 from telegram.constants import ChatAction, ParseMode
 from telegram.ext import (
     Application,
     ApplicationBuilder,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    InlineQueryHandler,
     MessageHandler,
     filters,
 )
 
 from app.core.config import settings
 from app.data.model_catalog import iter_configured_models
+from app.db.search_repository import search_conversations
 from app.db.stats_repository import get_usage_stats
 from app.dependencies.provider_factory import get_provider
 from app.schemas.chat import ChatCompletionRequest, ChatMessage
@@ -59,6 +66,16 @@ _MAX_HISTORY = 40  # keep last 40 messages (~20 exchanges) per chat
 
 # The multi-agent orchestrator model (routed to the Multi-MCP sidecar)
 _AGENT_MODEL = "agent/multi-mcp"
+
+# chat_id → list of model IDs for the current inline-keyboard selection
+_callback_models: dict[int, list[str]] = {}
+
+# message_id → chat_id mapping for quick-action buttons
+_action_messages: dict[int, int] = {}
+
+# Temporary link codes: code → {telegram_id, username, expires}
+import secrets
+_link_codes: dict[str, dict] = {}
 
 
 def _is_agent_model(model: str) -> bool:
@@ -132,12 +149,17 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"  /chat &lt;id&gt; — chat con un modello specifico\n"
         f"  /imagine &lt;prompt&gt; — genera un'immagine\n"
         f"  /new — nuova conversazione\n"
-        f"  /model — mostra modello corrente\n"
-        f"  /model &lt;id&gt; — cambia modello\n"
+        f"  /model — scegli modello (tastiera inline)\n"
+        f"  /model &lt;id&gt; — cambia modello direttamente\n"
         f"  /models — lista modelli disponibili\n"
         f"  /models &lt;query&gt; — filtra per provider, capability o nome\n"
+        f"  /history — mostra conversazione corrente\n"
+        f"  /search &lt;testo&gt; — cerca nelle conversazioni salvate\n"
         f"  /stats — statistiche di utilizzo\n\n"
-        f"📸 Invia una foto per usare la vision (image-to-text)",
+        f"📸 Invia una foto per usare la vision\n"
+        f"🎙️ Invia un vocale per trascriverlo e rispondere\n"
+        f"📄 Invia un file PDF, TXT o DOCX per analizzarlo\n"
+        f"✨ Usa <code>@botname query</code> in qualsiasi chat per risposte inline",
         parse_mode=ParseMode.HTML,
     )
 
@@ -160,22 +182,110 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     args = context.args
 
-    if not args:
-        current = _models.get(chat_id, _default_model())
-        logger.debug("cmd_model: query modello corrente chat_id=%s model=%s", chat_id, current)
+    if args:
+        model_id = args[0].strip()
+        logger.info("cmd_model: cambio modello chat_id=%s old=%s new=%s", chat_id, _models.get(chat_id, _default_model()), model_id)
+        _models[chat_id] = model_id
+        _sessions[chat_id].clear()
         await update.message.reply_text(
-            f"Modello corrente: <code>{current}</code>",
+            f"✅ Modello impostato: <code>{model_id}</code>\nConversazione azzerata.",
             parse_mode=ParseMode.HTML,
         )
         return
 
-    model_id = args[0].strip()
-    logger.info("cmd_model: cambio modello chat_id=%s old=%s new=%s", chat_id, _models.get(chat_id, _default_model()), model_id)
+    current = _models.get(chat_id, _default_model())
+    all_models = iter_configured_models()
+    providers: dict[str, list[str]] = defaultdict(list)
+    for m in all_models:
+        providers[m.get("provider", "other")].append(m["id"])
+
+    buttons = [
+        [InlineKeyboardButton(
+            f"{'✅ ' if any(mid == current for mid in ids) else ''}{prov} ({len(ids)})",
+            callback_data=f"mp:{prov}",
+        )]
+        for prov, ids in sorted(providers.items())
+    ]
+    await update.message.reply_text(
+        f"Modello corrente: <code>{current}</code>\n\nScegli un provider:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+async def _cb_model_provider(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback: user tapped a provider button — show its models."""
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat_id
+    provider = query.data.removeprefix("mp:")
+
+    current = _models.get(chat_id, _default_model())
+    all_models = iter_configured_models()
+    models = [m["id"] for m in all_models if (m.get("provider") or "other") == provider]
+
+    if not models:
+        await query.edit_message_text(f"Nessun modello per <b>{provider}</b>.", parse_mode=ParseMode.HTML)
+        return
+
+    _callback_models[chat_id] = models
+    buttons = []
+    for idx, mid in enumerate(models):
+        label = ("✅ " if mid == current else "") + mid.split("/", 1)[-1]
+        buttons.append([InlineKeyboardButton(label, callback_data=f"ms:{idx}")])
+    buttons.append([InlineKeyboardButton("« Indietro", callback_data="mp:__back__")])
+
+    await query.edit_message_text(
+        f"<b>{provider}</b> — scegli un modello:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+async def _cb_model_select(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback: user tapped a model button — apply selection."""
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat_id
+    idx = int(query.data.removeprefix("ms:"))
+    models = _callback_models.get(chat_id, [])
+
+    if idx < 0 or idx >= len(models):
+        await query.edit_message_text("⚠ Selezione non valida.")
+        return
+
+    model_id = models[idx]
+    old = _models.get(chat_id, _default_model())
+    logger.info("cmd_model: cambio modello (inline) chat_id=%s old=%s new=%s", chat_id, old, model_id)
     _models[chat_id] = model_id
     _sessions[chat_id].clear()
-    await update.message.reply_text(
+    await query.edit_message_text(
         f"✅ Modello impostato: <code>{model_id}</code>\nConversazione azzerata.",
         parse_mode=ParseMode.HTML,
+    )
+
+
+async def _cb_model_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback: user tapped 'back' — re-show provider list."""
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat_id
+    current = _models.get(chat_id, _default_model())
+    all_models = iter_configured_models()
+    providers: dict[str, list[str]] = defaultdict(list)
+    for m in all_models:
+        providers[m.get("provider", "other")].append(m["id"])
+    buttons = [
+        [InlineKeyboardButton(
+            f"{'✅ ' if any(mid == current for mid in ids) else ''}{prov} ({len(ids)})",
+            callback_data=f"mp:{prov}",
+        )]
+        for prov, ids in sorted(providers.items())
+    ]
+    await query.edit_message_text(
+        f"Modello corrente: <code>{current}</code>\n\nScegli un provider:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(buttons),
     )
 
 
@@ -320,6 +430,42 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = '\n'.join(lines)
     for chunk in _split(text):
         await update.message.reply_text(chunk, parse_mode=ParseMode.HTML)
+
+
+# ── /link and /unlink ────────────────────────────────────────────────────────
+
+async def cmd_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        return
+    code = secrets.token_hex(3).upper()
+    _link_codes[code] = {"telegram_id": user.id, "username": user.username, "expires": time.time() + 300}
+    # Also register in the endpoint module
+    from app.api.v1.endpoints.telegram_link import register_link_code
+    register_link_code(code, user.id, user.username)
+    await update.message.reply_text(
+        f"🔗 <b>Collega il tuo profilo web</b>\n\n"
+        f"Inserisci questo codice nella sezione Telegram del tuo profilo web:\n\n"
+        f"<code>{code}</code>\n\n"
+        f"Il codice scade tra 5 minuti.",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def cmd_unlink(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        return
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("PRAGMA foreign_keys=ON")
+        from app.db import telegram_link_repository as tl_repo
+        row = await tl_repo.get_by_telegram_id(db, user.id)
+        if not row:
+            await update.message.reply_text("Non sei collegato a nessun profilo web.")
+            return
+        await tl_repo.unlink_by_profile(db, row["profile_id"])
+    await update.message.reply_text("✅ Profilo web scollegato.")
 
 
 # ── /imagine command ─────────────────────────────────────────────────────────
@@ -476,46 +622,178 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             session.pop()
 
 
-# ── Message handler ──────────────────────────────────────────────────────────
+# ── Voice / audio handler ───────────────────────────────────────────────────
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _transcribe_audio(audio_bytes: bytes, filename: str = "voice.ogg") -> str:
+    """Transcribe audio via Groq Whisper API. Falls back with a clear error."""
+    api_key = settings.groq_api_key
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY non configurata — impossibile trascrivere l'audio")
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(
+            "https://api.groq.com/openai/v1/audio/transcriptions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            files={"file": (filename, audio_bytes, "audio/ogg")},
+            data={"model": "whisper-large-v3", "language": "it"},
+        )
+        resp.raise_for_status()
+        return resp.json().get("text", "").strip()
+
+
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle voice/audio messages: transcribe via Whisper, then process as text."""
     global _tg_messages_received, _tg_messages_sent, _tg_errors
 
-    if not update.message or not update.message.text:
+    msg = update.message
+    if not msg:
         return
     user = update.effective_user
     if not _is_allowed(user.id):
-        logger.warning("handle_message: accesso negato user_id=%s username=%s", user.id, user.username)
-        await update.message.reply_text("⛔ Accesso non autorizzato.")
+        logger.warning("handle_voice: accesso negato user_id=%s", user.id)
+        await msg.reply_text("⛔ Accesso non autorizzato.")
         return
 
     _tg_messages_received += 1
-
     chat_id = update.effective_chat.id
-    text = update.message.text.strip()
+    logger.info("handle_voice: chat_id=%s user_id=%s", chat_id, user.id)
+
+    voice = msg.voice or msg.audio
+    if not voice:
+        return
+
+    await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
+    sent = await msg.reply_text("🎙️ Trascrizione in corso…")
+
+    try:
+        file = await context.bot.get_file(voice.file_id)
+        audio_bytes = await file.download_as_bytearray()
+    except Exception as exc:
+        _tg_errors += 1
+        logger.error("handle_voice: download audio fallito chat_id=%s: %s", chat_id, exc)
+        try:
+            await sent.edit_text("⚠ Impossibile scaricare l'audio.")
+        except Exception:
+            pass
+        return
+
+    try:
+        transcript = await _transcribe_audio(bytes(audio_bytes))
+    except Exception as exc:
+        _tg_errors += 1
+        logger.error("handle_voice: trascrizione fallita chat_id=%s: %s", chat_id, exc)
+        try:
+            await sent.edit_text(f"⚠ Trascrizione fallita: {exc}")
+        except Exception:
+            pass
+        return
+
+    if not transcript:
+        try:
+            await sent.edit_text("⚠ Nessun testo riconosciuto nell'audio.")
+        except Exception:
+            pass
+        return
+
+    logger.info("handle_voice: trascritto chat_id=%s len=%d", chat_id, len(transcript))
+    try:
+        await sent.edit_text(f"🎙️ <i>{transcript}</i>", parse_mode=ParseMode.HTML)
+    except Exception:
+        pass
+
     model = _models.get(chat_id, _default_model())
-    logger.info("handle_message: chat_id=%s user_id=%s model=%s text_len=%d", chat_id, user.id, model, len(text))
-
-    # Append user message to history
     session = _sessions[chat_id]
-    session.append({"role": "user", "content": text})
-
-    # Trim to keep last _MAX_HISTORY messages
+    session.append({"role": "user", "content": transcript})
     if len(session) > _MAX_HISTORY:
         _sessions[chat_id] = session[-_MAX_HISTORY:]
         session = _sessions[chat_id]
 
-    await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
+    reply_sent = await msg.reply_text("⏳")
+    await _stream_reply(chat_id, session, model, reply_sent, update)
 
-    # Send a placeholder that we'll edit as tokens arrive
-    sent = await update.message.reply_text("⏳")
+
+# ── Quick-action buttons ────────────────────────────────────────────────────
+
+_QUICK_ACTIONS = InlineKeyboardMarkup([
+    [
+        InlineKeyboardButton("🔄 Rigenera", callback_data="qa:regenerate"),
+        InlineKeyboardButton("🌐 Traduci", callback_data="qa:translate"),
+    ],
+    [
+        InlineKeyboardButton("📝 Riassumi", callback_data="qa:summarize"),
+        InlineKeyboardButton("➡️ Continua", callback_data="qa:continue"),
+    ],
+])
+
+
+async def _cb_quick_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle quick-action button taps after an assistant reply."""
+    global _tg_messages_sent, _tg_errors
+
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat_id
+    user = query.from_user
+    if not _is_allowed(user.id):
+        return
+
+    action = query.data.removeprefix("qa:")
+    session = _sessions[chat_id]
+    model = _models.get(chat_id, _default_model())
+
+    if action == "regenerate":
+        if len(session) >= 2 and session[-1]["role"] == "assistant":
+            session.pop()
+        elif not session or session[-1]["role"] != "user":
+            await query.edit_message_reply_markup(reply_markup=None)
+            return
+    elif action == "translate":
+        if not session or session[-1]["role"] != "assistant":
+            await query.edit_message_reply_markup(reply_markup=None)
+            return
+        session.append({"role": "user", "content": "Traduci la tua ultima risposta in inglese. Se è già in inglese, traducila in italiano."})
+    elif action == "summarize":
+        if not session or session[-1]["role"] != "assistant":
+            await query.edit_message_reply_markup(reply_markup=None)
+            return
+        session.append({"role": "user", "content": "Riassumi brevemente la tua ultima risposta in pochi punti chiave."})
+    elif action == "continue":
+        if not session or session[-1]["role"] != "assistant":
+            await query.edit_message_reply_markup(reply_markup=None)
+            return
+        session.append({"role": "user", "content": "Continua."})
+    else:
+        return
+
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    if len(session) > _MAX_HISTORY:
+        _sessions[chat_id] = session[-_MAX_HISTORY:]
+        session = _sessions[chat_id]
+
+    sent = await query.message.reply_text("⏳")
+    await _stream_reply(chat_id, session, model, sent, update=None, orig_message=query.message)
+
+
+# ── Shared streaming helper ─────────────────────────────────────────────────
+
+async def _stream_reply(
+    chat_id: int,
+    session: list[dict],
+    model: str,
+    sent,  # the placeholder Message we edit
+    update: Update | None,
+    orig_message=None,
+) -> None:
+    """Stream a provider response, edit *sent* as tokens arrive, attach quick-action buttons."""
+    global _tg_messages_sent, _tg_errors
 
     provider = get_provider(model)
     messages = [ChatMessage(role=m["role"], content=m["content"]) for m in session]
     request = ChatCompletionRequest(model=model, messages=messages, max_tokens=2048)
 
     full_content = ""
-    progress: list[str] = []  # transient sub-agent delegation status (agent/* models)
+    progress: list[str] = []
     last_edit = time.monotonic()
 
     try:
@@ -523,8 +801,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             if chunk.get("object") == "chat.completion.meta":
                 break
 
-            # Orchestrator progress frames — show delegation status until the
-            # final answer starts streaming (agent/multi-mcp).
             sse_event = chunk.get("_sse_event")
             if sse_event == "tool_call":
                 progress.append(f"🔧 {chunk.get('name', 'agent')} …")
@@ -549,54 +825,348 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 continue
 
             full_content += delta
-
-            # Throttle edits to ~1/s to avoid Telegram flood limits
             now = time.monotonic()
             if now - last_edit >= 1.0:
                 try:
                     await sent.edit_text(full_content + " ▌")
                     last_edit = now
                 except Exception:
-                    pass  # edit may fail if content unchanged
+                    pass
 
-        # Final message — send in chunks if long
         chunks = _split(full_content or "⚠ Nessuna risposta.")
-        await sent.edit_text(chunks[0])
-        for extra in chunks[1:]:
-            await update.message.reply_text(extra)
+        if len(chunks) == 1:
+            await sent.edit_text(chunks[0], reply_markup=_QUICK_ACTIONS)
+            _action_messages[sent.message_id] = chat_id
+        else:
+            await sent.edit_text(chunks[0])
+            for extra in chunks[1:-1]:
+                reply_target = update.message if update and update.message else orig_message
+                if reply_target:
+                    await reply_target.reply_text(extra)
+            last_msg = None
+            reply_target = update.message if update and update.message else orig_message
+            if reply_target:
+                last_msg = await reply_target.reply_text(chunks[-1], reply_markup=_QUICK_ACTIONS)
+            if last_msg:
+                _action_messages[last_msg.message_id] = chat_id
 
         if full_content:
             session.append({"role": "assistant", "content": full_content})
             _tg_messages_sent += 1
-            logger.info("handle_message: risposta completata chat_id=%s model=%s response_len=%d", chat_id, model, len(full_content))
+            logger.info("stream_reply: completata chat_id=%s model=%s len=%d", chat_id, model, len(full_content))
         else:
-            logger.warning("handle_message: risposta vuota chat_id=%s model=%s", chat_id, model)
+            logger.warning("stream_reply: risposta vuota chat_id=%s model=%s", chat_id, model)
 
     except asyncio.CancelledError:
         raise
     except Exception as exc:
         _tg_errors += 1
-        logger.exception("Telegram handler error for chat_id=%s model=%s", chat_id, model)
+        logger.exception("stream_reply: errore chat_id=%s model=%s", chat_id, model)
         try:
             await sent.edit_text(f"⚠ Errore: {exc}")
         except Exception:
             pass
-        # Remove the user message so history stays consistent
         if session and session[-1]["role"] == "user":
             session.pop()
 
 
+# ── Message handler ──────────────────────────────────────────────────────────
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    global _tg_messages_received, _tg_messages_sent, _tg_errors
+
+    if not update.message or not update.message.text:
+        return
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        logger.warning("handle_message: accesso negato user_id=%s username=%s", user.id, user.username)
+        await update.message.reply_text("⛔ Accesso non autorizzato.")
+        return
+
+    _tg_messages_received += 1
+
+    chat_id = update.effective_chat.id
+    text = update.message.text.strip()
+    model = _models.get(chat_id, _default_model())
+    logger.info("handle_message: chat_id=%s user_id=%s model=%s text_len=%d", chat_id, user.id, model, len(text))
+
+    session = _sessions[chat_id]
+    session.append({"role": "user", "content": text})
+
+    if len(session) > _MAX_HISTORY:
+        _sessions[chat_id] = session[-_MAX_HISTORY:]
+        session = _sessions[chat_id]
+
+    await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
+    sent = await update.message.reply_text("⏳")
+
+    await _stream_reply(chat_id, session, model, sent, update)
+
+
+# ── /history command ─────────────────────────────────────────────────────────
+
+async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show recent conversation exchanges in this chat's in-memory session."""
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        logger.warning("cmd_history: accesso negato user_id=%s", user.id)
+        return
+
+    chat_id = update.effective_chat.id
+    session = _sessions.get(chat_id, [])
+
+    if not session:
+        await update.message.reply_text("📭 Nessun messaggio nella conversazione corrente.\nUsa /search per cercare nelle conversazioni salvate.")
+        return
+
+    lines = ["📜 <b>Conversazione corrente</b>\n"]
+    for msg in session[-20:]:
+        role = "👤" if msg["role"] == "user" else "🤖"
+        content = msg["content"]
+        if isinstance(content, list):
+            content = next((p["text"] for p in content if isinstance(p, dict) and p.get("type") == "text"), "[media]")
+        preview = content[:120].replace("<", "&lt;").replace(">", "&gt;")
+        if len(content) > 120:
+            preview += "…"
+        lines.append(f"{role} {preview}")
+
+    model = _models.get(chat_id, _default_model())
+    lines.append(f"\n<i>Modello: {model} · {len(session)} messaggi</i>")
+
+    text = "\n".join(lines)
+    for chunk in _split(text):
+        await update.message.reply_text(chunk, parse_mode=ParseMode.HTML)
+
+
+# ── /search command ──────────────────────────────────────────────────────────
+
+async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Full-text search across all saved conversations (SQLite FTS5)."""
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        logger.warning("cmd_search: accesso negato user_id=%s", user.id)
+        return
+
+    query = " ".join(context.args).strip() if context.args else ""
+    if not query:
+        await update.message.reply_text("Uso: /search <testo da cercare>")
+        return
+
+    chat_id = update.effective_chat.id
+    logger.info("cmd_search: chat_id=%s query=%r", chat_id, query)
+
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+        results = await search_conversations(db, query, limit=10)
+
+    if not results:
+        await update.message.reply_text(
+            f"🔍 Nessun risultato per <code>{query}</code>.",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    lines = [f"🔍 Risultati per <code>{query}</code>:\n"]
+    for r in results:
+        title = (r.title or "Senza titolo").replace("<", "&lt;").replace(">", "&gt;")
+        snippet = (r.snippet or "").replace("<", "&lt;").replace(">", "&gt;")
+        lines.append(f"<b>{title}</b>")
+        if r.model:
+            lines.append(f"  <i>{r.model}</i>")
+        if snippet:
+            lines.append(f"  {snippet[:200]}")
+        lines.append("")
+
+    text = "\n".join(lines)
+    for chunk in _split(text):
+        await update.message.reply_text(chunk, parse_mode=ParseMode.HTML)
+
+
+# ── Inline query handler ────────────────────────────────────────────────────
+
+async def handle_inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Answer @bot <query> inline queries with a short LLM response."""
+    query = update.inline_query
+    if not query:
+        return
+    user = query.from_user
+    if not _is_allowed(user.id):
+        return
+    text = (query.query or "").strip()
+    if len(text) < 3:
+        await query.answer([], cache_time=5)
+        return
+
+    model = _models.get(user.id, _default_model())
+    provider = get_provider(model)
+    messages = [ChatMessage(role="user", content=text)]
+    request = ChatCompletionRequest(model=model, messages=messages, max_tokens=300)
+
+    try:
+        result = await provider.complete(request)
+        choices = result.get("choices") or []
+        answer = (choices[0].get("message") or {}).get("content", "") if choices else ""
+    except Exception as exc:
+        logger.warning("handle_inline_query: errore model=%s: %s", model, exc)
+        answer = f"Errore: {exc}"
+
+    if not answer:
+        answer = "Nessuna risposta dal modello."
+
+    import hashlib
+    result_id = hashlib.md5(f"{text}:{answer[:50]}".encode()).hexdigest()
+
+    results = [
+        InlineQueryResultArticle(
+            id=result_id,
+            title=answer[:100],
+            description=f"via {model}",
+            input_message_content=InputTextMessageContent(answer[:4096]),
+        )
+    ]
+    await query.answer(results, cache_time=30)
+    logger.info("handle_inline_query: user_id=%s query=%r model=%s", user.id, text[:60], model)
+
+
+# ── Document handler (PDF, TXT, DOCX) ──────────────────────────────────────
+
+_SUPPORTED_MIME = {
+    "application/pdf",
+    "text/plain",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+_MAX_DOC_CHARS = 8000
+
+
+def _extract_text_from_pdf(data: bytes) -> str:
+    from PyPDF2 import PdfReader
+    reader = PdfReader(io.BytesIO(data))
+    pages = []
+    for page in reader.pages:
+        t = page.extract_text()
+        if t:
+            pages.append(t)
+    return "\n\n".join(pages)
+
+
+def _extract_text_from_docx(data: bytes) -> str:
+    from docx import Document
+    doc = Document(io.BytesIO(data))
+    return "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
+
+
+def _extract_text_from_txt(data: bytes) -> str:
+    return data.decode("utf-8", errors="replace")
+
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle PDF, TXT, DOCX documents: extract text and send as context to the model."""
+    global _tg_messages_received, _tg_messages_sent, _tg_errors
+
+    msg = update.message
+    if not msg or not msg.document:
+        return
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        logger.warning("handle_document: accesso negato user_id=%s", user.id)
+        await msg.reply_text("⛔ Accesso non autorizzato.")
+        return
+
+    doc = msg.document
+    mime = doc.mime_type or ""
+    fname = doc.file_name or "file"
+
+    if mime not in _SUPPORTED_MIME:
+        await msg.reply_text(
+            f"⚠ Formato non supportato: <code>{mime}</code>\n"
+            f"Formati accettati: PDF, TXT, DOCX",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    _tg_messages_received += 1
+    chat_id = update.effective_chat.id
+    caption = (msg.caption or "").strip() or "Analizza il contenuto di questo documento."
+    model = _models.get(chat_id, _default_model())
+    logger.info("handle_document: chat_id=%s file=%s mime=%s model=%s", chat_id, fname, mime, model)
+
+    await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
+    sent = await msg.reply_text("📄 Estrazione testo…")
+
+    try:
+        file = await context.bot.get_file(doc.file_id)
+        file_bytes = await file.download_as_bytearray()
+    except Exception as exc:
+        _tg_errors += 1
+        logger.error("handle_document: download fallito chat_id=%s: %s", chat_id, exc)
+        try:
+            await sent.edit_text("⚠ Impossibile scaricare il file.")
+        except Exception:
+            pass
+        return
+
+    try:
+        if mime == "application/pdf":
+            extracted = _extract_text_from_pdf(bytes(file_bytes))
+        elif mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            extracted = _extract_text_from_docx(bytes(file_bytes))
+        else:
+            extracted = _extract_text_from_txt(bytes(file_bytes))
+    except Exception as exc:
+        _tg_errors += 1
+        logger.error("handle_document: estrazione fallita chat_id=%s: %s", chat_id, exc)
+        try:
+            await sent.edit_text(f"⚠ Errore nell'estrazione del testo: {exc}")
+        except Exception:
+            pass
+        return
+
+    if not extracted.strip():
+        try:
+            await sent.edit_text("⚠ Nessun testo estraibile dal documento.")
+        except Exception:
+            pass
+        return
+
+    truncated = ""
+    if len(extracted) > _MAX_DOC_CHARS:
+        extracted = extracted[:_MAX_DOC_CHARS]
+        truncated = f"\n\n[Documento troncato a {_MAX_DOC_CHARS} caratteri]"
+
+    doc_context = f"📄 **{fname}**\n\n{extracted}{truncated}"
+
+    try:
+        await sent.edit_text(
+            f"📄 Testo estratto ({len(extracted)} caratteri). Elaborazione in corso…"
+        )
+    except Exception:
+        pass
+
+    session = _sessions[chat_id]
+    session.append({"role": "user", "content": f"{caption}\n\n{doc_context}"})
+    if len(session) > _MAX_HISTORY:
+        _sessions[chat_id] = session[-_MAX_HISTORY:]
+        session = _sessions[chat_id]
+
+    reply_sent = await msg.reply_text("⏳")
+    await _stream_reply(chat_id, session, model, reply_sent, update)
+
+
 # ── Bot lifecycle ─────────────────────────────────────────────────────────────
 
-# Command menu shown in the Telegram UI (the "/" hint list).
 _BOT_COMMANDS = [
     BotCommand("agent", "Modalità agente (Multi-MCP orchestrator)"),
     BotCommand("chat", "Torna alla chat normale (/chat <id> per un modello)"),
     BotCommand("imagine", "Genera un'immagine (/imagine <prompt>)"),
     BotCommand("new", "Nuova conversazione"),
-    BotCommand("model", "Mostra o cambia il modello (/model <id>)"),
+    BotCommand("model", "Scegli il modello (tastiera inline)"),
     BotCommand("models", "Lista modelli disponibili (/models <query>)"),
+    BotCommand("history", "Mostra la conversazione corrente"),
+    BotCommand("search", "Cerca nelle conversazioni (/search <testo>)"),
     BotCommand("stats", "Statistiche di utilizzo"),
+    BotCommand("link", "Collega al profilo web"),
+    BotCommand("unlink", "Scollega dal profilo web"),
     BotCommand("help", "Mostra l'elenco dei comandi"),
 ]
 
@@ -621,6 +1191,7 @@ def build_application() -> Application:
         .post_init(_post_init)
         .build()
     )
+    # Command handlers
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_start))
     app.add_handler(CommandHandler("new", cmd_new))
@@ -629,7 +1200,21 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("model", cmd_model))
     app.add_handler(CommandHandler("models", cmd_models))
     app.add_handler(CommandHandler("imagine", cmd_imagine))
+    app.add_handler(CommandHandler("history", cmd_history))
+    app.add_handler(CommandHandler("search", cmd_search))
     app.add_handler(CommandHandler("stats", cmd_stats))
+    app.add_handler(CommandHandler("link", cmd_link))
+    app.add_handler(CommandHandler("unlink", cmd_unlink))
+    # Callback query handlers (inline keyboards)
+    app.add_handler(CallbackQueryHandler(_cb_model_provider, pattern=r"^mp:(?!__back__)"))
+    app.add_handler(CallbackQueryHandler(_cb_model_back, pattern=r"^mp:__back__$"))
+    app.add_handler(CallbackQueryHandler(_cb_model_select, pattern=r"^ms:\d+$"))
+    app.add_handler(CallbackQueryHandler(_cb_quick_action, pattern=r"^qa:"))
+    # Inline query handler
+    app.add_handler(InlineQueryHandler(handle_inline_query))
+    # Message handlers
+    app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     return app

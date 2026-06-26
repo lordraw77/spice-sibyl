@@ -63,32 +63,32 @@
 - **Production Dockerfile** — multi-stage build (`node:20-alpine` → `ng build --configuration production` → `nginx:1.27-alpine`); eliminates the dev-server in production
 - **Environment documentation** — deployment guide (`docs/deploy.md`) rewritten with `PUBLIC_URL`, `VAULT_SECRET_KEY`, DDNS setup, TLS options, and architecture diagram
 
-## Phase 9 — Telegram UX & Voice
-- **Inline keyboards for model selection** — `/model` presents tappable buttons instead of requiring the user to type model IDs; callback query handler for selection
-- **Voice message support** — receive Telegram voice/audio messages, transcribe via Whisper (Groq / provider), and reply to the transcribed text
-- **Quick action buttons** — inline keyboard buttons after each assistant reply: Regenerate, Translate, Summarize, Continue
-- **Conversation history in Telegram** — `/history` to list recent conversations; `/search <query>` to full-text search past messages from within Telegram
+## Phase 9 ✓
+- **Inline keyboards for model selection** — `/model` presents a two-step inline keyboard (provider → model) with tappable buttons; callback query handlers for provider selection, model selection, and back-navigation; current model highlighted with ✅
+- **Voice message support** — receive Telegram voice/audio messages, transcribe via Groq Whisper (`whisper-large-v3`), show transcription, then stream the LLM reply to the transcribed text
+- **Quick action buttons** — inline keyboard buttons after each assistant reply: Regenerate (re-runs last turn), Translate (IT↔EN), Summarize (key points), Continue; shared streaming helper (`_stream_reply`) refactored from the message handler
+- **Conversation history in Telegram** — `/history` lists the last 20 messages in the current in-memory session; `/search <query>` performs full-text search (FTS5) across all saved conversations and returns titles + snippets
 
-## Phase 10 — Chat experience
-- **Prompt templates library** — saved and reusable system prompts (e.g. "Translate to English", "Code review", "ELI5"); manage via sidebar panel; one-click apply
-- **Conversation folders and tags** — organize conversations with color-coded tags or folders; filter sidebar by tag
-- **Message bookmarks / pins** — pin important messages inside a conversation; quick-jump to pinned messages
-- **Conversation branching / forking** — regenerate keeps both responses as parallel branches; tree navigation to switch between alternatives
-- **Drag-and-drop file upload** — drop images (and eventually PDF/text) directly onto the chat area
+## Phase 10 ✓
+- **Prompt templates library** — saved and reusable system prompts (e.g. "Translate to English", "Code review", "ELI5"); manage via sidebar panel; one-click apply; save current system prompt as template
+- **Conversation folders and tags** — color-coded tags on conversations; tag filter bar in sidebar; tag manager section to create/edit/delete tags; assign tags to conversations via popover
+- **Message bookmarks / pins** — pin important messages inside a conversation; pinned messages bar above chat for quick-jump; toggle pin via hover action button
+- **Conversation branching / forking** — regenerate keeps both responses as parallel branches; `< 1/3 >` branch navigation arrows on assistant messages; switch between alternatives; branches persisted with parent_id + branch_index in SQLite
+- **Drag-and-drop file upload** — drop images directly onto the chat area with visual overlay; validates type (image/*) and size (20 MB max)
 
-## Phase 11 — Cross-platform & analytics
-- **Telegram ↔ web profile linking** — associate a Telegram user with a web profile so conversations and stats are shared across channels
-- **Cost and usage charts** — time-series graphs (daily/weekly) of tokens and costs on the Stats page
-- **Inline model comparison** — send the same prompt to 2–3 models in parallel and display responses side by side
-- **TTS (text-to-speech)** — play button on assistant messages using Web Speech API
-- **Dark / light theme toggle** — switch between dark and light themes, or follow system preference
+## Phase 11 ✓
+- **Telegram ↔ web profile linking** — `/link` command generates a 6-char code; paste in web sidebar to associate Telegram user with web profile; `/unlink` to disconnect; linked users share conversations and stats across channels
+- **Cost and usage charts** — daily time-series charts on the Stats page (tokens area chart + cost bar chart); switchable 7d/30d/90d range; `GET /v1/stats/daily` endpoint with SQLite date aggregation
+- **Inline model comparison** — new `/compare` page; select 2–4 models, send the same prompt, stream responses in parallel side-by-side columns with per-model telemetry (latency, tokens, cost)
+- **TTS (text-to-speech)** — play/stop button on assistant messages using Web Speech API (`SpeechSynthesisUtterance`); strips markdown before speaking; Italian language default
+- **Dark / light theme toggle** — CSS custom properties system (`--bg-primary`, `--text-primary`, `--accent`, etc.); `ThemeService` with dark/light/system modes; toggle button in navbar (sun/moon icon); preference stored in localStorage; `[data-theme]` attribute on `<html>`
 
-## Phase 12 — Power user & extensibility
-- **Global keyboard shortcuts** — `Ctrl+K` conversation search, `Ctrl+N` new chat, `Ctrl+Shift+S` toggle sidebar
-- **Telegram inline query mode** — `@bot query` to get answers directly in any Telegram chat without opening the bot conversation
-- **Telegram document upload** — accept PDF, TXT, DOCX files; extract text and send as context to the model
-- **Conversation sharing** — generate a read-only shareable link for a conversation; export as image or PDF
-- **Custom theme accent color** — let users pick their own accent color in the UI
+## Phase 12 ✓
+- **Global keyboard shortcuts** — `Ctrl+K` conversation search (opens sidebar + focuses search input), `Ctrl+N` new chat, `Ctrl+Shift+S` toggle sidebar; guards against firing in input fields (except Ctrl+K)
+- **Telegram inline query mode** — `@bot query` to get answers directly in any Telegram chat; non-streaming LLM call with 300 max tokens; `InlineQueryResultArticle` with 30s cache
+- **Telegram document upload** — accept PDF (`PyPDF2`), TXT, DOCX (`python-docx`) files; extract text (truncated to 8000 chars); send as context to the active model with caption; streamed response via `_stream_reply`
+- **Conversation sharing** — `POST /v1/conversations/{id}/share` generates a unique token; `GET /v1/shared/{token}` returns read-only conversation (public, no auth); share button in topbar copies link to clipboard; `/shared/:token` route with `SharedViewComponent` (minimal read-only layout with markdown rendering + syntax highlighting)
+- **Custom theme accent color** — `ThemeService` extended with `setAccent()`/`resetAccent()`; dynamically updates all `--accent-*` CSS custom properties; navbar accent picker with 8 preset color swatches + `<input type="color">`; persisted in localStorage; works across dark and light themes
 
 ## Phase 13 — Security & access
 - **Authentication and access control** — user accounts with login (email/password or OAuth); role-based permissions (admin, user, read-only); JWT session tokens

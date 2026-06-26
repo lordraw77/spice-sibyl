@@ -26,5 +26,15 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./features/stats/stats-page.component').then((m) => m.StatsPageComponent),
   },
+  {
+    path: 'compare',
+    loadComponent: () =>
+      import('./features/compare/compare-page.component').then((m) => m.ComparePageComponent),
+  },
+  {
+    path: 'shared/:token',
+    loadComponent: () =>
+      import('./features/shared/shared-view.component').then((m) => m.SharedViewComponent),
+  },
   { path: '**', redirectTo: 'chat' },
 ];

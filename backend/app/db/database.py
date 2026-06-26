@@ -57,6 +57,47 @@ CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated
 CREATE INDEX IF NOT EXISTS idx_messages_provider ON messages(provider);
 CREATE INDEX IF NOT EXISTS idx_messages_role ON messages(role);
 
+CREATE TABLE IF NOT EXISTS telegram_links (
+    telegram_id INTEGER PRIMARY KEY,
+    profile_id  TEXT    NOT NULL UNIQUE,
+    username    TEXT,
+    linked_at   INTEGER NOT NULL,
+    FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS prompt_templates (
+    id         TEXT    PRIMARY KEY,
+    profile_id TEXT    NOT NULL DEFAULT 'default',
+    name       TEXT    NOT NULL,
+    content    TEXT    NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tags (
+    id         TEXT    PRIMARY KEY,
+    profile_id TEXT    NOT NULL DEFAULT 'default',
+    name       TEXT    NOT NULL,
+    color      TEXT    NOT NULL DEFAULT '#d6b279',
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS conversation_tags (
+    conversation_id TEXT NOT NULL,
+    tag_id          TEXT NOT NULL,
+    PRIMARY KEY (conversation_id, tag_id),
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+    FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS shared_conversations (
+    share_token     TEXT    PRIMARY KEY,
+    conversation_id TEXT    NOT NULL,
+    created_at      INTEGER NOT NULL,
+    expires_at      INTEGER,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
     id              UNINDEXED,
     conversation_id UNINDEXED,
@@ -88,6 +129,11 @@ _MIGRATIONS = [
     "ALTER TABLE conversations ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
     # Populate FTS index from existing messages (idempotent via INSERT OR IGNORE)
     "INSERT OR IGNORE INTO messages_fts(id, conversation_id, content) SELECT id, conversation_id, content FROM messages",
+    # Phase 10: message pins
+    "ALTER TABLE messages ADD COLUMN pinned INTEGER DEFAULT 0",
+    # Phase 10: conversation branching
+    "ALTER TABLE messages ADD COLUMN parent_id TEXT DEFAULT NULL",
+    "ALTER TABLE messages ADD COLUMN branch_index INTEGER DEFAULT 0",
 ]
 
 

@@ -2,7 +2,10 @@ from collections import defaultdict
 
 import aiosqlite
 
+import time
+
 from app.schemas.stats import (
+    DailyStats,
     GlobalStats,
     ModelStats,
     ProfileSlice,
@@ -232,3 +235,41 @@ async def get_usage_stats(db: aiosqlite.Connection) -> UsageStats:
         by_provider=by_provider,
         by_model=by_model,
     )
+
+
+async def get_daily_stats(
+    db: aiosqlite.Connection, days: int = 30, profile_id: str | None = None
+) -> list[DailyStats]:
+    cutoff = int(time.time()) - (days * 86400)
+    query = """
+    SELECT
+        date(m.created_at, 'unixepoch') AS day,
+        COUNT(*)                        AS message_count,
+        COALESCE(SUM(m.prompt_tokens), 0)     AS prompt_tokens,
+        COALESCE(SUM(m.completion_tokens), 0) AS completion_tokens,
+        COALESCE(SUM(m.total_tokens), 0)      AS total_tokens,
+        COALESCE(SUM(m.estimated_cost), 0)    AS estimated_cost
+    FROM messages m
+    JOIN conversations c ON c.id = m.conversation_id
+    WHERE m.role = 'assistant'
+      AND m.created_at > ?
+    """
+    params: list = [cutoff]
+    if profile_id:
+        query += " AND c.profile_id = ?"
+        params.append(profile_id)
+    query += " GROUP BY day ORDER BY day ASC"
+
+    async with db.execute(query, params) as cursor:
+        rows = await cursor.fetchall()
+    return [
+        DailyStats(
+            date=r["day"],
+            message_count=r["message_count"],
+            prompt_tokens=r["prompt_tokens"],
+            completion_tokens=r["completion_tokens"],
+            total_tokens=r["total_tokens"],
+            estimated_cost=r["estimated_cost"],
+        )
+        for r in rows
+    ]

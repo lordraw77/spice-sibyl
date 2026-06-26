@@ -33,6 +33,16 @@ export interface ChatMessage {
   created_at?: number;
   capabilities?: string[];
   free?: boolean;
+  /** Message persistence ID (from backend) */
+  id?: string;
+  /** Whether this message is pinned / bookmarked */
+  pinned?: boolean;
+  /** Parent message ID for branching */
+  parent_id?: string;
+  /** Branch index among siblings */
+  branch_index?: number;
+  /** Total number of branches for this parent (UI-only) */
+  branch_count?: number;
 }
 
 /** Tool call inside an assistant message */
@@ -165,6 +175,7 @@ export interface ConversationSummary {
   model: string;
   created_at: number;
   updated_at: number;
+  tags?: Tag[];
 }
 
 /** Full conversation including message history */
@@ -179,6 +190,33 @@ export interface SearchResult {
   model: string;
   updated_at: number;
   snippet: string;
+}
+
+/** Saved system prompt template */
+export interface PromptTemplate {
+  id: string;
+  profile_id: string;
+  name: string;
+  content: string;
+  created_at: number;
+  updated_at: number;
+}
+
+/** Color-coded conversation tag */
+export interface Tag {
+  id: string;
+  profile_id: string;
+  name: string;
+  color: string;
+  created_at: number;
+}
+
+/** Telegram link status */
+export interface TelegramLinkStatus {
+  linked: boolean;
+  telegram_id?: number;
+  username?: string;
+  linked_at?: number;
 }
 
 /** Telegram bot runtime counters (in-memory, reset on restart) */
@@ -244,6 +282,15 @@ export interface ModelStats {
   avg_latency_ms: number | null;
   avg_tokens_per_second: number | null;
   by_profile: ProfileSlice[];
+}
+
+export interface DailyStats {
+  date: string;
+  message_count: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  estimated_cost: number;
 }
 
 export interface UsageStats {

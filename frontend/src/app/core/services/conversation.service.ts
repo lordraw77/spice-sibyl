@@ -40,9 +40,35 @@ export class ConversationService {
     return this.http.post<void>(`${this.baseUrl}/${id}/messages`, { messages });
   }
 
+  togglePin(conversationId: string, messageId: string): Observable<{ pinned: boolean }> {
+    return this.http.patch<{ pinned: boolean }>(`${this.baseUrl}/${conversationId}/messages/${messageId}/pin`, {});
+  }
+
+  getPins(conversationId: string): Observable<ChatMessage[]> {
+    return this.http.get<ChatMessage[]>(`${this.baseUrl}/${conversationId}/pins`);
+  }
+
+  getBranches(conversationId: string, parentId: string): Observable<ChatMessage[]> {
+    return this.http.get<ChatMessage[]>(`${this.baseUrl}/${conversationId}/branches`, {
+      params: { parent_id: parentId },
+    });
+  }
+
   search(query: string, profileId?: string): Observable<SearchResult[]> {
     const params: Record<string, string> = { q: query };
     if (profileId) params['profile_id'] = profileId;
     return this.http.get<SearchResult[]>(`${this.baseUrl}/search`, { params });
+  }
+
+  share(conversationId: string): Observable<{ share_token: string; url: string }> {
+    return this.http.post<{ share_token: string; url: string }>(`${this.baseUrl}/${conversationId}/share`, {});
+  }
+
+  unshare(conversationId: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/${conversationId}/share`);
+  }
+
+  getShared(token: string): Observable<Conversation> {
+    return this.http.get<Conversation>(`${this.config.apiUrl}/shared/${token}`);
   }
 }

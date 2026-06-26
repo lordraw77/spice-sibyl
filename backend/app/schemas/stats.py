@@ -65,6 +65,15 @@ class ModelStats(BaseModel):
     by_profile: list[ProfileSlice] = []
 
 
+class DailyStats(BaseModel):
+    date: str
+    message_count: int
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    estimated_cost: float
+
+
 class UsageStats(BaseModel):
     global_stats: GlobalStats
     by_profile: list[ProfileSummary]

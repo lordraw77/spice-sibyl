@@ -7,7 +7,7 @@
 
   <!-- ── Sidebar ─────────────────────────────────────────────── -->
   <aside class="sidebar">
-    <div class="sidebar-inner">
+    <div class="sidebar-inner" (click)="closeTagPopover()">
 
       <div class="sidebar-head">
         <span class="sidebar-brand">SpiceSibyl</span>
@@ -22,6 +22,24 @@
         <span class="profile-chip-name">{{ profileService.current()?.name }}</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="7 10 12 15 17 10"/></svg>
       </button>
+
+      <!-- Telegram link -->
+      <div class="telegram-link-section">
+        <ng-container *ngIf="telegramLink().linked; else notLinked">
+          <div class="telegram-linked">
+            <span class="telegram-badge">Telegram: {{ '@' + (telegramLink().username || 'collegato') }}</span>
+            <button class="telegram-unlink-btn" (click)="unlinkTelegram()" title="Scollega">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </ng-container>
+        <ng-template #notLinked>
+          <div class="telegram-link-form">
+            <input class="template-form-input" type="text" placeholder="Codice /link da Telegram" [(ngModel)]="telegramLinkCode" style="font-size:.76rem" />
+            <button class="btn-system-save" style="font-size:.72rem;padding:.2rem .5rem" (click)="submitTelegramLink()" [disabled]="!telegramLinkCode.trim() || telegramLinkLoading">Collega</button>
+          </div>
+        </ng-template>
+      </div>
 
       <!-- Conversations -->
       <div class="sidebar-section">
@@ -41,9 +59,10 @@
           <div class="search-bar">
             <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input
+              #searchInput
               class="search-input"
               type="text"
-              placeholder="Cerca nelle conversazioni…"
+              placeholder="Cerca nelle conversazioni… (Ctrl+K)"
               [value]="searchQuery()"
               (input)="onSearchInput($any($event.target).value)"
               (keydown.escape)="clearSearch()"
@@ -51,6 +70,19 @@
             <button class="search-clear" *ngIf="searchQuery()" (click)="clearSearch()" title="Cancella">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
+          </div>
+
+          <!-- Tag filter chips -->
+          <div class="tag-filter-bar" *ngIf="tags().length">
+            <button class="tag-filter-chip" [class.active]="!selectedTagFilter()" (click)="setTagFilter(null)">Tutte</button>
+            <button
+              *ngFor="let tag of tags()"
+              class="tag-filter-chip"
+              [class.active]="selectedTagFilter() === tag.id"
+              [style.border-color]="tag.color"
+              [style.color]="selectedTagFilter() === tag.id ? tag.color : ''"
+              (click)="setTagFilter(tag.id)"
+            >{{ tag.name }}</button>
           </div>
 
           <!-- Search results -->
@@ -76,23 +108,48 @@
 
           <!-- Normal conversation list -->
           <ng-template #normalList>
-            <ul class="conversation-list" *ngIf="conversations().length; else noConvs">
+            <ul class="conversation-list" *ngIf="filteredConversations().length; else noConvs">
               <li
-                *ngFor="let conv of conversations()"
+                *ngFor="let conv of filteredConversations()"
                 class="conversation-item"
                 [class.active]="conv.id === currentConversationId"
                 (click)="selectConversation(conv.id)"
               >
-                <span class="conv-title">{{ conv.title }}</span>
-                <button class="conv-delete" (click)="deleteConversation(conv.id, $event)" title="Elimina">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
+                <div class="conv-title-row">
+                  <span class="conv-tags-dots" *ngIf="conv.tags?.length">
+                    <span *ngFor="let t of conv.tags" class="conv-tag-dot" [style.background]="t.color" [title]="t.name"></span>
+                  </span>
+                  <span class="conv-title">{{ conv.title }}</span>
+                </div>
+                <div class="conv-actions">
+                  <button class="conv-action-btn" (click)="openTagAssign(conv.id, $event)" title="Tag">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                  </button>
+                  <button class="conv-delete" (click)="deleteConversation(conv.id, $event)" title="Elimina">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
               </li>
             </ul>
             <ng-template #noConvs>
               <p class="no-convs">Nessuna conversazione salvata.</p>
             </ng-template>
           </ng-template>
+
+          <!-- Tag assign popover (fixed position, outside list overflow) -->
+          <div class="tag-assign-popover" *ngIf="tagAssignConvId" [ngStyle]="tagPopoverStyle" (click)="$event.stopPropagation()">
+            <button
+              *ngFor="let tag of tags()"
+              class="tag-assign-item"
+              [class.selected]="convHasTag(tagAssignConvId, tag.id)"
+              (click)="toggleConversationTag(tagAssignConvId, tag.id)"
+            >
+              <span class="tag-assign-dot" [style.background]="tag.color"></span>
+              {{ tag.name }}
+              <span class="tag-assign-check" *ngIf="convHasTag(tagAssignConvId, tag.id)">&#10003;</span>
+            </button>
+            <p class="no-convs" *ngIf="!tags().length" style="padding: .3rem .5rem">Nessun tag creato.</p>
+          </div>
         </ng-container>
       </div>
 
@@ -144,6 +201,54 @@
         </ng-container>
       </div>
 
+      <!-- Prompt Templates -->
+      <div class="sidebar-section">
+        <div class="section-header">
+          <button class="section-collapse-btn" (click)="toggleTemplates()" [attr.aria-expanded]="templatesOpen()">
+            <span class="section-label">Template</span>
+            <svg class="section-chevron" [class.open]="templatesOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <button class="btn-new-chat" (click)="showTemplateForm()" title="Nuovo template" *ngIf="templatesOpen()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+        </div>
+        <ng-container *ngIf="templatesOpen()">
+          <!-- Save current system prompt as template -->
+          <button class="btn-save-as-template" *ngIf="systemPrompt.trim() && !templateFormVisible" (click)="saveTemplateFromCurrent()">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Salva prompt corrente come template
+          </button>
+
+          <!-- Template create/edit form -->
+          <div class="template-form" *ngIf="templateFormVisible">
+            <input class="template-form-input" type="text" placeholder="Nome template" [(ngModel)]="templateFormName" />
+            <textarea class="system-textarea" rows="3" placeholder="Contenuto del template…" [(ngModel)]="templateFormContent"></textarea>
+            <div class="system-actions">
+              <button class="btn-system-save" (click)="saveTemplate()" [disabled]="!templateFormName.trim() || !templateFormContent.trim()">
+                {{ templateEditId ? 'Aggiorna' : 'Salva' }}
+              </button>
+              <button class="btn-system-clear" (click)="cancelTemplateForm()">Annulla</button>
+            </div>
+          </div>
+
+          <!-- Template list -->
+          <ul class="template-list" *ngIf="templates().length && !templateFormVisible">
+            <li *ngFor="let t of templates()" class="template-item" (click)="applyTemplate(t)" title="Clicca per applicare">
+              <span class="template-name">{{ t.name }}</span>
+              <div class="template-actions">
+                <button class="conv-action-btn" (click)="showTemplateForm(t); $event.stopPropagation()" title="Modifica">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <button class="conv-delete" (click)="deleteTemplate(t.id, $event)" title="Elimina">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+            </li>
+          </ul>
+          <p class="no-convs" *ngIf="!templates().length && !templateFormVisible">Nessun template salvato.</p>
+        </ng-container>
+      </div>
+
       <!-- Parameters -->
       <div class="sidebar-section">
         <div class="section-header">
@@ -178,6 +283,54 @@
             <span class="tool-name">{{ t.function.name }}</span>
           </li>
         </ul>
+      </div>
+
+      <!-- Tag Manager -->
+      <div class="sidebar-section">
+        <div class="section-header">
+          <button class="section-collapse-btn" (click)="toggleTags()" [attr.aria-expanded]="tagsOpen()">
+            <span class="section-label">Tag</span>
+            <svg class="section-chevron" [class.open]="tagsOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <button class="btn-new-chat" (click)="showTagForm()" title="Nuovo tag" *ngIf="tagsOpen()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+        </div>
+        <ng-container *ngIf="tagsOpen()">
+        <!-- Tag create/edit form -->
+        <div class="template-form" *ngIf="tagFormVisible">
+          <input class="template-form-input" type="text" placeholder="Nome tag" [(ngModel)]="tagFormName" />
+          <div class="tag-color-picker">
+            <button
+              *ngFor="let c of TAG_COLORS"
+              class="tag-color-swatch"
+              [style.background]="c"
+              [class.selected]="tagFormColor === c"
+              (click)="tagFormColor = c"
+            ></button>
+          </div>
+          <div class="system-actions">
+            <button class="btn-system-save" (click)="saveTag()" [disabled]="!tagFormName.trim()">
+              {{ tagEditId ? 'Aggiorna' : 'Salva' }}
+            </button>
+            <button class="btn-system-clear" (click)="cancelTagForm()">Annulla</button>
+          </div>
+        </div>
+        <!-- Tag list -->
+        <div class="tag-manager-list" *ngIf="tags().length && !tagFormVisible">
+          <div *ngFor="let tag of tags()" class="tag-manager-item">
+            <span class="tag-manager-dot" [style.background]="tag.color"></span>
+            <span class="tag-manager-name">{{ tag.name }}</span>
+            <button class="conv-action-btn" (click)="showTagForm(tag)" title="Modifica">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button class="conv-delete" (click)="deleteTag(tag.id, $event)" title="Elimina">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </div>
+        <p class="no-convs" *ngIf="!tags().length && !tagFormVisible">Nessun tag creato.</p>
+        </ng-container>
       </div>
 
       <!-- Providers -->
@@ -237,6 +390,10 @@
       <div class="topbar-right">
         <span class="status" [class.live]="!loading">{{ loading ? 'Thinking…' : 'Ready' }}</span>
         <div class="export-menu" *ngIf="currentConversationId">
+          <button class="btn-export" title="Condividi conversazione" (click)="shareConversation()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+            Condividi
+          </button>
           <button class="btn-export" title="Esporta conversazione" (click)="exportConversation('md')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             MD
@@ -249,13 +406,32 @@
       </div>
     </header>
 
-    <div class="messages" #messagesContainer (scroll)="onMessagesScroll()">
+    <!-- Pinned messages bar -->
+    <div class="pinned-bar" *ngIf="pinnedMessages().length">
+      <span class="pinned-bar-label">Fissati</span>
+      <button *ngFor="let pin of pinnedMessages()" class="pinned-bar-item" (click)="scrollToMessage(pin.id!)">
+        {{ pinPreview(pin) }}
+      </button>
+    </div>
+
+    <div class="messages" #messagesContainer (scroll)="onMessagesScroll()"
+         (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)"
+         [class.drag-active]="dragActive">
+      <div class="drop-overlay" *ngIf="dragActive">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        <span>Trascina un'immagine qui</span>
+      </div>
       <div
         class="message"
         *ngFor="let message of messages(); let i = index; let last = last"
         [class.user]="message.role === 'user'"
         [class.streaming]="streaming && last && message.role === 'assistant'"
+        [class.pinned]="message.pinned"
       >
+        <div class="pin-indicator" *ngIf="message.pinned">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
+          Fissato
+        </div>
         <div class="role">{{ roleLabel(message) }}</div>
 
         <!-- Tool call / result events shown above the reply text -->
@@ -304,17 +480,31 @@
         </div>
 
         <!-- Message action buttons -->
-        <div class="message-actions" *ngIf="!streaming">
+        <div class="message-actions" *ngIf="!(streaming && last && message.role === 'assistant')">
           <button class="msg-action-btn" (click)="copyMessage(message, i)" [title]="copiedMessageIdx === i ? 'Copiato!' : 'Copia'">
             <svg *ngIf="copiedMessageIdx !== i" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             <svg *ngIf="copiedMessageIdx === i" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           </button>
-          <button class="msg-action-btn" *ngIf="message.role === 'assistant' && last" (click)="regenerate()" title="Rigenera risposta">
+          <button class="msg-action-btn" *ngIf="hasSpeechSynthesis && message.role === 'assistant' && message.content" (click)="speakingMessageIdx === i ? stopSpeaking() : speakMessage(message, i)" [title]="speakingMessageIdx === i ? 'Stop' : 'Leggi ad alta voce'">
+            <svg *ngIf="speakingMessageIdx !== i" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+            <svg *ngIf="speakingMessageIdx === i" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+          </button>
+          <button class="msg-action-btn" *ngIf="message.id && currentConversationId" (click)="togglePin(message, i)" [title]="message.pinned ? 'Rimuovi pin' : 'Fissa messaggio'">
+            <svg width="13" height="13" viewBox="0 0 24 24" [attr.fill]="message.pinned ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
+          </button>
+          <button class="msg-action-btn" *ngIf="message.role === 'assistant' && i === lastAssistantMessageIdx" (click)="regenerate()" title="Rigenera risposta">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3"/></svg>
           </button>
           <button class="msg-action-btn" *ngIf="message.role === 'user' && i === lastUserMessageIdx" (click)="editLastUserMessage()" title="Modifica messaggio">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
+        </div>
+
+        <!-- Branch navigation -->
+        <div class="branch-nav" *ngIf="message.role === 'assistant' && message.branch_count && message.branch_count > 1">
+          <button class="branch-nav-btn" (click)="switchBranch(message, -1)" [disabled]="(message.branch_index ?? 0) === 0">&lt;</button>
+          <span class="branch-label">{{ (message.branch_index ?? 0) + 1 }}/{{ message.branch_count }}</span>
+          <button class="branch-nav-btn" (click)="switchBranch(message, 1)" [disabled]="(message.branch_index ?? 0) >= (message.branch_count ?? 1) - 1">&gt;</button>
         </div>
       </div>
 
@@ -402,7 +592,7 @@
         <button
           *ngIf="!streaming"
           class="composer-send"
-          [disabled]="loading || !prompt.trim()"
+          [disabled]="loading || (!prompt.trim() && !attachedImageB64)"
           (click)="send()"
           [title]="loading ? 'Invio in corso…' : 'Invia (Enter)'"
         >
@@ -412,7 +602,7 @@
           <span *ngIf="loading" class="send-spinner"></span>
         </button>
       </div>
-      <p class="composer-hint">Enter per inviare · Shift+Enter per andare a capo · 📎 per vision · /imagine per generare</p>
+      <p class="composer-hint">Enter per inviare · Shift+Enter per andare a capo · 📎 per vision · /imagine per generare · Ctrl+K cerca · Ctrl+N nuova chat</p>
     </div>
 
   </div>

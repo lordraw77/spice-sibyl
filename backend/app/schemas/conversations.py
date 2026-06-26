@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 
 from app.schemas.chat import ChatMessage
+from app.schemas.tags import Tag
 
 
 class ConversationCreate(BaseModel):
@@ -19,6 +20,7 @@ class ConversationSummary(BaseModel):
     model: str
     created_at: int
     updated_at: int
+    tags: list[Tag] = []
 
 
 class Conversation(ConversationSummary):

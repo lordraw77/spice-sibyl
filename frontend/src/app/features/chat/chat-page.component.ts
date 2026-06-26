@@ -17,6 +17,7 @@ import {
   AfterViewChecked,
   Component,
   ElementRef,
+  HostListener,
   OnDestroy,
   OnInit,
   ViewChild,
@@ -35,8 +36,10 @@ import { ChatService } from '../../core/services/chat.service';
 import { ChatStateService } from '../../core/services/chat-state.service';
 import { ConversationService } from '../../core/services/conversation.service';
 import { ProfileService } from '../../core/services/profile.service';
+import { TemplateService } from '../../core/services/template.service';
+import { TagService } from '../../core/services/tag.service';
 import { ProfileModalComponent } from '../profile/profile-modal.component';
-import { ChatCompletionResponse, ChatMessage, ChatModel, ConversationSummary, ProviderSummary, SearchResult, ToolDefinition, ToolEvent } from '../../core/models/chat.models';
+import { ChatCompletionResponse, ChatMessage, ChatModel, ConversationSummary, PromptTemplate, ProviderSummary, SearchResult, Tag, TelegramLinkStatus, ToolDefinition, ToolEvent } from '../../core/models/chat.models';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked, Renderer } from 'marked';
 import DOMPurify from 'dompurify';
@@ -62,6 +65,8 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly router = inject(Router);
   private readonly appConfig = inject(AppConfigService);
   private readonly userPrefs = inject(UserPreferencesService);
+  private readonly templateService = inject(TemplateService);
+  private readonly tagService = inject(TagService);
 
   private readonly savedPrefs = this.userPrefs.get();
   readonly availabilityFilter = signal<'all' | 'free'>(this.savedPrefs.availabilityFilter);
@@ -73,12 +78,47 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   readonly providerOpen = signal(this.savedPrefs.sectionsOpen.provider);
   readonly systemOpen = signal(this.savedPrefs.sectionsOpen.system);
   readonly paramsOpen = signal(this.savedPrefs.sectionsOpen.params);
+  readonly templatesOpen = signal(false);
+  readonly tagsOpen = signal(false);
+
+  // Prompt templates
+  readonly templates = signal<PromptTemplate[]>([]);
+  templateFormVisible = false;
+  templateEditId: string | null = null;
+  templateFormName = '';
+  templateFormContent = '';
+
+  // Tags
+  readonly tags = signal<Tag[]>([]);
+  readonly selectedTagFilter = signal<string | null>(null);
+  tagFormVisible = false;
+  tagEditId: string | null = null;
+  tagFormName = '';
+  tagFormColor = '#d6b279';
+  tagAssignConvId: string | null = null;
+
+  readonly TAG_COLORS = ['#d6b279', '#e07070', '#89d39a', '#8ed0ff', '#c89aff', '#ff9a5c', '#5ac8c8', '#ff7eb3'];
+
+  // Telegram linking
+  telegramLink = signal<TelegramLinkStatus>({ linked: false });
+  telegramLinkCode = '';
+  telegramLinkLoading = false;
 
   toggleConversations(): void { this.conversationsOpen.update(v => !v); this.userPrefs.setSection('conversations', this.conversationsOpen()); }
   toggleModel(): void { this.modelOpen.update(v => !v); this.userPrefs.setSection('model', this.modelOpen()); }
   toggleProviderSection(): void { this.providerOpen.update(v => !v); this.userPrefs.setSection('provider', this.providerOpen()); }
   toggleSystem(): void { this.systemOpen.update(v => !v); this.userPrefs.setSection('system', this.systemOpen()); }
   toggleParams(): void { this.paramsOpen.update(v => !v); this.userPrefs.setSection('params', this.paramsOpen()); }
+  toggleTemplates(): void { this.templatesOpen.update(v => !v); }
+  toggleTags(): void { this.tagsOpen.update(v => !v); }
+
+  /** Conversations filtered by the selected tag */
+  readonly filteredConversations = computed(() => {
+    const tag = this.selectedTagFilter();
+    const convs = this.conversations();
+    if (!tag) return convs;
+    return convs.filter(c => c.tags?.some(t => t.id === tag));
+  });
 
   constructor() {
     // Reload the conversation list whenever the active profile changes.
@@ -89,6 +129,8 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
       const profile = this.profileService.current();
       if (profile) {
         this.loadConversationList();
+        this.loadTemplates();
+        this.loadTags();
         if (profile.id !== this.chatState.lastActiveProfileId) {
           this.chatState.lastActiveProfileId = profile.id;
           this.currentConversationId = null;
@@ -100,6 +142,41 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
 
   @ViewChild('messagesContainer')
   private messagesContainer?: ElementRef<HTMLDivElement>;
+
+  @ViewChild('searchInput')
+  private searchInputEl?: ElementRef<HTMLInputElement>;
+
+  @HostListener('document:keydown', ['$event'])
+  onGlobalKeydown(event: KeyboardEvent): void {
+    const ctrl = event.ctrlKey || event.metaKey;
+
+    // Ctrl+K → focus conversation search
+    if (ctrl && event.key === 'k') {
+      event.preventDefault();
+      if (!this.sidebarOpen) this.toggleSidebar();
+      if (!this.conversationsOpen()) this.conversationsOpen.set(true);
+      setTimeout(() => this.searchInputEl?.nativeElement?.focus(), 50);
+      return;
+    }
+
+    // Skip remaining shortcuts when typing in form fields
+    const tag = (event.target as HTMLElement)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || (event.target as HTMLElement)?.isContentEditable) return;
+
+    // Ctrl+N → new conversation
+    if (ctrl && event.key === 'n') {
+      event.preventDefault();
+      this.newConversation();
+      return;
+    }
+
+    // Ctrl+Shift+S → toggle sidebar
+    if (ctrl && event.shiftKey && event.key === 'S') {
+      event.preventDefault();
+      this.toggleSidebar();
+      return;
+    }
+  }
 
   readonly conversations = signal<ConversationSummary[]>([]);
   readonly searchResults = signal<SearchResult[]>([]);
@@ -164,8 +241,19 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   /** Base64-encoded image attached by the user for vision input */
   attachedImageB64: string | null = null;
   attachedImageName: string | null = null;
+  /** True while a file is being dragged over the chat area */
+  dragActive = false;
+
+  /** Branch navigation: tracks the active branch index per parent message ID */
+  readonly activeBranches = signal<Record<string, number>>({});
   /** True while an /imagine request is in-flight */
   generatingImage = false;
+
+  /** Pinned messages for the current conversation */
+  readonly pinnedMessages = signal<ChatMessage[]>([]);
+
+  /** Index of the message currently being spoken, or null */
+  speakingMessageIdx: number | null = null;
 
   /** Slash command autocomplete */
   readonly slashCommands: { cmd: string; desc: string; insert: string }[] = [
@@ -266,6 +354,10 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
       next: tools => this.availableTools.set(tools),
       error: () => {},
     });
+
+    this.loadTemplates();
+    this.loadTags();
+    this.loadTelegramLink();
 
     this.searchSubject.pipe(
       debounceTime(300),
@@ -584,6 +676,286 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     });
   }
 
+  // ── Prompt Templates ───────────────────────────────────────
+  loadTemplates(): void {
+    this.templateService.list(this.profileService.currentId).subscribe({
+      next: list => this.templates.set(list),
+      error: () => {},
+    });
+  }
+
+  applyTemplate(t: PromptTemplate): void {
+    this.systemPrompt = t.content;
+    localStorage.setItem('spicesibyl_system_prompt', t.content);
+    this.notifications.add('success', 'Template applicato', `"${t.name}" impostato come system prompt.`);
+  }
+
+  showTemplateForm(edit?: PromptTemplate): void {
+    this.templateFormVisible = true;
+    if (edit) {
+      this.templateEditId = edit.id;
+      this.templateFormName = edit.name;
+      this.templateFormContent = edit.content;
+    } else {
+      this.templateEditId = null;
+      this.templateFormName = '';
+      this.templateFormContent = '';
+    }
+  }
+
+  saveTemplateFromCurrent(): void {
+    if (!this.systemPrompt.trim()) return;
+    this.templateFormVisible = true;
+    this.templateEditId = null;
+    this.templateFormName = '';
+    this.templateFormContent = this.systemPrompt;
+  }
+
+  cancelTemplateForm(): void {
+    this.templateFormVisible = false;
+    this.templateEditId = null;
+    this.templateFormName = '';
+    this.templateFormContent = '';
+  }
+
+  saveTemplate(): void {
+    const name = this.templateFormName.trim();
+    const content = this.templateFormContent.trim();
+    if (!name || !content) return;
+    if (this.templateEditId) {
+      this.templateService.update(this.templateEditId, { name, content }).subscribe({
+        next: () => { this.cancelTemplateForm(); this.loadTemplates(); },
+        error: () => this.notifications.add('error', 'Errore', 'Impossibile aggiornare il template.'),
+      });
+    } else {
+      this.templateService.create(name, content, this.profileService.currentId).subscribe({
+        next: () => { this.cancelTemplateForm(); this.loadTemplates(); },
+        error: () => this.notifications.add('error', 'Errore', 'Impossibile creare il template.'),
+      });
+    }
+  }
+
+  deleteTemplate(id: string, event: Event): void {
+    event.stopPropagation();
+    this.templateService.delete(id).subscribe({
+      next: () => this.loadTemplates(),
+      error: () => this.notifications.add('error', 'Errore', 'Impossibile eliminare il template.'),
+    });
+  }
+
+  // ── Tags ──────────────────────────────────────────────────
+  loadTags(): void {
+    this.tagService.list(this.profileService.currentId).subscribe({
+      next: list => this.tags.set(list),
+      error: () => {},
+    });
+  }
+
+  setTagFilter(tagId: string | null): void {
+    this.selectedTagFilter.set(tagId);
+  }
+
+  showTagForm(edit?: Tag): void {
+    this.tagFormVisible = true;
+    if (edit) {
+      this.tagEditId = edit.id;
+      this.tagFormName = edit.name;
+      this.tagFormColor = edit.color;
+    } else {
+      this.tagEditId = null;
+      this.tagFormName = '';
+      this.tagFormColor = '#d6b279';
+    }
+  }
+
+  cancelTagForm(): void {
+    this.tagFormVisible = false;
+    this.tagEditId = null;
+    this.tagFormName = '';
+    this.tagFormColor = '#d6b279';
+  }
+
+  saveTag(): void {
+    const name = this.tagFormName.trim();
+    if (!name) return;
+    if (this.tagEditId) {
+      this.tagService.update(this.tagEditId, { name, color: this.tagFormColor }).subscribe({
+        next: () => { this.cancelTagForm(); this.loadTags(); this.loadConversationList(); },
+        error: () => this.notifications.add('error', 'Errore', 'Impossibile aggiornare il tag.'),
+      });
+    } else {
+      this.tagService.create(name, this.tagFormColor, this.profileService.currentId).subscribe({
+        next: () => { this.cancelTagForm(); this.loadTags(); },
+        error: () => this.notifications.add('error', 'Errore', 'Impossibile creare il tag.'),
+      });
+    }
+  }
+
+  deleteTag(id: string, event: Event): void {
+    event.stopPropagation();
+    this.tagService.delete(id).subscribe({
+      next: () => { this.loadTags(); this.loadConversationList(); },
+      error: () => this.notifications.add('error', 'Errore', 'Impossibile eliminare il tag.'),
+    });
+  }
+
+  tagPopoverStyle: Record<string, string> = {};
+
+  openTagAssign(convId: string, event: Event): void {
+    event.stopPropagation();
+    if (this.tagAssignConvId === convId) {
+      this.tagAssignConvId = null;
+      return;
+    }
+    this.tagAssignConvId = convId;
+    const el = event.target as HTMLElement;
+    const rect = el.closest('.conversation-item')?.getBoundingClientRect();
+    if (rect) {
+      this.tagPopoverStyle = {
+        top: rect.bottom + 4 + 'px',
+        left: rect.left + 'px',
+        width: rect.width + 'px',
+      };
+    }
+  }
+
+  toggleConversationTag(convId: string, tagId: string): void {
+    const conv = this.conversations().find(c => c.id === convId);
+    const currentTags = conv?.tags?.map(t => t.id) ?? [];
+    const newTags = currentTags.includes(tagId)
+      ? currentTags.filter(id => id !== tagId)
+      : [...currentTags, tagId];
+    this.tagService.setConversationTags(convId, newTags).subscribe({
+      next: () => this.loadConversationList(),
+      error: () => this.notifications.add('error', 'Errore', 'Impossibile aggiornare i tag.'),
+    });
+  }
+
+  convHasTag(convId: string, tagId: string): boolean {
+    return this.conversations().find(c => c.id === convId)?.tags?.some(t => t.id === tagId) ?? false;
+  }
+
+  // ── Telegram Linking ───────────────────────────────────────
+  loadTelegramLink(): void {
+    const profileId = this.profileService.currentId;
+    fetch(`${this.appConfig.apiUrl}/telegram/link/${profileId}`)
+      .then(r => r.json())
+      .then(data => this.telegramLink.set(data))
+      .catch(() => {});
+  }
+
+  submitTelegramLink(): void {
+    const code = this.telegramLinkCode.trim();
+    if (!code) return;
+    this.telegramLinkLoading = true;
+    fetch(`${this.appConfig.apiUrl}/telegram/link`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, profile_id: this.profileService.currentId }),
+    })
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(data => {
+        this.telegramLink.set(data);
+        this.telegramLinkCode = '';
+        this.telegramLinkLoading = false;
+        this.notifications.add('success', 'Telegram collegato', `Utente @${data.username || 'sconosciuto'} collegato.`);
+      })
+      .catch(() => {
+        this.telegramLinkLoading = false;
+        this.notifications.add('error', 'Errore', 'Codice non valido o scaduto.');
+      });
+  }
+
+  unlinkTelegram(): void {
+    fetch(`${this.appConfig.apiUrl}/telegram/link/${this.profileService.currentId}`, { method: 'DELETE' })
+      .then(() => {
+        this.telegramLink.set({ linked: false });
+        this.notifications.add('success', 'Scollegato', 'Profilo Telegram scollegato.');
+      })
+      .catch(() => this.notifications.add('error', 'Errore', 'Impossibile scollegare.'));
+  }
+
+  // ── TTS (Text-to-Speech) ───────────────────────────────────
+  get hasSpeechSynthesis(): boolean {
+    return typeof window !== 'undefined' && 'speechSynthesis' in window;
+  }
+
+  speakMessage(message: ChatMessage, idx: number): void {
+    if (!this.hasSpeechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const text = this.stripMarkdown(typeof message.content === 'string' ? message.content : '');
+    if (!text) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'it-IT';
+    utterance.onend = () => { this.speakingMessageIdx = null; };
+    utterance.onerror = () => { this.speakingMessageIdx = null; };
+    this.speakingMessageIdx = idx;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  stopSpeaking(): void {
+    window.speechSynthesis.cancel();
+    this.speakingMessageIdx = null;
+  }
+
+  private stripMarkdown(md: string): string {
+    return md
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/`[^`]*`/g, '')
+      .replace(/!\[.*?\]\(.*?\)/g, '')
+      .replace(/\[([^\]]*)\]\(.*?\)/g, '$1')
+      .replace(/#{1,6}\s+/g, '')
+      .replace(/[*_~]{1,3}/g, '')
+      .replace(/>\s+/gm, '')
+      .replace(/[-*+]\s+/gm, '')
+      .replace(/\d+\.\s+/gm, '')
+      .replace(/\n{2,}/g, '. ')
+      .replace(/\n/g, ' ')
+      .trim();
+  }
+
+  // ── Message Pins ───────────────────────────────────────────
+  togglePin(message: ChatMessage, idx: number): void {
+    if (!this.currentConversationId || !message.id) return;
+    this.conversationService.togglePin(this.currentConversationId, message.id).subscribe({
+      next: ({ pinned }) => {
+        this.messages.update(items =>
+          items.map((m, i) => i === idx ? { ...m, pinned } : m)
+        );
+        this.loadPinnedMessages();
+      },
+      error: () => this.notifications.add('error', 'Errore', 'Impossibile aggiornare il pin.'),
+    });
+  }
+
+  loadPinnedMessages(): void {
+    if (!this.currentConversationId) {
+      this.pinnedMessages.set([]);
+      return;
+    }
+    this.conversationService.getPins(this.currentConversationId).subscribe({
+      next: pins => this.pinnedMessages.set(pins),
+      error: () => {},
+    });
+  }
+
+  scrollToMessage(messageId: string): void {
+    const msgs = this.messages();
+    const idx = msgs.findIndex(m => m.id === messageId);
+    if (idx === -1) return;
+    const container = this.messagesContainer?.nativeElement;
+    if (!container) return;
+    const messageEls = container.querySelectorAll('.message');
+    if (messageEls[idx]) {
+      messageEls[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
+  pinPreview(message: ChatMessage): string {
+    const content = typeof message.content === 'string' ? message.content : '';
+    return content.slice(0, 40) + (content.length > 40 ? '…' : '');
+  }
+
   saveSystemPrompt(): void {
     localStorage.setItem('spicesibyl_system_prompt', this.systemPrompt);
     this.notifications.add('success', 'Sistema salvato', 'Il system prompt è stato aggiornato.');
@@ -607,13 +979,68 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   regenerate(): void {
     if (this.loading) return;
     const msgs = this.messages();
-    // Remove the last assistant message (and any trailing assistant messages)
-    const lastUserIdx = [...msgs].reverse().findIndex(m => m.role === 'user');
-    if (lastUserIdx === -1) return;
-    const cutIdx = msgs.length - lastUserIdx;
-    const historyWithoutLastAssistant = msgs.slice(0, cutIdx);
-    this.messages.set(historyWithoutLastAssistant);
-    this.send(historyWithoutLastAssistant);
+    const lastAssistant = msgs.length - 1;
+    if (lastAssistant < 0 || msgs[lastAssistant].role !== 'assistant') return;
+
+    const assistantMsg = msgs[lastAssistant];
+    const parentId = assistantMsg.parent_id;
+
+    // Find the user message to re-send
+    let userMsgIdx = -1;
+    for (let i = lastAssistant - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user') { userMsgIdx = i; break; }
+    }
+    if (userMsgIdx === -1) return;
+
+    if (parentId && this.currentConversationId) {
+      // Branching mode: keep old response, create a new branch
+      const historyUpToUser = msgs.slice(0, userMsgIdx + 1);
+      const newBranchIndex = (assistantMsg.branch_index ?? 0) + 1;
+
+      // Update branch_count on the current message
+      this.messages.update(items =>
+        items.map((m, i) => i === lastAssistant
+          ? { ...m, branch_count: (m.branch_count ?? 1) + 1 }
+          : m
+        )
+      );
+
+      // Store the parent_id for the new response
+      this._pendingBranchParentId = parentId;
+      this._pendingBranchIndex = newBranchIndex;
+      this.send(historyUpToUser);
+    } else {
+      // No branching yet — simple regenerate (replace)
+      const historyWithoutLastAssistant = msgs.slice(0, userMsgIdx + 1);
+      this.messages.set(historyWithoutLastAssistant);
+      this.send(historyWithoutLastAssistant);
+    }
+  }
+
+  private _pendingBranchParentId: string | null = null;
+  private _pendingBranchIndex = 0;
+
+  switchBranch(message: ChatMessage, direction: -1 | 1): void {
+    if (!message.parent_id || !this.currentConversationId) return;
+    const currentIdx = message.branch_index ?? 0;
+    const newIdx = currentIdx + direction;
+    if (newIdx < 0 || newIdx >= (message.branch_count ?? 1)) return;
+
+    this.conversationService.getBranches(this.currentConversationId, message.parent_id).subscribe({
+      next: (siblings) => {
+        const target = siblings.find(s => s.branch_index === newIdx);
+        if (!target) return;
+        target.branch_count = siblings.length;
+        this.messages.update(items =>
+          items.map((m) =>
+            m.parent_id === message.parent_id && m.role === 'assistant'
+              ? target
+              : m
+          )
+        );
+        this.activeBranches.update(b => ({ ...b, [message.parent_id!]: newIdx }));
+      },
+    });
   }
 
   editLastUserMessage(): void {
@@ -624,6 +1051,21 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     this.prompt = typeof lastUserIdx.m.content === 'string' ? lastUserIdx.m.content : '';
     // Remove the last user message and everything after it
     this.messages.set(msgs.slice(0, lastUserIdx.i));
+  }
+
+  shareConversation(): void {
+    if (!this.currentConversationId) return;
+    this.conversationService.share(this.currentConversationId).subscribe({
+      next: (result) => {
+        const shareUrl = `${window.location.origin}/shared/${result.share_token}`;
+        navigator.clipboard.writeText(shareUrl).then(() => {
+          this.notifications.add('success', 'Link copiato', 'Link di condivisione copiato negli appunti.');
+        }).catch(() => {
+          this.notifications.add('info', 'Link condivisione', shareUrl);
+        });
+      },
+      error: () => this.notifications.add('error', 'Errore', 'Impossibile generare il link di condivisione.'),
+    });
   }
 
   exportConversation(format: 'md' | 'json'): void {
@@ -707,6 +1149,39 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   removeAttachedImage(): void {
     this.attachedImageB64 = null;
     this.attachedImageName = null;
+  }
+
+  onDragOver(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.dragActive = true;
+  }
+
+  onDragLeave(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.dragActive = false;
+  }
+
+  onDrop(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.dragActive = false;
+    const file = event.dataTransfer?.files?.[0];
+    if (!file || !file.type.startsWith('image/')) {
+      if (file) this.notifications.add('error', 'Tipo non supportato', 'Solo immagini (JPEG, PNG, WebP, GIF).');
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      this.notifications.add('error', 'File troppo grande', 'Massimo 20 MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      this.attachedImageB64 = reader.result as string;
+      this.attachedImageName = file.name;
+    };
+    reader.readAsDataURL(file);
   }
 
   /** Handle paste events to capture pasted images. */
@@ -811,13 +1286,54 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
    * Creates a new conversation on first send, then appends the user + assistant pair.
    */
   private persistExchange(userMessage: ChatMessage, assistantIdx: number): void {
-    const assistantMessage = this.messages()[assistantIdx];
+    let assistantMessage = this.messages()[assistantIdx];
     if (!assistantMessage?.content) {
       return;
     }
+
+    // Assign IDs for branching support
+    const userMsgId = userMessage.id || self.crypto?.randomUUID?.() || (Math.random().toString(36).slice(2) + Date.now().toString(36));
+    const userToSave = { ...userMessage, id: userMsgId };
+
+    if (this._pendingBranchParentId) {
+      // Branching mode: only save the new assistant branch
+      assistantMessage = {
+        ...assistantMessage,
+        parent_id: this._pendingBranchParentId,
+        branch_index: this._pendingBranchIndex,
+      };
+      this.messages.update(items =>
+        items.map((m, i) => i === assistantIdx ? { ...assistantMessage, branch_count: this._pendingBranchIndex + 1 } : m)
+      );
+      this._pendingBranchParentId = null;
+      this._pendingBranchIndex = 0;
+
+      // Only save the assistant branch, not the user message again
+      const saveMessages = () => {
+        this.conversationService
+          .appendMessages(this.currentConversationId!, [assistantMessage])
+          .subscribe({ next: () => this.loadConversationList() });
+      };
+      if (this.currentConversationId) {
+        saveMessages();
+      }
+      return;
+    }
+
+    // Set parent_id on assistant message pointing to the user message
+    assistantMessage = { ...assistantMessage, parent_id: userMsgId, branch_index: 0, branch_count: 1 };
+    // Update in-memory messages with IDs
+    this.messages.update(items =>
+      items.map((m, i) => {
+        if (i === assistantIdx) return assistantMessage;
+        if (m === userMessage || (m.role === 'user' && m.content === userMessage.content && m.created_at === userMessage.created_at)) return userToSave;
+        return m;
+      })
+    );
+
     const saveMessages = () => {
       this.conversationService
-        .appendMessages(this.currentConversationId!, [userMessage, assistantMessage])
+        .appendMessages(this.currentConversationId!, [userToSave, assistantMessage])
         .subscribe({ next: () => this.loadConversationList() });
     };
 
@@ -867,14 +1383,46 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   /** Load an existing conversation from the backend and display it. */
+  closeTagPopover(): void {
+    this.tagAssignConvId = null;
+  }
+
   selectConversation(id: string): void {
+    this.tagAssignConvId = null;
     if (id === this.currentConversationId) return;
     this.conversationService.get(id).subscribe({
       next: (conv) => {
         this.currentConversationId = conv.id;
         this.model = conv.model;
+        this.loadPinnedMessages();
+
+        // Build display messages: for branched messages, show only the latest branch per parent
+        const allMessages = conv.messages;
+        const branchGroups = new Map<string, ChatMessage[]>();
+        for (const m of allMessages) {
+          if (m.parent_id) {
+            const group = branchGroups.get(m.parent_id) ?? [];
+            group.push(m);
+            branchGroups.set(m.parent_id, group);
+          }
+        }
+
+        const shownParents = new Set<string>();
+        const displayMessages: ChatMessage[] = [];
+        for (const m of allMessages) {
+          if (m.parent_id && branchGroups.has(m.parent_id)) {
+            if (shownParents.has(m.parent_id)) continue;
+            shownParents.add(m.parent_id);
+            const siblings = branchGroups.get(m.parent_id)!;
+            const latest = siblings[siblings.length - 1];
+            displayMessages.push({ ...latest, branch_count: siblings.length });
+          } else {
+            displayMessages.push(m);
+          }
+        }
+
         this.messages.set(
-          conv.messages.length ? conv.messages : [{
+          displayMessages.length ? displayMessages : [{
             role: 'assistant' as const,
             content: 'Nessun messaggio in questa conversazione.',
             model: 'SpiceSibyl',

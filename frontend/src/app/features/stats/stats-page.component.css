@@ -280,7 +280,83 @@ tbody td.cost-dim { color: #a8914a; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Charts ─────────────────────────────────────────────────── */
+.charts-section {
+  margin-bottom: 2rem;
+}
+
+.charts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.charts-header h2 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #f7f3ea;
+  margin: 0;
+}
+
+.chart-range-btns {
+  display: flex;
+  gap: .3rem;
+}
+
+.chart-range-btns button {
+  font-size: .76rem;
+  padding: .25rem .6rem;
+  border-radius: .4rem;
+  border: 1px solid rgba(255,255,255,.1);
+  background: transparent;
+  color: #6b7485;
+  cursor: pointer;
+  transition: all .15s;
+}
+.chart-range-btns button:hover { background: rgba(255,255,255,.05); color: #9ba3b4; }
+.chart-range-btns button.active { background: rgba(214,178,121,.12); border-color: rgba(214,178,121,.25); color: #e4c28f; }
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.chart-card {
+  background: rgba(27,31,41,.5);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: .85rem;
+  padding: 1rem;
+}
+
+.chart-title {
+  font-size: .78rem;
+  font-weight: 600;
+  color: #6b7485;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  display: block;
+  margin-bottom: .5rem;
+}
+
+.chart-container {
+  height: 200px;
+  position: relative;
+}
+
+.no-data-msg {
+  font-size: .82rem;
+  color: #4a5060;
+  text-align: center;
+  margin-top: 1rem;
+}
+
 /* ── Responsive ──────────────────────────────────────────────── */
+
+@media (max-width: 767.98px) {
+  .charts-grid { grid-template-columns: 1fr; }
+}
 
 @media (max-width: 575.98px) {
   .stats-shell { padding: 1rem; }
