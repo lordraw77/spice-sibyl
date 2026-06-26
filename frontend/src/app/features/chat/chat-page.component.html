@@ -469,9 +469,9 @@
           <span *ngIf="message.prompt_tokens !== undefined"> · in {{ message.prompt_tokens }} tok</span>
           <span *ngIf="message.completion_tokens !== undefined"> · out {{ message.completion_tokens }} tok</span>
           <span *ngIf="message.total_tokens !== undefined"> · tot {{ message.total_tokens }} tok</span>
-          <span *ngIf="message.tokens_per_second !== undefined"> · {{ message.tokens_per_second.toFixed(1) }} tok/s</span>
+          <span *ngIf="message.tokens_per_second != null"> · {{ message.tokens_per_second.toFixed(1) }} tok/s</span>
           <span *ngIf="message.finish_reason"> · {{ message.finish_reason }}</span>
-          <span *ngIf="message.estimated_cost !== undefined && message.estimated_cost !== null"> · ${{ message.estimated_cost.toFixed(6) }}</span>
+          <span *ngIf="message.estimated_cost != null"> · ${{ message.estimated_cost.toFixed(6) }}</span>
         </div>
 
         <div class="badges" *ngIf="message.role === 'assistant' && ((message.capabilities?.length || 0) > 0 || message.free !== undefined)">
