@@ -84,7 +84,7 @@
 - **Dark / light theme toggle** — CSS custom properties system (`--bg-primary`, `--text-primary`, `--accent`, etc.); `ThemeService` with dark/light/system modes; toggle button in navbar (sun/moon icon); preference stored in localStorage; `[data-theme]` attribute on `<html>`
 
 ## Phase 12 ✓
-- **Global keyboard shortcuts** — `Ctrl+K` conversation search (opens sidebar + focuses search input), `Ctrl+N` new chat, `Ctrl+Shift+S` toggle sidebar; guards against firing in input fields (except Ctrl+K)
+- **Global keyboard shortcuts** — `Ctrl+K` conversation search (opens sidebar + focuses search input), `Alt+N` new chat, `Ctrl+Shift+S` toggle sidebar; guards against firing in input fields (except Ctrl+K)
 - **Telegram inline query mode** — `@bot query` to get answers directly in any Telegram chat; non-streaming LLM call with 300 max tokens; `InlineQueryResultArticle` with 30s cache
 - **Telegram document upload** — accept PDF (`PyPDF2`), TXT, DOCX (`python-docx`) files; extract text (truncated to 8000 chars); send as context to the active model with caption; streamed response via `_stream_reply`
 - **Conversation sharing** — `POST /v1/conversations/{id}/share` generates a unique token; `GET /v1/shared/{token}` returns read-only conversation (public, no auth); share button in topbar copies link to clipboard; `/shared/:token` route with `SharedViewComponent` (minimal read-only layout with markdown rendering + syntax highlighting)

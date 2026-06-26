@@ -163,8 +163,8 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     const tag = (event.target as HTMLElement)?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || (event.target as HTMLElement)?.isContentEditable) return;
 
-    // Ctrl+N → new conversation
-    if (ctrl && event.key === 'n') {
+    // Alt+N → new conversation
+    if (event.altKey && event.key === 'n') {
       event.preventDefault();
       this.newConversation();
       return;
@@ -1058,14 +1058,40 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     this.conversationService.share(this.currentConversationId).subscribe({
       next: (result) => {
         const shareUrl = `${window.location.origin}/shared/${result.share_token}`;
-        navigator.clipboard.writeText(shareUrl).then(() => {
-          this.notifications.add('success', 'Link copiato', 'Link di condivisione copiato negli appunti.');
-        }).catch(() => {
-          this.notifications.add('info', 'Link condivisione', shareUrl);
+        this.copyToClipboard(shareUrl).then(ok => {
+          if (ok) {
+            this.notifications.add('success', 'Link copiato', 'Link di condivisione copiato negli appunti.');
+          } else {
+            this.notifications.add('info', 'Link condivisione', shareUrl, 15000);
+          }
         });
       },
       error: () => this.notifications.add('error', 'Errore', 'Impossibile generare il link di condivisione.'),
     });
+  }
+
+  private async copyToClipboard(text: string): Promise<boolean> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch { /* secure context required */ }
+    // Fallback for HTTP contexts
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      document.body.removeChild(ta);
+      return false;
+    }
   }
 
   exportConversation(format: 'md' | 'json'): void {
