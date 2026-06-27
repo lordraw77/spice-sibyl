@@ -92,6 +92,20 @@ class Settings(BaseSettings):
         "mistral:mistral-embed"
     )
 
+    # --- Phase 17: advanced RAG ---
+    # Hybrid retrieval: fuse FTS5 lexical search with vector similarity via
+    # Reciprocal Rank Fusion before injecting context. Falls back to pure vector
+    # scan when disabled or when the lexical side yields nothing.
+    rag_hybrid: bool = True
+    # Number of candidates pulled from each retrieval arm (vector + lexical)
+    # before fusion / reranking. The final top_k is a subset of this pool.
+    rag_candidate_pool: int = 30
+    # Reranker applied to the fused candidate pool: "" / "none" (off) or "llm"
+    # (ask rag_rerank_model to score relevance). Off by default — opt-in cost.
+    rag_rerank: str = ""
+    # Model used when rag_rerank == "llm" (provider/model id the gateway can route).
+    rag_rerank_model: str = "groq/llama-3.1-8b-instant"
+
     # IANA timezone used for Telegram reminder parsing and display (/remind).
     # Keeps reminders correct regardless of the container's system TZ.
     timezone: str = "Europe/Rome"

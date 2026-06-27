@@ -94,6 +94,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   readonly ragEnabled = signal(this.savedPrefs.ragEnabled);
   readonly kbDocuments = signal<KbDocument[]>([]);
   readonly kbUploading = signal(false);
+  readonly kbUrl = signal('');
 
   readonly conversationsOpen = signal(this.savedPrefs.sectionsOpen.conversations);
   readonly modelOpen = signal(this.savedPrefs.sectionsOpen.model);
@@ -829,6 +830,43 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     this.knowledgeService.deleteDocument(id).subscribe({
       next: () => this.kbDocuments.update(docs => docs.filter(d => d.id !== id)),
       error: () => {},
+    });
+  }
+
+  /** Ingest a web page / URL into the knowledge base (Phase 17). */
+  ingestKbUrl(): void {
+    const url = this.kbUrl().trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) {
+      this.notifications.add('error', 'URL non valido', 'Inserisci un URL http(s) completo.');
+      return;
+    }
+    this.kbUploading.set(true);
+    this.knowledgeService.ingestUrl(url, this.profileService.currentId).subscribe({
+      next: doc => {
+        this.kbDocuments.update(docs => [doc, ...docs.filter(d => d.id !== doc.id)]);
+        this.kbUploading.set(false);
+        this.kbUrl.set('');
+        this.notifications.add('success', 'Pagina aggiunta', `"${doc.filename}" indicizzata (${doc.chunk_count} chunk).`);
+      },
+      error: (err: Error) => {
+        this.kbUploading.set(false);
+        this.notifications.add('error', 'Ingest URL fallito', err?.message || 'Impossibile leggere la pagina.');
+      },
+    });
+  }
+
+  /** Re-chunk + re-embed a document (after changing the embedding model). */
+  reEmbedKbDocument(id: string, event: Event): void {
+    event.stopPropagation();
+    this.knowledgeService.reEmbed(id).subscribe({
+      next: doc => {
+        this.kbDocuments.update(docs => docs.map(d => (d.id === doc.id ? doc : d)));
+        this.notifications.add('success', 'Re-embed completato', `"${doc.filename}" re-indicizzato (${doc.chunk_count} chunk).`);
+      },
+      error: (err: Error) => {
+        this.notifications.add('error', 'Re-embed fallito', err?.message || 'Impossibile re-indicizzare.');
+      },
     });
   }
 

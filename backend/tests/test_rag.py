@@ -116,3 +116,80 @@ def test_profile_isolation():
             os.unlink(path)
 
     asyncio.run(run())
+
+
+# ── Phase 17: offsets, hybrid search, scoping, re-embed ────────
+def test_chunk_offsets_cover_original_text():
+    text = "abcdefghij" * 200  # 2000 chars
+    spans = rag_service.chunk_text_with_offsets(text, size=800, overlap=120)
+    assert len(spans) > 1
+    for content, start, end in spans:
+        assert 0 <= start < end <= len(text)
+        # The stripped content must be present within the original slice
+        assert content in text[start:end]
+
+
+def test_hybrid_retrieve_lexical_arm_surfaces_match():
+    async def run():
+        db, path = await _make_db()
+        try:
+            text = ("Configurazione TLS con certbot e nginx. " * 40) + (
+                "Procedura di backup con docker. " * 40
+            )
+            doc_id = await repo.create_document(db, "default", "deploy.md", "text/markdown", len(text))
+            await rag_service.ingest(db, doc_id, "default", "deploy.md", text.encode())
+
+            res = await rag_service.retrieve(db, "default", "backup docker", top_k=3)
+            assert res, "hybrid retrieval returned nothing"
+            assert any("backup" in r.snippet.lower() for r in res)
+            # char offsets are populated for inline highlighting
+            assert all(r.char_end >= r.char_start for r in res)
+        finally:
+            await db.close()
+            os.unlink(path)
+
+    asyncio.run(run())
+
+
+def test_document_scoping_restricts_results():
+    async def run():
+        db, path = await _make_db()
+        try:
+            t1 = "nginx tls certbot configuration " * 30
+            t2 = "backup docker volume snapshot " * 30
+            d1 = await repo.create_document(db, "default", "a.txt", "text/plain", len(t1))
+            d2 = await repo.create_document(db, "default", "b.txt", "text/plain", len(t2))
+            await rag_service.ingest(db, d1, "default", "a.txt", t1.encode())
+            await rag_service.ingest(db, d2, "default", "b.txt", t2.encode())
+
+            scoped = await rag_service.retrieve(
+                db, "default", "backup", top_k=5, document_ids=[d1]
+            )
+            assert all(r.document_id == d1 for r in scoped)
+        finally:
+            await db.close()
+            os.unlink(path)
+
+    asyncio.run(run())
+
+
+def test_reembed_round_trip():
+    async def run():
+        db, path = await _make_db()
+        try:
+            text = "alpha beta nginx tls backup docker " * 40
+            doc_id = await repo.create_document(db, "default", "a.txt", "text/plain", len(text))
+            n1 = await rag_service.ingest(db, doc_id, "default", "a.txt", text.encode())
+            n2 = await rag_service.reembed(db, doc_id, "default")
+            assert n1 == n2
+            docs = await repo.list_documents(db, "default")
+            assert docs[0].status == "ready"
+            assert docs[0].chunk_count == n2
+            # Re-embed must not duplicate chunks
+            chunks = await repo.get_document_chunks(db, doc_id)
+            assert len(chunks) == n2
+        finally:
+            await db.close()
+            os.unlink(path)
+
+    asyncio.run(run())

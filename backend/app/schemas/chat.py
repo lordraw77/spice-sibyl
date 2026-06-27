@@ -87,6 +87,9 @@ class ChatCompletionRequest(BaseModel):
     # the frontend since the streaming fetch bypasses the X-Profile-ID interceptor).
     rag: bool = False
     rag_top_k: int | None = None
+    # Phase 17: per-conversation KB scoping — restrict retrieval to these document
+    # ids. None/empty means search the whole profile knowledge base.
+    rag_document_ids: list[str] | None = None
     profile_id: str | None = None
 
 

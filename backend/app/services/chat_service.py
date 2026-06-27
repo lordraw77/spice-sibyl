@@ -94,7 +94,8 @@ class ChatService:
             try:
                 await db.execute("PRAGMA foreign_keys=ON")
                 sources = await rag_service.retrieve(
-                    db, profile_id, query, top_k=top_k
+                    db, profile_id, query, top_k=top_k,
+                    document_ids=request.rag_document_ids or None,
                 )
             finally:
                 await db.close()

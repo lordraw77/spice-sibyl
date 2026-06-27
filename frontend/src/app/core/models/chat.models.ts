@@ -76,6 +76,8 @@ export interface KbDocument {
   chunk_count: number;
   status: 'pending' | 'ready' | 'error';
   error?: string;
+  source_type?: 'file' | 'url';
+  source_url?: string;
   created_at: number;
 }
 
@@ -86,6 +88,19 @@ export interface RagSource {
   chunk_index: number;
   score: number;
   snippet: string;
+  char_start?: number;
+  char_end?: number;
+}
+
+/** A stored chunk (per-document preview). */
+export interface KbChunk {
+  id: string;
+  document_id: string;
+  chunk_index: number;
+  content: string;
+  char_start?: number;
+  char_end?: number;
+  embed_model?: string;
 }
 
 /** Body sent to POST /api/v1/chat/completions */

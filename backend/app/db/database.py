@@ -158,6 +158,10 @@ CREATE TABLE IF NOT EXISTS kb_documents (
     chunk_count INTEGER NOT NULL DEFAULT 0,
     status      TEXT    NOT NULL DEFAULT 'pending',
     error       TEXT,
+    -- Phase 17: web/URL ingestion + inline source highlighting
+    source_type TEXT    NOT NULL DEFAULT 'file',   -- 'file' | 'url'
+    source_url  TEXT,
+    source_text TEXT,                              -- full extracted text (for deep-link highlighting / re-embed)
     created_at  INTEGER NOT NULL
 );
 
@@ -167,6 +171,9 @@ CREATE TABLE IF NOT EXISTS kb_chunks (
     profile_id   TEXT    NOT NULL DEFAULT 'default',
     chunk_index  INTEGER NOT NULL,
     content      TEXT    NOT NULL,
+    -- Phase 17: character span of this chunk within kb_documents.source_text
+    char_start   INTEGER NOT NULL DEFAULT 0,
+    char_end     INTEGER NOT NULL DEFAULT 0,
     embedding    BLOB,
     embed_model  TEXT,
     created_at   INTEGER NOT NULL,
@@ -176,6 +183,34 @@ CREATE TABLE IF NOT EXISTS kb_chunks (
 CREATE INDEX IF NOT EXISTS idx_kb_documents_profile ON kb_documents(profile_id);
 CREATE INDEX IF NOT EXISTS idx_kb_chunks_profile ON kb_chunks(profile_id);
 CREATE INDEX IF NOT EXISTS idx_kb_chunks_document ON kb_chunks(document_id);
+
+-- Phase 17: FTS5 lexical index over chunk text, powering hybrid (lexical+vector) retrieval.
+-- Keyed by chunk id (UNINDEXED) like messages_fts; profile_id kept for scoped filtering.
+CREATE VIRTUAL TABLE IF NOT EXISTS kb_chunks_fts USING fts5(
+    id           UNINDEXED,
+    document_id  UNINDEXED,
+    profile_id   UNINDEXED,
+    content,
+    tokenize     = 'unicode61'
+);
+
+CREATE TRIGGER IF NOT EXISTS kb_chunks_fts_ai
+AFTER INSERT ON kb_chunks BEGIN
+    INSERT INTO kb_chunks_fts(id, document_id, profile_id, content)
+    VALUES (new.id, new.document_id, new.profile_id, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS kb_chunks_fts_ad
+AFTER DELETE ON kb_chunks BEGIN
+    DELETE FROM kb_chunks_fts WHERE id = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS kb_chunks_fts_au
+AFTER UPDATE OF content ON kb_chunks BEGIN
+    DELETE FROM kb_chunks_fts WHERE id = old.id;
+    INSERT INTO kb_chunks_fts(id, document_id, profile_id, content)
+    VALUES (new.id, new.document_id, new.profile_id, new.content);
+END;
 
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
     id              UNINDEXED,
@@ -215,6 +250,15 @@ _MIGRATIONS = [
     "ALTER TABLE messages ADD COLUMN branch_index INTEGER DEFAULT 0",
     # Phase 13: profiles belong to a user account (NULL = orphan, pre-auth profile)
     "ALTER TABLE profiles ADD COLUMN user_id TEXT DEFAULT NULL",
+    # Phase 17: advanced RAG — URL ingestion, source highlighting, hybrid search
+    "ALTER TABLE kb_documents ADD COLUMN source_type TEXT NOT NULL DEFAULT 'file'",
+    "ALTER TABLE kb_documents ADD COLUMN source_url TEXT",
+    "ALTER TABLE kb_documents ADD COLUMN source_text TEXT",
+    "ALTER TABLE kb_chunks ADD COLUMN char_start INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE kb_chunks ADD COLUMN char_end INTEGER NOT NULL DEFAULT 0",
+    # Backfill the chunk FTS index from existing chunks (idempotent via INSERT OR IGNORE)
+    "INSERT OR IGNORE INTO kb_chunks_fts(id, document_id, profile_id, content) "
+    "SELECT id, document_id, profile_id, content FROM kb_chunks",
 ]
 
 

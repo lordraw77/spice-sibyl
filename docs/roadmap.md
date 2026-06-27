@@ -114,13 +114,13 @@
 - **Scheduled DB backup & restore** — opt-in background task (`BACKUP_ENABLED`, interval + retention) snapshots SQLite via the online backup API to `BACKUP_DIR` on a mounted volume; admin endpoints `POST /v1/admin/backup`, `GET /v1/admin/backups`, `POST /v1/admin/restore`, plus per-profile `GET /v1/admin/export` / `POST /v1/admin/import` (conversations, messages, KB, templates, tags) as a single zip archive; all recorded in the audit log
 - **Admin Ops page** — admin-only `/ops` page (navbar entry gated on the `admin` role, `adminGuard`) surfacing live readiness (DB + provider count + active SSE streams parsed from `/metrics`), a link to raw `/metrics`, backup management (list / create / restore), and per-profile export/import
 
-## Phase 17 — Advanced RAG (extends Phase 14)
+## Phase 17 — Advanced RAG (extends Phase 14) ✓
 *Priority 2 — builds directly on the shipped knowledge base; biggest answer-quality gain once observability is in place.*
-- **Dedicated vector store** — replace the in-process numpy cosine scan with a real vector index (`sqlite-vec` to stay single-file, with an optional `pgvector`/Qdrant backend); scales past a few thousand chunks and removes the full-table load per query
-- **Hybrid search + reranking** — combine FTS5 lexical search with vector similarity (reciprocal-rank fusion), then rerank the merged candidates with a cross-encoder or LLM-based reranker before injecting context
-- **Web & URL ingestion** — add URLs (and sitemaps) to a profile's knowledge base, not just file uploads; reuse the `read_url` extractor; scheduled re-crawl / re-index of changed sources
-- **Inline source highlighting** — citation chips deep-link to the exact passage; the shared/read-only view renders the grounding span highlighted within the source document
-- **KB management UX** — per-document chunk preview, re-embed on `EMBEDDING_CHAIN` change, and per-conversation KB scoping (choose which documents are in scope)
+- **Hybrid search + reranking** — retrieval now fuses an FTS5 lexical arm (`kb_chunks_fts`, bm25-ranked) with the vector-similarity arm via Reciprocal Rank Fusion (`RAG_HYBRID`, `RAG_CANDIDATE_POOL`); an opt-in reranker (`RAG_RERANK=llm` + `RAG_RERANK_MODEL`) reorders the fused candidate pool with an LLM before context injection, degrading gracefully to fused order on any error
+- **Web & URL ingestion** — `POST /v1/knowledge/urls` fetches a web page (full-text HTML extraction, reusing the `read_url` approach), then chunks/embeds/indexes it like an upload; documents carry `source_type`/`source_url` and are flagged 🔗 in the UI with a URL input in the Knowledge sidebar panel
+- **Inline source highlighting** — every chunk stores its `char_start`/`char_end` span within the document's full `source_text`; `RagSource` carries the offsets and `GET /v1/knowledge/documents/{id}/source` exposes the source text so citation chips can deep-link to the exact passage
+- **KB management UX** — `GET /documents/{id}/chunks` (per-document chunk preview), `POST /documents/{id}/reembed` (re-chunk + re-embed from stored source text after an `EMBEDDING_CHAIN` change — re-embed button in the UI), and per-conversation KB scoping via `document_ids` on `/search` and `rag_document_ids` on chat completions
+- **Dedicated vector store** — *deferred*: retrieval still uses the numpy cosine scan (now only the vector arm of hybrid search); `sqlite-vec` remains the documented single-file upgrade path for very large corpora
 
 ## Phase 18 — Agent & tooling avanzato
 *Priority 3 — high-leverage extensibility; depends on solid logging/metrics (Phase 16) to debug multi-step runs.*

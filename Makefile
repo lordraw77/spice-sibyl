@@ -6,9 +6,34 @@ GIT_TAG       := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "lat
 VERSION       ?= $(GIT_TAG)
 
 .PHONY: up down logs backend frontend test-backend install-backend install-frontend \
-        build push release prod-up prod-down
+        build push release prod-up prod-down \
+        dev dev-build dev-build-backend dev-build-frontend rebuild
 
 # ── Development ───────────────────────────────────────────────────────────────
+# Build EVERYTHING for dev: the backend image (code is baked into the image, so a
+# rebuild is required to pick up changes) and the nginx image, which compiles the
+# Angular frontend from source and bundles it. The nginx image is tagged with the
+# exact name docker-compose.yml expects, so `up` then uses the freshly built one
+# instead of pulling the published `latest`.
+dev-build: dev-build-frontend dev-build-backend
+
+dev-build-backend:
+	docker compose build backend
+
+dev-build-frontend:
+	docker build -f ./nginx/Dockerfile -t $(NGINX_IMAGE):latest .
+
+# One-shot dev workflow: rebuild all images, (re)start the stack detached, tail logs.
+dev: dev-build
+	docker compose up -d
+	docker compose logs -f
+
+# Rebuild all images and bring the stack back up in the foreground.
+rebuild: dev-build
+	docker compose up --force-recreate
+
+# Start the stack. NOTE: this only rebuilds the backend (nginx uses a prebuilt
+# image) — run `make dev-build` / `make dev` to also pick up frontend changes.
 up:
 	docker compose up --build
 

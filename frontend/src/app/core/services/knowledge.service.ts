@@ -10,7 +10,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
-import { KbDocument, RagSource } from '../models/chat.models';
+import { KbChunk, KbDocument, RagSource } from '../models/chat.models';
 import { AppConfigService } from '../config/app-config.service';
 
 @Injectable({ providedIn: 'root' })
@@ -37,17 +37,39 @@ export class KnowledgeService {
     return this.http.post<KbDocument>(`${this.baseUrl}/documents`, form);
   }
 
+  /** Ingest a web page / URL into the knowledge base (Phase 17). */
+  ingestUrl(url: string, profileId: string): Observable<KbDocument> {
+    return this.http.post<KbDocument>(`${this.baseUrl}/urls`, {
+      url,
+      profile_id: profileId,
+    });
+  }
+
   /** Delete a document and all its chunks. */
   deleteDocument(id: string): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/documents/${id}`);
   }
 
-  /** Run a retrieval query (debug / "test retrieval"). */
-  search(query: string, profileId: string, topK = 4): Observable<RagSource[]> {
+  /** Preview the stored chunks of a document. */
+  listChunks(id: string): Observable<KbChunk[]> {
+    return this.http.get<KbChunk[]>(`${this.baseUrl}/documents/${id}/chunks`);
+  }
+
+  /** Re-chunk + re-embed a document from its stored source text. */
+  reEmbed(id: string): Observable<KbDocument> {
+    return this.http.post<KbDocument>(`${this.baseUrl}/documents/${id}/reembed`, {});
+  }
+
+  /**
+   * Run a retrieval query (debug / "test retrieval"), optionally scoped to a
+   * subset of documents (per-conversation KB scoping).
+   */
+  search(query: string, profileId: string, topK = 4, documentIds?: string[]): Observable<RagSource[]> {
     return this.http.post<RagSource[]>(`${this.baseUrl}/search`, {
       query,
       top_k: topK,
       profile_id: profileId,
+      document_ids: documentIds && documentIds.length ? documentIds : undefined,
     });
   }
 }

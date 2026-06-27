@@ -276,6 +276,10 @@ make frontend   # ng serve :4200
 | `CORS_ORIGINS` | `backend/.env` | Lista origini CORS aggiuntive (comma-separated) |
 | `API_URL` | `nginx` env | URL API iniettata nel frontend (default: `/api/v1`) |
 | `EMBEDDING_CHAIN` | `backend/.env` | RAG embedding provider fallback chain (`provider:model,...`); default `ollama:nomic-embed-text,gemini:text-embedding-004,mistral:mistral-embed` |
+| `RAG_HYBRID` | `backend/.env` | Phase 17 — fuse FTS5 lexical + vector search via RRF (default `true`) |
+| `RAG_CANDIDATE_POOL` | `backend/.env` | Phase 17 — candidates pulled per retrieval arm before fusion/rerank (default `30`) |
+| `RAG_RERANK` | `backend/.env` | Phase 17 — reranker over fused candidates: empty/`none` (off) or `llm` (default off) |
+| `RAG_RERANK_MODEL` | `backend/.env` | Phase 17 — model used when `RAG_RERANK=llm` (default `groq/llama-3.1-8b-instant`) |
 | `TIMEZONE` | `backend/.env` | IANA timezone for Telegram reminders (default `Europe/Rome`) |
 
 > **Phase 13 (auth)** adds Python dependencies (`PyJWT`, `bcrypt`, `email-validator`) and makes authentication **mandatory**. After pulling, **rebuild** the backend and set `JWT_SECRET_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` in `backend/.env` before restarting — otherwise the first boot logs a SECURITY warning and no one can log in. Existing pre-auth profiles are automatically adopted by the bootstrap admin.

@@ -312,12 +312,32 @@
             <input type="file" accept=".pdf,.txt,.md,.markdown,.docx" (change)="onKbFileSelected($event)" hidden [disabled]="kbUploading()" />
           </label>
 
+          <!-- URL ingestion (Phase 17) -->
+          <div class="kb-url-row">
+            <input
+              type="url"
+              class="kb-url-input"
+              placeholder="https://esempio.com/articolo"
+              [value]="kbUrl()"
+              (input)="kbUrl.set($any($event.target).value)"
+              (keyup.enter)="ingestKbUrl()"
+              [disabled]="kbUploading()" />
+            <button class="kb-url-btn" (click)="ingestKbUrl()" [disabled]="kbUploading() || !kbUrl().trim()" title="Indicizza pagina web">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            </button>
+          </div>
+
           <!-- Document list -->
           <ul class="kb-list" *ngIf="kbDocuments().length">
             <li *ngFor="let doc of kbDocuments()" class="kb-item">
               <span class="kb-status" [class.ready]="doc.status === 'ready'" [class.pending]="doc.status === 'pending'" [class.error]="doc.status === 'error'" [title]="doc.error || doc.status"></span>
-              <span class="kb-name" [title]="doc.filename">{{ doc.filename }}</span>
+              <span class="kb-name" [title]="doc.source_url || doc.filename">
+                <span *ngIf="doc.source_type === 'url'" class="kb-url-tag" title="Pagina web">🔗</span>{{ doc.filename }}
+              </span>
               <span class="kb-chunks" *ngIf="doc.status === 'ready'">{{ doc.chunk_count }}</span>
+              <button class="conv-delete" (click)="reEmbedKbDocument(doc.id, $event)" title="Re-embed (re-indicizza)">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              </button>
               <button class="conv-delete" (click)="deleteKbDocument(doc.id, $event)" title="Elimina">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>

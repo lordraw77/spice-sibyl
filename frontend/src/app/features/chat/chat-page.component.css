@@ -1618,6 +1618,40 @@ select.form-select-sm:focus {
   opacity: .6;
   pointer-events: none;
 }
+.kb-url-row {
+  display: flex;
+  gap: .35rem;
+  margin-top: .4rem;
+}
+.kb-url-input {
+  flex: 1;
+  min-width: 0;
+  padding: .35rem .5rem;
+  font-size: .72rem;
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: .4rem;
+  background: var(--bg-input, var(--bg-secondary));
+  color: var(--text-primary);
+}
+.kb-url-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 .5rem;
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: .4rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.kb-url-btn:disabled {
+  opacity: .5;
+  cursor: default;
+}
+.kb-url-tag {
+  margin-right: .25rem;
+  font-size: .7rem;
+}
 .kb-list {
   list-style: none;
   margin: .5rem 0 0;
