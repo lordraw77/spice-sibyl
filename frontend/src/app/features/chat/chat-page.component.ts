@@ -26,8 +26,8 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { Subject, Subscription, debounceTime, distinctUntilChanged, switchMap, of } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { Subject, Subscription, debounceTime, distinctUntilChanged, switchMap, of, forkJoin } from 'rxjs';
+import { catchError, map, takeUntil } from 'rxjs/operators';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -797,31 +797,64 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
 
   onKbFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
+    const files = Array.from(input.files ?? []);
     input.value = '';
-    if (!file) return;
+    if (!files.length) return;
 
     const allowed = /\.(pdf|txt|md|markdown|docx)$/i;
-    if (!allowed.test(file.name)) {
-      this.notifications.add('error', 'Formato non supportato', 'Usa PDF, TXT, DOCX o Markdown.');
-      return;
+    const valid: File[] = [];
+    for (const file of files) {
+      if (!allowed.test(file.name)) {
+        this.notifications.add('error', 'Formato non supportato', `"${file.name}": usa PDF, TXT, DOCX o Markdown.`);
+        continue;
+      }
+      if (file.size > 20 * 1024 * 1024) {
+        this.notifications.add('error', 'File troppo grande', `"${file.name}": dimensione massima 20 MB.`);
+        continue;
+      }
+      // Client-side de-dup: skip files already present in the list by name+size
+      // (the backend also rejects content duplicates by hash with a 409).
+      const dup = this.kbDocuments().some(
+        d => d.filename === file.name && d.size_bytes === file.size,
+      );
+      if (dup) {
+        this.notifications.add('info', 'Già presente', `"${file.name}" è già nella knowledge base.`);
+        continue;
+      }
+      valid.push(file);
     }
-    if (file.size > 20 * 1024 * 1024) {
-      this.notifications.add('error', 'File troppo grande', 'Dimensione massima 20 MB.');
-      return;
-    }
+    if (!valid.length) return;
 
     this.kbUploading.set(true);
-    this.knowledgeService.uploadDocument(file, this.profileService.currentId).subscribe({
-      next: doc => {
-        this.kbDocuments.update(docs => [doc, ...docs.filter(d => d.id !== doc.id)]);
-        this.kbUploading.set(false);
-        this.notifications.add('success', 'Documento aggiunto', `"${doc.filename}" indicizzato (${doc.chunk_count} chunk).`);
-      },
-      error: (err: Error) => {
-        this.kbUploading.set(false);
-        this.notifications.add('error', 'Upload fallito', err?.message || 'Impossibile indicizzare il documento.');
-      },
+    // Upload all files in parallel, isolating per-file failures so one bad/duplicate
+    // file doesn't abort the rest. The error interceptor already toasts each failure.
+    const uploads = valid.map(file =>
+      this.knowledgeService.uploadDocument(file, this.profileService.currentId).pipe(
+        map(doc => ({ ok: true, doc } as const)),
+        catchError((err: { status?: number }) => of({ ok: false, status: err?.status } as const)),
+      ),
+    );
+    forkJoin(uploads).subscribe(results => {
+      this.kbUploading.set(false);
+      const added = results.filter(r => r.ok).map(r => (r as { ok: true; doc: KbDocument }).doc);
+      if (added.length) {
+        this.kbDocuments.update(docs => [
+          ...added,
+          ...docs.filter(d => !added.some(a => a.id === d.id)),
+        ]);
+      }
+      const duplicates = results.filter(r => !r.ok && (r as { status?: number }).status === 409).length;
+      const failed = results.filter(r => !r.ok && (r as { status?: number }).status !== 409).length;
+
+      const parts: string[] = [];
+      if (added.length) parts.push(`${added.length} aggiunti`);
+      if (duplicates) parts.push(`${duplicates} duplicati ignorati`);
+      if (failed) parts.push(`${failed} falliti`);
+      if (added.length) {
+        this.notifications.add('success', 'Caricamento completato', parts.join(' · '));
+      } else if (duplicates && !failed) {
+        this.notifications.add('info', 'Nessun nuovo documento', `${duplicates} duplicati ignorati.`);
+      }
     });
   }
 

@@ -162,6 +162,7 @@ CREATE TABLE IF NOT EXISTS kb_documents (
     source_type TEXT    NOT NULL DEFAULT 'file',   -- 'file' | 'url'
     source_url  TEXT,
     source_text TEXT,                              -- full extracted text (for deep-link highlighting / re-embed)
+    content_hash TEXT,                             -- sha256 of the source bytes/text (duplicate detection)
     created_at  INTEGER NOT NULL
 );
 
@@ -241,8 +242,12 @@ END;
 _MIGRATIONS = [
     # Add profile_id to conversations if upgrading from an older DB
     "ALTER TABLE conversations ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
-    # Populate FTS index from existing messages (idempotent via INSERT OR IGNORE)
-    "INSERT OR IGNORE INTO messages_fts(id, conversation_id, content) SELECT id, conversation_id, content FROM messages",
+    # Populate FTS index from existing messages. FTS5 tables have no UNIQUE
+    # constraint so OR IGNORE can't dedupe — guard with NOT EXISTS so re-running
+    # this migration on every boot doesn't duplicate rows.
+    "INSERT INTO messages_fts(id, conversation_id, content) "
+    "SELECT id, conversation_id, content FROM messages m "
+    "WHERE NOT EXISTS (SELECT 1 FROM messages_fts f WHERE f.id = m.id)",
     # Phase 10: message pins
     "ALTER TABLE messages ADD COLUMN pinned INTEGER DEFAULT 0",
     # Phase 10: conversation branching
@@ -256,9 +261,13 @@ _MIGRATIONS = [
     "ALTER TABLE kb_documents ADD COLUMN source_text TEXT",
     "ALTER TABLE kb_chunks ADD COLUMN char_start INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE kb_chunks ADD COLUMN char_end INTEGER NOT NULL DEFAULT 0",
-    # Backfill the chunk FTS index from existing chunks (idempotent via INSERT OR IGNORE)
-    "INSERT OR IGNORE INTO kb_chunks_fts(id, document_id, profile_id, content) "
-    "SELECT id, document_id, profile_id, content FROM kb_chunks",
+    "ALTER TABLE kb_documents ADD COLUMN content_hash TEXT",
+    "CREATE INDEX IF NOT EXISTS idx_kb_documents_hash ON kb_documents(profile_id, content_hash)",
+    # Backfill the chunk FTS index from existing chunks. Guarded with NOT EXISTS
+    # (FTS5 has no UNIQUE constraint) so re-running on every boot is idempotent.
+    "INSERT INTO kb_chunks_fts(id, document_id, profile_id, content) "
+    "SELECT id, document_id, profile_id, content FROM kb_chunks c "
+    "WHERE NOT EXISTS (SELECT 1 FROM kb_chunks_fts f WHERE f.id = c.id)",
 ]
 
 

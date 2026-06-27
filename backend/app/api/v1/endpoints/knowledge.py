@@ -15,6 +15,7 @@ Profile identity is conveyed via the X-Profile-ID header (fallback 'default'),
 matching the other endpoints; multipart uploads also accept a profile_id field.
 """
 
+import hashlib
 import logging
 
 import aiosqlite
@@ -65,8 +66,20 @@ async def upload_document(
     if len(data) > _MAX_BYTES:
         raise HTTPException(status_code=413, detail="File too large (max 20 MB).")
 
+    # Duplicate detection: hash the raw bytes and reject if the same content is
+    # already indexed for this profile (even under a different filename).
+    content_hash = hashlib.sha256(data).hexdigest()
+    existing = await repo.find_by_hash(db, pid, content_hash)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f'Documento già presente come "{existing.filename}".',
+        )
+
     logger.info("KB upload: profile=%s file=%r size=%d bytes", pid, filename, len(data))
-    doc_id = await repo.create_document(db, pid, filename, file.content_type, len(data))
+    doc_id = await repo.create_document(
+        db, pid, filename, file.content_type, len(data), content_hash=content_hash
+    )
     try:
         chunk_count = await rag_service.ingest(db, doc_id, pid, filename, data)
         logger.info("KB ingest OK: profile=%s file=%r doc_id=%s chunks=%d", pid, filename, doc_id, chunk_count)
@@ -98,11 +111,19 @@ async def ingest_url(
     if not text.strip():
         raise HTTPException(status_code=422, detail="No readable text found at that URL.")
 
+    content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    existing = await repo.find_by_hash(db, pid, content_hash)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f'Contenuto già presente come "{existing.filename}".',
+        )
+
     # Derive a friendly filename from the URL (host + path tail).
     label = url.split("://", 1)[-1].rstrip("/")[:120] or url
     doc_id = await repo.create_document(
         db, pid, label, "text/html", len(text.encode()),
-        source_type="url", source_url=url,
+        source_type="url", source_url=url, content_hash=content_hash,
     )
     try:
         chunk_count = await rag_service.ingest_text(db, doc_id, pid, label, text)

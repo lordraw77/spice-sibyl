@@ -18,6 +18,7 @@ function titleForStatus(status: number): string {
   if (status === 400) return 'Bad request';
   if (status === 401 || status === 403) return 'Unauthorized';
   if (status === 404) return 'Not found';
+  if (status === 409) return 'Già presente';
   if (status === 502 || status === 503) return 'Backend unavailable';
   if (status >= 500) return 'Server error';
   return `Error ${status}`;

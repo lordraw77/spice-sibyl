@@ -39,17 +39,36 @@ async def create_document(
     size_bytes: int | None,
     source_type: str = "file",
     source_url: str | None = None,
+    content_hash: str | None = None,
 ) -> str:
     doc_id = str(uuid.uuid4())
     now = int(time.time())
     await db.execute(
         "INSERT INTO kb_documents (id, profile_id, filename, mime, size_bytes, "
-        "chunk_count, status, source_type, source_url, created_at) "
-        "VALUES (?, ?, ?, ?, ?, 0, 'pending', ?, ?, ?)",
-        (doc_id, profile_id, filename, mime, size_bytes, source_type, source_url, now),
+        "chunk_count, status, source_type, source_url, content_hash, created_at) "
+        "VALUES (?, ?, ?, ?, ?, 0, 'pending', ?, ?, ?, ?)",
+        (doc_id, profile_id, filename, mime, size_bytes, source_type, source_url, content_hash, now),
     )
     await db.commit()
     return doc_id
+
+
+async def find_by_hash(
+    db: aiosqlite.Connection, profile_id: str, content_hash: str
+) -> KbDocument | None:
+    """Return an existing document with the same content hash in this profile, if any.
+
+    Powers duplicate detection: the same bytes (even re-uploaded under a different
+    filename) are recognised. Errored documents don't count as duplicates so a
+    failed upload can always be retried.
+    """
+    async with db.execute(
+        "SELECT * FROM kb_documents WHERE profile_id = ? AND content_hash = ? "
+        "AND status != 'error' LIMIT 1",
+        (profile_id, content_hash),
+    ) as cursor:
+        row = await cursor.fetchone()
+    return _row_to_document(row) if row else None
 
 
 async def list_documents(

@@ -173,6 +173,34 @@ def test_document_scoping_restricts_results():
     asyncio.run(run())
 
 
+def test_duplicate_detection_by_hash():
+    async def run():
+        import hashlib
+
+        db, path = await _make_db()
+        try:
+            data = b"nginx tls certbot configuration backup docker " * 20
+            h = hashlib.sha256(data).hexdigest()
+
+            d1 = await repo.create_document(
+                db, "default", "a.txt", "text/plain", len(data), content_hash=h
+            )
+            await rag_service.ingest(db, d1, "default", "a.txt", data)
+
+            # Same bytes, different filename → recognised as a duplicate
+            found = await repo.find_by_hash(db, "default", h)
+            assert found is not None
+            assert found.id == d1
+
+            # Different profile must not see it as a duplicate
+            assert await repo.find_by_hash(db, "other", h) is None
+        finally:
+            await db.close()
+            os.unlink(path)
+
+    asyncio.run(run())
+
+
 def test_reembed_round_trip():
     async def run():
         db, path = await _make_db()
