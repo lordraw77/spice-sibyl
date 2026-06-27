@@ -104,3 +104,39 @@
 - **Mobile-optimized layout** — responsive redesign of sidebar, chat area, and composer for small screens; swipe gestures for sidebar toggle; touch-friendly action buttons
 - **PWA support** — installable progressive web app with offline shell, push notifications for long-running generations, and home-screen icon
 - **Onboarding flow** — first-time guided tour highlighting key features (model selection, tools, system prompt, slash commands)
+
+## Phase 16 — Observability & ops
+*Priority 1 — foundational, low-risk, high operational value; unblocks confident iteration on everything below.*
+- **Health & readiness endpoints** — `GET /health` (liveness) and `GET /ready` (checks DB connectivity + at least one configured provider); used by Docker/compose healthchecks and any future orchestrator
+- **Prometheus metrics** — `GET /metrics` exposing per-provider request count, error rate, latency histograms, tokens/sec, and active SSE streams; optional Grafana dashboard JSON in `docs/`
+- **Structured logging with request correlation** — JSON logs with a `request_id` generated at the edge and propagated across chat service, providers, tools, and the MCP sidecar; the same id surfaces in Telegram and web flows for end-to-end tracing
+- **Automatic provider fallback for chat completions** — generalize the fallback chain already used for image generation and embeddings to streaming chat: on provider error/timeout, transparently retry the next provider in a configurable `CHAT_FALLBACK_CHAIN`, emitting an SSE `provider_switch` frame for UI visibility
+- **Scheduled DB backup & restore** — periodic SQLite snapshot (configurable cron + retention) to a mounted volume; `POST /v1/admin/backup` / `restore` endpoints and a full per-profile export/import (conversations, KB, settings) as a single archive
+
+## Phase 17 — Advanced RAG (extends Phase 14)
+*Priority 2 — builds directly on the shipped knowledge base; biggest answer-quality gain once observability is in place.*
+- **Dedicated vector store** — replace the in-process numpy cosine scan with a real vector index (`sqlite-vec` to stay single-file, with an optional `pgvector`/Qdrant backend); scales past a few thousand chunks and removes the full-table load per query
+- **Hybrid search + reranking** — combine FTS5 lexical search with vector similarity (reciprocal-rank fusion), then rerank the merged candidates with a cross-encoder or LLM-based reranker before injecting context
+- **Web & URL ingestion** — add URLs (and sitemaps) to a profile's knowledge base, not just file uploads; reuse the `read_url` extractor; scheduled re-crawl / re-index of changed sources
+- **Inline source highlighting** — citation chips deep-link to the exact passage; the shared/read-only view renders the grounding span highlighted within the source document
+- **KB management UX** — per-document chunk preview, re-embed on `EMBEDDING_CHAIN` change, and per-conversation KB scoping (choose which documents are in scope)
+
+## Phase 18 — Agent & tooling avanzato
+*Priority 3 — high-leverage extensibility; depends on solid logging/metrics (Phase 16) to debug multi-step runs.*
+- **User-defined custom tools** — register tools from the UI (name, JSON-schema parameters, HTTP endpoint + auth) without code changes; stored per profile and injected into the tool registry
+- **MCP server management UI** — add/enable/disable MCP sidecar servers from the frontend instead of editing config; live capability discovery and health status per server
+- **Persistent multi-step workflows** — agent runs with durable state that survive beyond the current 5-iteration loop and a single request; pause/resume and step inspection in the UI
+- **Sandboxed code interpreter** — isolated Python execution as a built-in tool (resource/time limits, no host network), with file in/out for data analysis tasks
+
+## Phase 19 — Personalization & quality
+*Priority 4 — quality-of-life and cost wins that layer cleanly on the stack above.*
+- **Per-profile persistent memory** — facts about the user remembered across conversations; auto-extracted and editable; opt-in injection into the system prompt
+- **LLM auto-titling** — generate concise conversation titles from the first exchange, replacing the current heuristic
+- **Response & prompt caching** — cache identical/near-identical completions and reuse provider prompt-caching where available, to cut latency and cost on repeated queries
+- **Feedback & evaluation** — 👍/👎 with optional notes on assistant messages; exportable dataset for offline eval and a lightweight regression harness over saved prompts
+
+## Phase 20 — Collaboration
+*Priority 5 — highest-value but gated on Phase 13 auth/accounts; sequenced last.*
+- **Shared workspaces** — team-scoped conversations and knowledge bases with membership and role-based access (builds on Phase 13 accounts and Phase 17 KB scoping)
+- **Annotations & comments** — threaded comments on shared conversations and individual messages
+- **Real-time collaboration** — multiple users in one conversation over WebSocket, with presence indicators and live-streaming of in-flight responses to all participants
