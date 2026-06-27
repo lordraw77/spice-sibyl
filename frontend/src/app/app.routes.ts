@@ -1,14 +1,23 @@
 import { Routes } from '@angular/router';
 
+import { authGuard } from './core/guards/auth.guard';
+
 export const routes: Routes = [
   { path: '', redirectTo: 'chat', pathMatch: 'full' },
   {
+    path: 'login',
+    loadComponent: () =>
+      import('./features/auth/login.component').then((m) => m.LoginComponent),
+  },
+  {
     path: 'chat',
+    canActivate: [authGuard],
     loadComponent: () =>
       import('./features/chat/chat-page.component').then((m) => m.ChatPageComponent),
   },
   {
     path: 'discovery',
+    canActivate: [authGuard],
     loadComponent: () =>
       import('./features/discovery/discovery-page.component').then(
         (m) => m.DiscoveryPageComponent
@@ -16,6 +25,7 @@ export const routes: Routes = [
   },
   {
     path: 'providers',
+    canActivate: [authGuard],
     loadComponent: () =>
       import('./features/providers/providers-page.component').then(
         (m) => m.ProvidersPageComponent
@@ -23,15 +33,18 @@ export const routes: Routes = [
   },
   {
     path: 'stats',
+    canActivate: [authGuard],
     loadComponent: () =>
       import('./features/stats/stats-page.component').then((m) => m.StatsPageComponent),
   },
   {
     path: 'compare',
+    canActivate: [authGuard],
     loadComponent: () =>
       import('./features/compare/compare-page.component').then((m) => m.ComparePageComponent),
   },
   {
+    // Public read-only shared conversation view — no auth required.
     path: 'shared/:token',
     loadComponent: () =>
       import('./features/shared/shared-view.component').then((m) => m.SharedViewComponent),

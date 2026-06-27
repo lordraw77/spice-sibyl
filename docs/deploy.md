@@ -98,6 +98,14 @@ APP_ENV=production
 API_KEY=una-stringa-segreta-lunga
 VAULT_SECRET_KEY=un-altra-stringa-segreta-lunga
 
+# Autenticazione (Fase 13) — OBBLIGATORIA su tutte le API.
+JWT_SECRET_KEY=una-stringa-segreta-molto-lunga
+# Admin di bootstrap creato al primo avvio se la tabella utenti è vuota.
+# Senza queste due variabili su un DB nuovo NESSUNO può accedere.
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=una-password-forte
+RATE_LIMIT_DEFAULT=60/minute
+
 # PUBLIC_URL — dominio pubblico DDNS / reverse proxy.
 # Aggiunto automaticamente ai CORS origins.
 PUBLIC_URL=https://sibyl.example.com
@@ -261,11 +269,17 @@ make frontend   # ng serve :4200
 | `PUBLIC_URL` | `backend/.env` | URL pubblica (DDNS/dominio); aggiunta ai CORS origins |
 | `VAULT_SECRET_KEY` | `backend/.env` | Chiave master per cifratura API keys nel vault |
 | `API_KEY` | `backend/.env` | Bearer token per autenticare le richieste API |
+| `JWT_SECRET_KEY` | `backend/.env` | Segreto firma JWT access/refresh (Fase 13) — **cambialo** |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | `backend/.env` | Admin di bootstrap creato al primo avvio (richiesti su DB nuovo) |
+| `JWT_ACCESS_TTL_MINUTES` / `JWT_REFRESH_TTL_DAYS` | `backend/.env` | Durata token (default 30 min / 14 giorni) |
+| `RATE_LIMIT_DEFAULT` | `backend/.env` | Rate limit per-utente (default `60/minute`) |
 | `CORS_ORIGINS` | `backend/.env` | Lista origini CORS aggiuntive (comma-separated) |
 | `API_URL` | `nginx` env | URL API iniettata nel frontend (default: `/api/v1`) |
 | `EMBEDDING_CHAIN` | `backend/.env` | RAG embedding provider fallback chain (`provider:model,...`); default `ollama:nomic-embed-text,gemini:text-embedding-004,mistral:mistral-embed` |
 | `TIMEZONE` | `backend/.env` | IANA timezone for Telegram reminders (default `Europe/Rome`) |
 
+> **Phase 13 (auth)** adds Python dependencies (`PyJWT`, `bcrypt`, `email-validator`) and makes authentication **mandatory**. After pulling, **rebuild** the backend and set `JWT_SECRET_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` in `backend/.env` before restarting — otherwise the first boot logs a SECURITY warning and no one can log in. Existing pre-auth profiles are automatically adopted by the bootstrap admin.
+>
 > **Phase 14 (RAG + reminders)** adds Python dependencies (`numpy`, `python-multipart`, `python-telegram-bot[job-queue]`). After pulling these changes you must **rebuild** the backend image so they are installed:
 >
 > ```bash

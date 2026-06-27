@@ -12,6 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.db import share_repository as share_repo
 from app.db.database import get_db
+from app.dependencies.auth import block_read_only
+from app.schemas.auth import UserOut
 from app.schemas.conversations import Conversation
 
 router = APIRouter()
@@ -22,6 +24,7 @@ async def share_conversation(
     conversation_id: str,
     request: Request,
     db: aiosqlite.Connection = Depends(get_db),
+    user: UserOut = Depends(block_read_only),
 ):
     try:
         token = await share_repo.create_share(db, conversation_id)
@@ -37,6 +40,7 @@ async def share_conversation(
 async def unshare_conversation(
     conversation_id: str,
     db: aiosqlite.Connection = Depends(get_db),
+    user: UserOut = Depends(block_read_only),
 ):
     await share_repo.delete_share(db, conversation_id)
 

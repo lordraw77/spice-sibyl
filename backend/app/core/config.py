@@ -103,6 +103,20 @@ class Settings(BaseSettings):
     # Override with VAULT_SECRET_KEY env var in production.
     vault_secret_key: str = "change-me-in-production"
 
+    # --- Phase 13: authentication, RBAC, rate limiting ---
+    # Secret used to sign JWT access/refresh tokens. Override in production.
+    jwt_secret_key: str = "change-me-in-production"
+    jwt_access_ttl_minutes: int = 30
+    jwt_refresh_ttl_days: int = 14
+
+    # Bootstrap admin created on first boot when the users table is empty.
+    # Without these, an empty DB with mandatory auth would lock everyone out.
+    admin_email: str | None = None
+    admin_password: str | None = None
+
+    # Default per-user request rate limit (slowapi syntax, e.g. "60/minute").
+    rate_limit_default: str = "60/minute"
+
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
 
 

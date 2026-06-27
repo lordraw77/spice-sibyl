@@ -7,23 +7,36 @@ services:
     env_file:
       - ./backend/.env
     ports:
-      - "8000:8000"
+      - "8800:8000"
     volumes:
       - /opt/data:/data:rw
       - ./shared-config:/config:z
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: spice-sibyl-frontend
+  nginx:
+    image: lordraw/spice-sibyl-nginx:latest
+    container_name: spice-sibyl-nginx
     environment:
-      API_URL: ${FRONTEND_API_URL:-http://localhost:8000/api/v1}
+      API_URL: /api/v1
     ports:
-      - "4200:4200"
+      - "8888:80"
+      - "8443:443"
     volumes:
-      - ./frontend:/workspace:z
-      - /workspace/node_modules
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./certbot-www:/var/www/certbot:ro
     depends_on:
       - backend
+    restart: unless-stopped
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: spice-sibyl-frontend
+  #   environment:
+  #     API_URL: ${FRONTEND_API_URL:-http://localhost:8000/api/v1}
+  #   ports:
+  #     - "4200:4200"
+  #   volumes:
+  #     - ./frontend:/workspace:z
+  #     - /workspace/node_modules
+  #   depends_on:
+  #     - backend

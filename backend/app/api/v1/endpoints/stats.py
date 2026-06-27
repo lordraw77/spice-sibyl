@@ -4,6 +4,7 @@ import aiosqlite
 from app.core.config import settings
 from app.db.database import get_db
 from app.db.stats_repository import get_daily_stats, get_usage_stats
+from app.dependencies.auth import resolve_profile
 from app.schemas.stats import DailyStats, TelegramStats, UsageStats
 
 router = APIRouter()
@@ -29,7 +30,7 @@ async def usage_stats(
 @router.get("/daily", response_model=list[DailyStats])
 async def daily_stats(
     days: int = Query(default=30, ge=1, le=365),
-    profile_id: str | None = Query(default=None),
     db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
 ):
     return await get_daily_stats(db, days, profile_id)

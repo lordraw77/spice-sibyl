@@ -14,30 +14,26 @@ matching the other endpoints; multipart uploads also accept a profile_id field.
 import logging
 
 import aiosqlite
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from app.db import kb_repository as repo
 from app.db.database import get_db
+from app.dependencies.auth import resolve_profile
 from app.schemas.knowledge import KbDocument, KbSearchRequest, RagSource
 from app.services import rag_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-_DEFAULT_PROFILE = "default"
 _MAX_BYTES = 20 * 1024 * 1024
 _ALLOWED_EXT = (".pdf", ".txt", ".md", ".markdown", ".docx")
 
 
-def _profile(x_profile_id: str | None = Header(default=None)) -> str:
-    return x_profile_id or _DEFAULT_PROFILE
-
-
 @router.get("/documents", response_model=list[KbDocument])
 async def list_documents(
-    profile_id: str = Query(default=_DEFAULT_PROFILE),
     db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
 ):
     return await repo.list_documents(db, profile_id)
 
@@ -45,11 +41,9 @@ async def list_documents(
 @router.post("/documents", response_model=KbDocument, status_code=201)
 async def upload_document(
     file: UploadFile = File(...),
-    profile_id_form: str | None = Form(default=None, alias="profile_id"),
-    profile_id: str = Depends(_profile),
     db: aiosqlite.Connection = Depends(get_db),
+    pid: str = Depends(resolve_profile),
 ):
-    pid = profile_id_form or profile_id
     filename = file.filename or "document"
     if not filename.lower().endswith(_ALLOWED_EXT):
         raise HTTPException(status_code=400, detail="Unsupported file type. Use PDF, TXT, DOCX or Markdown.")
@@ -87,10 +81,9 @@ async def delete_document(
 @router.post("/search", response_model=list[RagSource])
 async def search(
     body: KbSearchRequest,
-    profile_id: str = Depends(_profile),
     db: aiosqlite.Connection = Depends(get_db),
+    pid: str = Depends(resolve_profile),
 ):
-    pid = body.profile_id or profile_id
     if not body.query.strip():
         raise HTTPException(status_code=400, detail="Query must not be empty.")
     try:

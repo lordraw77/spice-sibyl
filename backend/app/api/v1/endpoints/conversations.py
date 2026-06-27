@@ -17,13 +17,17 @@ import json
 import time
 
 import aiosqlite
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 
+from app.db import audit_repository
 from app.db import conversation_repository as repo
+from app.db import profile_repository
 from app.db import search_repository as search_repo
 from app.db import tag_repository as tag_repo
 from app.db.database import get_db
+from app.dependencies.auth import get_current_user, resolve_profile
+from app.schemas.auth import UserOut
 from app.schemas.conversations import (
     AppendMessagesRequest,
     Conversation,
@@ -35,26 +39,36 @@ from app.schemas.conversations import (
 
 router = APIRouter()
 
-_DEFAULT_PROFILE = "default"
 
-
-def _profile(x_profile_id: str | None = Header(default=None)) -> str:
-    return x_profile_id or _DEFAULT_PROFILE
+async def _assert_owns_conversation(
+    db: aiosqlite.Connection, conversation_id: str, user: UserOut
+) -> str:
+    """Return the conversation's profile_id, 404 if missing, 403 if not the user's."""
+    async with db.execute(
+        "SELECT profile_id FROM conversations WHERE id = ?", (conversation_id,)
+    ) as cursor:
+        row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    profile = await profile_repository.get_profile(db, row["profile_id"])
+    if not profile or profile.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Conversation does not belong to you")
+    return row["profile_id"]
 
 
 @router.get("/search", response_model=list[SearchResult])
 async def search_conversations(
     q: str = Query(default=""),
-    profile_id: str | None = Query(default=None),
     db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
 ):
     return await search_repo.search_conversations(db, q, profile_id=profile_id)
 
 
 @router.get("", response_model=list[ConversationSummary])
 async def list_conversations(
-    profile_id: str = Query(default=_DEFAULT_PROFILE),
     db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
 ):
     convs = await repo.list_conversations(db, profile_id)
     conv_ids = [c.id for c in convs]
@@ -67,9 +81,15 @@ async def list_conversations(
 @router.post("", response_model=ConversationSummary, status_code=201)
 async def create_conversation(
     body: ConversationCreate,
-    profile_id: str = Depends(_profile),
     db: aiosqlite.Connection = Depends(get_db),
+    user: UserOut = Depends(get_current_user),
+    profile_id: str = Depends(resolve_profile),
 ):
+    # body.profile_id (if supplied) must still be owned by the caller.
+    if body.profile_id and body.profile_id != profile_id:
+        owned = await profile_repository.get_profile(db, body.profile_id)
+        if not owned or owned.user_id != user.id:
+            raise HTTPException(status_code=403, detail="Profile does not belong to you")
     pid = body.profile_id or profile_id
     return await repo.create_conversation(db, body.title, body.model, pid)
 
@@ -78,7 +98,9 @@ async def create_conversation(
 async def get_conversation(
     conversation_id: str,
     db: aiosqlite.Connection = Depends(get_db),
+    user: UserOut = Depends(get_current_user),
 ):
+    await _assert_owns_conversation(db, conversation_id, user)
     conv = await repo.get_conversation(db, conversation_id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -90,7 +112,9 @@ async def rename_conversation(
     conversation_id: str,
     body: ConversationUpdate,
     db: aiosqlite.Connection = Depends(get_db),
+    user: UserOut = Depends(get_current_user),
 ):
+    await _assert_owns_conversation(db, conversation_id, user)
     # Lightweight existence check — avoids loading all messages just to verify 404.
     async with db.execute(
         "SELECT id, profile_id, model, created_at FROM conversations WHERE id = ?",
@@ -113,9 +137,16 @@ async def rename_conversation(
 @router.delete("/{conversation_id}", status_code=204)
 async def delete_conversation(
     conversation_id: str,
+    request: Request,
     db: aiosqlite.Connection = Depends(get_db),
+    user: UserOut = Depends(get_current_user),
 ):
+    await _assert_owns_conversation(db, conversation_id, user)
     await repo.delete_conversation(db, conversation_id)
+    await audit_repository.record(
+        db, user.id, "conversation.delete", resource=conversation_id,
+        ip=request.client.host if request.client else None,
+    )
 
 
 @router.get("/{conversation_id}/export")
@@ -123,7 +154,9 @@ async def export_conversation(
     conversation_id: str,
     format: str = Query(default="md", pattern="^(md|json)$"),
     db: aiosqlite.Connection = Depends(get_db),
+    user: UserOut = Depends(get_current_user),
 ) -> Response:
+    await _assert_owns_conversation(db, conversation_id, user)
     conv = await repo.get_conversation(db, conversation_id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -166,10 +199,9 @@ async def append_messages(
     conversation_id: str,
     body: AppendMessagesRequest,
     db: aiosqlite.Connection = Depends(get_db),
+    user: UserOut = Depends(get_current_user),
 ):
-    conv = await repo.get_conversation(db, conversation_id)
-    if not conv:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    await _assert_owns_conversation(db, conversation_id, user)
     await repo.append_messages(db, conversation_id, body.messages)
 
 

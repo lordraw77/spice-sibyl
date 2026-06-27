@@ -13,6 +13,7 @@ from app.providers.cloudflare_provider import CloudflareProvider
 from app.providers.gemini_provider import GeminiProvider
 from app.providers.litellm_provider import LiteLLMProvider
 from app.providers.mistral_provider import MistralProvider
+from app.providers.mock_provider import MockProvider
 from app.providers.nvidia_provider import NvidiaProvider
 from app.providers.openrouter_provider import OpenRouterProvider
 from app.providers.orchestrator_provider import OrchestratorProvider
@@ -20,6 +21,8 @@ from app.providers.orchestrator_provider import OrchestratorProvider
 
 def get_provider(model: str | None = None):
     """Return the provider instance that handles the given model identifier."""
+    if model and model.startswith('mock/'):
+        return MockProvider()
     if model and model.startswith('agent/'):
         return OrchestratorProvider()
     if model and model.startswith('cloudflare/'):

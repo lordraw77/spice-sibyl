@@ -11,11 +11,13 @@ import { Observable } from 'rxjs';
 
 import { ChatCompletionRequest, ChatCompletionResponse, ChatModel, ChatStreamEvent, ImageGenerationResponse, ProviderStatus, ProviderSummary, ProviderTestResult, ToolDefinition } from '../models/chat.models';
 import { AppConfigService } from '../config/app-config.service';
+import { AuthService } from './auth.service';
 
 @Injectable({ providedIn: 'root' })
 export class ChatService {
   private readonly http = inject(HttpClient);
   private readonly config = inject(AppConfigService);
+  private readonly auth = inject(AuthService);
 
   private get apiUrl(): string {
     return this.config.apiUrl;
@@ -41,9 +43,18 @@ export class ChatService {
     return new Observable(subscriber => {
       const controller = new AbortController();
 
+      // The SSE stream uses fetch (not HttpClient), so the auth interceptor does
+      // not run here — attach the Bearer token manually.
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      };
+      const token = this.auth.token;
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+        headers,
         body,
         signal: controller.signal,
       })

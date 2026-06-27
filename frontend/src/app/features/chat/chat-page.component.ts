@@ -39,6 +39,7 @@ import { ProfileService } from '../../core/services/profile.service';
 import { TemplateService } from '../../core/services/template.service';
 import { TagService } from '../../core/services/tag.service';
 import { KnowledgeService } from '../../core/services/knowledge.service';
+import { AuthService } from '../../core/services/auth.service';
 import { ProfileModalComponent } from '../profile/profile-modal.component';
 import { ChatCompletionResponse, ChatMessage, ChatModel, ConversationSummary, KbDocument, PromptTemplate, ProviderSummary, RagSource, SearchResult, Tag, TelegramLinkStatus, ToolDefinition, ToolEvent } from '../../core/models/chat.models';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
@@ -69,6 +70,15 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly templateService = inject(TemplateService);
   private readonly tagService = inject(TagService);
   private readonly knowledgeService = inject(KnowledgeService);
+  private readonly auth = inject(AuthService);
+
+  /** Build headers for raw fetch() calls, which bypass the auth interceptor. */
+  private authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+    const headers: Record<string, string> = { ...extra };
+    const token = this.auth.token;
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
+  }
 
   private readonly savedPrefs = this.userPrefs.get();
   readonly availabilityFilter = signal<'all' | 'free'>(this.savedPrefs.availabilityFilter);
@@ -912,7 +922,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   // ── Telegram Linking ───────────────────────────────────────
   loadTelegramLink(): void {
     const profileId = this.profileService.currentId;
-    fetch(`${this.appConfig.apiUrl}/telegram/link/${profileId}`)
+    fetch(`${this.appConfig.apiUrl}/telegram/link/${profileId}`, { headers: this.authHeaders() })
       .then(r => r.json())
       .then(data => this.telegramLink.set(data))
       .catch(() => {});
@@ -924,7 +934,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     this.telegramLinkLoading = true;
     fetch(`${this.appConfig.apiUrl}/telegram/link`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ code, profile_id: this.profileService.currentId }),
     })
       .then(r => { if (!r.ok) throw new Error(); return r.json(); })
@@ -941,7 +951,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   unlinkTelegram(): void {
-    fetch(`${this.appConfig.apiUrl}/telegram/link/${this.profileService.currentId}`, { method: 'DELETE' })
+    fetch(`${this.appConfig.apiUrl}/telegram/link/${this.profileService.currentId}`, { method: 'DELETE', headers: this.authHeaders() })
       .then(() => {
         this.telegramLink.set({ linked: false });
         this.notifications.add('success', 'Scollegato', 'Profilo Telegram scollegato.');
@@ -1171,7 +1181,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   exportConversation(format: 'md' | 'json'): void {
     if (!this.currentConversationId) return;
     const url = `${this.appConfig.apiUrl}/conversations/${this.currentConversationId}/export?format=${format}`;
-    fetch(url, { headers: { 'X-Profile-ID': this.profileService.currentId } })
+    fetch(url, { headers: this.authHeaders({ 'X-Profile-ID': this.profileService.currentId }) })
       .then(r => r.blob())
       .then(blob => {
         const ext = format === 'json' ? 'json' : 'md';

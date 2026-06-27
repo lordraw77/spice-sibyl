@@ -9,3 +9,4 @@ class Profile(BaseModel):
     id: str
     name: str
     created_at: int
+    user_id: str | None = None

@@ -30,6 +30,13 @@ async def lifespan(application: FastAPI):
             "Set VAULT_SECRET_KEY to a strong secret in production to protect stored API keys."
         )
 
+    # JWT signing secret — a known default lets anyone forge access tokens.
+    if settings.jwt_secret_key in _INSECURE_DEFAULTS:
+        logging.getLogger(__name__).warning(
+            "SECURITY: jwt_secret_key is set to the default placeholder. "
+            "Set JWT_SECRET_KEY to a strong secret in production to protect auth tokens."
+        )
+
     await init_db()
     async for db in get_db():
         await vault_repository.load_all(db)

@@ -1,23 +1,18 @@
 import aiosqlite
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.db import template_repository as repo
 from app.db.database import get_db
+from app.dependencies.auth import resolve_profile
 from app.schemas.templates import PromptTemplate, PromptTemplateCreate, PromptTemplateUpdate
 
 router = APIRouter()
 
-_DEFAULT_PROFILE = "default"
-
-
-def _profile(x_profile_id: str | None = Header(default=None)) -> str:
-    return x_profile_id or _DEFAULT_PROFILE
-
 
 @router.get("", response_model=list[PromptTemplate])
 async def list_templates(
-    profile_id: str = Query(default=_DEFAULT_PROFILE),
     db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
 ):
     return await repo.list_templates(db, profile_id)
 
@@ -25,11 +20,10 @@ async def list_templates(
 @router.post("", response_model=PromptTemplate, status_code=201)
 async def create_template(
     body: PromptTemplateCreate,
-    profile_id: str = Depends(_profile),
     db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
 ):
-    pid = body.profile_id or profile_id
-    return await repo.create_template(db, body.name, body.content, pid)
+    return await repo.create_template(db, body.name, body.content, profile_id)
 
 
 @router.patch("/{template_id}", response_model=PromptTemplate)

@@ -15,6 +15,38 @@ CREATE TABLE IF NOT EXISTS profiles (
     created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS users (
+    id            TEXT    PRIMARY KEY,
+    email         TEXT    NOT NULL UNIQUE,
+    password_hash TEXT    NOT NULL,
+    role          TEXT    NOT NULL DEFAULT 'user',
+    created_at    INTEGER NOT NULL,
+    disabled      INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    jti        TEXT    PRIMARY KEY,
+    user_id    TEXT    NOT NULL,
+    expires_at INTEGER NOT NULL,
+    revoked    INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id         TEXT    PRIMARY KEY,
+    user_id    TEXT,
+    action     TEXT    NOT NULL,
+    resource   TEXT,
+    detail     TEXT,
+    ip         TEXT,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC);
+
 CREATE TABLE IF NOT EXISTS conversations (
     id         TEXT    PRIMARY KEY,
     profile_id TEXT    NOT NULL DEFAULT 'default',
@@ -181,11 +213,14 @@ _MIGRATIONS = [
     # Phase 10: conversation branching
     "ALTER TABLE messages ADD COLUMN parent_id TEXT DEFAULT NULL",
     "ALTER TABLE messages ADD COLUMN branch_index INTEGER DEFAULT 0",
+    # Phase 13: profiles belong to a user account (NULL = orphan, pre-auth profile)
+    "ALTER TABLE profiles ADD COLUMN user_id TEXT DEFAULT NULL",
 ]
 
 
 async def init_db() -> None:
     async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row  # bootstrap reads rows by column name
         await db.executescript(_SCHEMA)
         await db.commit()
         for stmt in _MIGRATIONS:
@@ -198,6 +233,40 @@ async def init_db() -> None:
                 logger.debug("Migration skipped (already applied): %s", exc)
             except Exception:
                 logger.exception("Unexpected migration error; stmt=%s", stmt)
+
+        await _bootstrap_admin(db)
+
+
+async def _bootstrap_admin(db: aiosqlite.Connection) -> None:
+    """
+    On an empty users table, create the bootstrap admin from ADMIN_EMAIL /
+    ADMIN_PASSWORD and adopt every orphan (pre-auth) profile so existing data
+    stays reachable.  Without this, mandatory auth on a fresh DB locks everyone out.
+    """
+    from app.db import user_repository
+    from app.services import auth_service
+
+    if await user_repository.count_users(db) > 0:
+        return
+
+    if not settings.admin_email or not settings.admin_password:
+        logger.warning(
+            "SECURITY: no users exist and ADMIN_EMAIL/ADMIN_PASSWORD are unset. "
+            "With mandatory auth enabled, nobody can log in. Set both env vars and restart."
+        )
+        return
+
+    admin = await user_repository.create_user(
+        db,
+        email=settings.admin_email,
+        password_hash=auth_service.hash_password(settings.admin_password),
+        role="admin",
+    )
+    await db.execute(
+        "UPDATE profiles SET user_id = ? WHERE user_id IS NULL", (admin.id,)
+    )
+    await db.commit()
+    logger.info("Bootstrapped admin user '%s' and adopted orphan profiles", admin.email)
 
 
 async def get_db():

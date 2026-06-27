@@ -11,13 +11,16 @@ import logging
 
 import aiosqlite
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.config import settings
 from app.data.model_catalog import provider_summary_from_catalog
 from app.data.runtime_config import get_provider_override, set_provider_override
+from app.db import audit_repository
 from app.db.database import get_db
 from app.db import vault_repository
+from app.dependencies.auth import get_current_user
+from app.schemas.auth import UserOut
 from app.services import key_resolver
 from app.schemas.providers import (
     ProviderKeyRequest,
@@ -85,7 +88,9 @@ async def update_provider(provider_id: str, body: ProviderUpdateRequest) -> Prov
 async def set_provider_key(
     provider_id: str,
     body: ProviderKeyRequest,
+    request: Request,
     db: aiosqlite.Connection = Depends(get_db),
+    user: UserOut = Depends(get_current_user),
 ) -> dict:
     """Encrypt and store the API key in the vault (SQLite, AES via Fernet)."""
     if provider_id not in _PROVIDER_META:
@@ -94,19 +99,29 @@ async def set_provider_key(
         raise HTTPException(status_code=422, detail="api_key must not be empty or a placeholder")
     await vault_repository.store_key(db, provider_id, body.api_key)
     logger.info("vault: stored key for provider '%s'", provider_id)
+    await audit_repository.record(
+        db, user.id, "key.update", resource=provider_id,
+        ip=request.client.host if request.client else None,
+    )
     return {'ok': True, 'configured': True, 'vaulted': True}
 
 
 @router.delete('/{provider_id}/key', status_code=204)
 async def delete_provider_key(
     provider_id: str,
+    request: Request,
     db: aiosqlite.Connection = Depends(get_db),
+    user: UserOut = Depends(get_current_user),
 ) -> None:
     """Remove a vaulted key; provider will fall back to the env variable."""
     if provider_id not in _PROVIDER_META:
         raise HTTPException(status_code=404, detail=f"Provider '{provider_id}' not found")
     await vault_repository.delete_key(db, provider_id)
     logger.info("vault: deleted key for provider '%s'", provider_id)
+    await audit_repository.record(
+        db, user.id, "key.delete", resource=provider_id,
+        ip=request.client.host if request.client else None,
+    )
 
 
 _TEST_MODELS: dict[str, str] = {
