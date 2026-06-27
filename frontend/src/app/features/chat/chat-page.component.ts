@@ -41,6 +41,8 @@ import { TagService } from '../../core/services/tag.service';
 import { KnowledgeService } from '../../core/services/knowledge.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ProfileModalComponent } from '../profile/profile-modal.component';
+import { OnboardingComponent } from '../onboarding/onboarding.component';
+import { OnboardingService } from '../../core/services/onboarding.service';
 import { ChatCompletionResponse, ChatMessage, ChatModel, ConversationSummary, KbDocument, PromptTemplate, ProviderSummary, RagSource, SearchResult, Tag, TelegramLinkStatus, ToolDefinition, ToolEvent } from '../../core/models/chat.models';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked, Renderer } from 'marked';
@@ -49,11 +51,12 @@ import hljs from 'highlight.js';
 import { NotificationService } from '../../core/services/notification.service';
 import { AppConfigService } from '../../core/config/app-config.service';
 import { UserPreferencesService } from '../../core/services/user-preferences.service';
+import { PushNotifyService } from '../../core/services/push-notify.service';
 
 @Component({
   selector: 'app-chat-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, ProfileModalComponent],
+  imports: [CommonModule, FormsModule, DatePipe, ProfileModalComponent, OnboardingComponent],
   templateUrl: './chat-page.component.html',
   styleUrl: './chat-page.component.css',
 })
@@ -71,6 +74,8 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly tagService = inject(TagService);
   private readonly knowledgeService = inject(KnowledgeService);
   private readonly auth = inject(AuthService);
+  readonly pushNotify = inject(PushNotifyService);
+  readonly onboarding = inject(OnboardingService);
 
   /** Build headers for raw fetch() calls, which bypass the auth interceptor. */
   private authHeaders(extra: Record<string, string> = {}): Record<string, string> {
@@ -156,9 +161,17 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
           this.currentConversationId = null;
           this.newConversation();
         }
+        // First-run guided tour, once a profile exists (modal dismissed) and the
+        // chat UI is rendered so [data-tour] targets can be located.
+        if (!this.onboardingTriggered) {
+          this.onboardingTriggered = true;
+          setTimeout(() => this.onboarding.maybeStart(), 500);
+        }
       }
     }, { allowSignalWrites: true });
   }
+
+  private onboardingTriggered = false;
 
   @ViewChild('messagesContainer')
   private messagesContainer?: ElementRef<HTMLDivElement>;
@@ -195,6 +208,36 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
       event.preventDefault();
       this.toggleSidebar();
       return;
+    }
+  }
+
+  // ── Touch swipe to open/close the sidebar on mobile ──────────
+  private touchStartX = 0;
+  private touchStartY = 0;
+  private touchFromLeftEdge = false;
+
+  @HostListener('touchstart', ['$event'])
+  onTouchStart(event: TouchEvent): void {
+    if (window.innerWidth >= 992 || event.touches.length !== 1) return;
+    const t = event.touches[0];
+    this.touchStartX = t.clientX;
+    this.touchStartY = t.clientY;
+    this.touchFromLeftEdge = t.clientX <= 28;
+  }
+
+  @HostListener('touchend', ['$event'])
+  onTouchEnd(event: TouchEvent): void {
+    if (window.innerWidth >= 992 || event.changedTouches.length !== 1) return;
+    const t = event.changedTouches[0];
+    const dx = t.clientX - this.touchStartX;
+    const dy = t.clientY - this.touchStartY;
+    // Require a mostly-horizontal swipe to avoid hijacking vertical scrolling.
+    if (Math.abs(dx) < 60 || Math.abs(dx) <= Math.abs(dy)) return;
+
+    if (dx > 0 && this.touchFromLeftEdge && !this.sidebarOpen) {
+      this.toggleSidebar(); // swipe right from the edge → open
+    } else if (dx < 0 && this.sidebarOpen) {
+      this.toggleSidebar(); // swipe left → close
     }
   }
 
@@ -557,6 +600,11 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     this.streaming = true;
     this.queueScrollToBottom();
 
+    // Timestamp used to decide whether the generation was "long-running" and
+    // therefore worth a background notification on completion.
+    const streamStartedAt = Date.now();
+    const targetConversationId = this.currentConversationId;
+
     // Index of the assistant placeholder in the messages array
     const streamingIdx = this.messages().length - 1;
 
@@ -709,6 +757,19 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
         }
         if (!this.router.url.startsWith('/chat')) {
           this.notifications.add('success', 'Risposta ricevuta', 'Il modello ha terminato la risposta.', 6000, () => this.router.navigate(['/chat']));
+        }
+        // Background system notification for long-running generations (>10s)
+        // when the tab is hidden — see PushNotifyService for the guards.
+        if (Date.now() - streamStartedAt > 10_000) {
+          const reply = this.messages()[streamingIdx]?.content ?? '';
+          const preview = reply.replace(/\s+/g, ' ').trim().slice(0, 120) || 'La risposta è pronta.';
+          this.pushNotify.notifyComplete('SpiceSibyl — risposta pronta', preview, () => {
+            this.router.navigate(['/chat']).then(() => {
+              if (targetConversationId && targetConversationId !== this.currentConversationId) {
+                this.selectConversation(targetConversationId);
+              }
+            });
+          });
         }
       },
     });

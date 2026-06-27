@@ -100,10 +100,10 @@
 - **Telegram scheduled reminders** — `/remind 15:50 Check backups` (absolute `HH:MM` or relative `+30m` / `2h` / `1d`); persisted in `telegram_reminders` and scheduled on the PTB `JobQueue` (requires the `python-telegram-bot[job-queue]` extra), so they survive a restart (reloaded on boot). `/reminders` lists pending, `/unremind <id>` cancels. Times use the configurable `TIMEZONE` (default `Europe/Rome`) regardless of the container's system clock
 - **Telegram multi-language support** — `/lang` (inline keyboard) or `/lang en|it` switches the bot's UI language per chat; locale persisted in `telegram_prefs` and warm-cached at boot. Strings live in `app/telegram/i18n.py` (`it` default, `en`); `t(locale, key)` with fallback to the default locale
 
-## Phase 15 — Mobile & polish
-- **Mobile-optimized layout** — responsive redesign of sidebar, chat area, and composer for small screens; swipe gestures for sidebar toggle; touch-friendly action buttons
-- **PWA support** — installable progressive web app with offline shell, push notifications for long-running generations, and home-screen icon
-- **Onboarding flow** — first-time guided tour highlighting key features (model selection, tools, system prompt, slash commands)
+## Phase 15 — Mobile & polish ✓
+- **Mobile-optimized layout** — responsive media queries for sidebar (fixed overlay + backdrop), chat area, and composer on small screens; edge-swipe gestures to open/close the sidebar (`touchstart`/`touchend` host listeners); touch-friendly tap targets (≥44px) and icon-only topbar export buttons; navbar collapses into a hamburger dropdown under 575px
+- **PWA support** — installable progressive web app via `@angular/service-worker` (`ngsw-config.json` + `provideServiceWorker`, production-only); `manifest.webmanifest` with 192/512/maskable icons + apple-touch-icon; offline app shell; **local** completion notifications (no VAPID) — `PushNotifyService` shows a system Notification when a long-running (>10s) generation finishes while the tab is hidden, opt-in toggle in the Parameters panel
+- **Onboarding flow** — custom first-run guided tour (`OnboardingComponent` + `OnboardingService`) with a spotlight overlay over `[data-tour]` targets (model selection, tools, system prompt, slash commands), centered-card fallback on narrow viewports; `spicesibyl_onboarded` flag in localStorage; replay button in the chat topbar
 
 ## Phase 16 — Observability & ops
 *Priority 1 — foundational, low-risk, high operational value; unblocks confident iteration on everything below.*

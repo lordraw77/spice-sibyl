@@ -1,7 +1,8 @@
-import { APP_INITIALIZER } from '@angular/core';
+import { APP_INITIALIZER, isDevMode } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
+import { provideServiceWorker } from '@angular/service-worker';
 
 import { AppComponent } from './app/app.component';
 import { routes } from './app/app.routes';
@@ -32,6 +33,12 @@ bootstrapApplication(AppComponent, {
       useFactory: initializeApp,
       deps: [AppConfigService, AuthService],
       multi: true
-    }
+    },
+    // Service worker is only built in production (see angular.json); register it
+    // when not in dev mode so the offline shell + local notifications work.
+    provideServiceWorker('ngsw-worker.js', {
+      enabled: !isDevMode(),
+      registrationStrategy: 'registerWhenStable:30000'
+    })
   ]
 }).catch((err) => console.error(err));

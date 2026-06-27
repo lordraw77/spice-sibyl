@@ -14,7 +14,10 @@ import { AuthService } from '../core/services/auth.service';
         <span class="brand-name">SpiceSibyl</span>
         <span class="brand-tag">One gateway, many minds.</span>
       </div>
-      <ul class="nav-links">
+      <button class="nav-toggle" (click)="toggleMobileMenu()" [attr.aria-expanded]="mobileMenuOpen()" aria-label="Apri menu di navigazione">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <ul class="nav-links" [class.open]="mobileMenuOpen()" (click)="closeMobileMenu()">
         <li>
           <a routerLink="/chat" routerLinkActive="active" ariaCurrentWhenActive="page">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -102,6 +105,20 @@ import { AuthService } from '../core/services/auth.service';
       padding: 0;
       gap: .25rem;
     }
+    .nav-toggle {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: .5rem;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    .nav-toggle:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
     .nav-links a {
       display: flex;
       align-items: center;
@@ -244,8 +261,24 @@ import { AuthService } from '../core/services/auth.service';
     @media (max-width: 575.98px) {
       .navbar { padding: .6rem 1rem; }
       .brand-tag { display: none; }
-      .nav-links a { padding: .45rem .65rem; font-size: .85rem; gap: .35rem; }
-      .nav-links a svg { width: 15px; height: 15px; }
+      .nav-toggle { display: inline-flex; }
+      /* Nav links collapse into a dropdown panel under the navbar */
+      .nav-links {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        flex-direction: column;
+        gap: .15rem;
+        padding: .5rem;
+        background: var(--bg-navbar);
+        border-bottom: 1px solid var(--border);
+        box-shadow: 0 8px 24px var(--shadow);
+        display: none;
+        z-index: 150;
+      }
+      .nav-links.open { display: flex; }
+      .nav-links a { padding: .65rem .85rem; font-size: .9rem; gap: .55rem; }
     }
   `]
 })
@@ -253,6 +286,15 @@ export class NavbarComponent {
   readonly themeService = inject(ThemeService);
   readonly auth = inject(AuthService);
   readonly accentPickerOpen = signal(false);
+  readonly mobileMenuOpen = signal(false);
+
+  toggleMobileMenu(): void {
+    this.mobileMenuOpen.update(v => !v);
+  }
+
+  closeMobileMenu(): void {
+    this.mobileMenuOpen.set(false);
+  }
 
   logout(): void {
     const done = () => window.location.assign('/login');

@@ -1559,6 +1559,9 @@ select.form-select-sm:focus {
   .topbar { padding: .6rem 1rem; }
 
   .message .bubble { max-width: 92%; }
+
+  /* Roomier sidebar rows for touch */
+  .sidebar-section { margin-bottom: .4rem; }
 }
 
 @media (max-width: 575.98px) {
@@ -1566,6 +1569,36 @@ select.form-select-sm:focus {
   .topbar-title { font-size: 1rem; }
   .message .bubble { padding: .75rem .9rem; max-width: 96%; }
   .message .meta { font-size: .7rem; }
+
+  /* Topbar: hide volatile status + collapse export buttons to icon-only so
+     they stay tappable without crowding the title. Titles remain on hover. */
+  .topbar { padding: .55rem .75rem; }
+  .status { display: none; }
+  .export-menu { gap: .15rem; }
+  .btn-export {
+    font-size: 0;            /* hide label text, keep the icon */
+    gap: 0;
+    padding: .5rem;
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+    justify-content: center;
+  }
+  .btn-export svg { width: 16px; height: 16px; }
+
+  /* Touch-friendly composer: bigger tap targets (>=44px) */
+  .composer { padding: .55rem .75rem .7rem; }
+  .composer-send,
+  .composer-cancel,
+  .composer-mic,
+  .composer-attach {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+  .composer-textarea { font-size: 16px; } /* prevents iOS zoom-on-focus */
+  .composer-hint { font-size: .65rem; line-height: 1.35; }
+
+  /* Touch-friendly icon buttons in the topbar */
+  .topbar .btn-icon { min-width: 2.5rem; min-height: 2.5rem; }
 }
 
 /* ── Knowledge base (RAG) ─────────────────────────────── */
