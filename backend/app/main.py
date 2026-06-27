@@ -14,8 +14,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.logging_context import JsonFormatter
 from app.db.database import get_db, init_db
 from app.db import vault_repository
+from app.middleware.request_context import RequestContextMiddleware
 
 _INSECURE_DEFAULTS = frozenset({"change-me-in-production", "change-me", ""})
 
@@ -41,6 +43,13 @@ async def lifespan(application: FastAPI):
     async for db in get_db():
         await vault_repository.load_all(db)
 
+    # Start scheduled DB backups if enabled
+    backup_task = None
+    if settings.backup_enabled:
+        import asyncio
+        from app.services import backup_service
+        backup_task = asyncio.create_task(backup_service.backup_loop())
+
     # Start Telegram bot if a token is configured
     tg_app = None
     if settings.telegram_bot_token:
@@ -53,6 +62,13 @@ async def lifespan(application: FastAPI):
 
     yield
 
+    if backup_task:
+        backup_task.cancel()
+        try:
+            await backup_task
+        except Exception:
+            pass
+
     if tg_app:
         await tg_app.updater.stop()
         await tg_app.stop()
@@ -60,14 +76,24 @@ async def lifespan(application: FastAPI):
         logging.getLogger(__name__).info("Telegram bot stopped")
 
 
-logging.basicConfig(
-    level=getattr(logging, settings.log_level.upper(), logging.INFO),
-    format='%(asctime)s %(levelname)-8s %(name)s — %(message)s',
-)
-# Keep noisy third-party loggers at WARNING
-logging.getLogger('httpx').setLevel(logging.WARNING)
-logging.getLogger('httpcore').setLevel(logging.WARNING)
-logging.getLogger('litellm').setLevel(logging.WARNING)
+def _configure_logging() -> None:
+    """Configure root logging — JSON with request correlation when LOG_FORMAT=json."""
+    handler = logging.StreamHandler()
+    if settings.log_format.lower() == 'json':
+        handler.setFormatter(JsonFormatter())
+    else:
+        handler.setFormatter(
+            logging.Formatter('%(asctime)s %(levelname)-8s %(name)s — %(message)s')
+        )
+    root = logging.getLogger()
+    root.handlers = [handler]
+    root.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
+    # Keep noisy third-party loggers at WARNING
+    for name in ('httpx', 'httpcore', 'litellm'):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
+_configure_logging()
 
 # Parse comma-separated origins from settings (supports env override)
 origins = [item.strip() for item in settings.cors_origins.split(',') if item.strip()]
@@ -92,6 +118,10 @@ app.add_middleware(
     allow_methods=['*'],
     allow_headers=['*'],
 )
+
+# Request correlation + HTTP metrics. Added after CORS so it wraps it (Starlette
+# applies middleware in reverse registration order, outermost last).
+app.add_middleware(RequestContextMiddleware)
 
 app.include_router(api_router, prefix='/api')
 

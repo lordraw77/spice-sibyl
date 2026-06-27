@@ -32,6 +32,8 @@ from app.api.v1.endpoints import (
     health,
     images,
     knowledge,
+    admin,
+    metrics,
     mistral_discovery,
     models,
     nvidia_discovery,
@@ -56,6 +58,10 @@ _protected = [Depends(block_read_only), Depends(rate_limit)]
 
 # --- Public routers (no authentication) ---
 api_router.include_router(health.router, prefix="/health", tags=["health"])
+api_router.include_router(health.ready_router, tags=["health"])
+# /metrics gates itself on settings.metrics_token (if set); kept off the JWT/rate
+# guard so a Prometheus server can scrape it.
+api_router.include_router(metrics.router, prefix="/metrics", tags=["metrics"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 # sharing exposes the public read-only GET /shared/{token}; the share/unshare
 # mutations it also defines are gated inside the endpoint via get_current_user.
@@ -82,3 +88,4 @@ api_router.include_router(knowledge.router, prefix="/knowledge", tags=["knowledg
 api_router.include_router(templates.router, prefix="/templates", tags=["templates"], dependencies=_protected)
 api_router.include_router(tags.router, prefix="/tags", tags=["tags"], dependencies=_protected)
 api_router.include_router(telegram_link.router, prefix="/telegram", tags=["telegram"], dependencies=_protected)
+api_router.include_router(admin.router, prefix="/admin", tags=["admin"], dependencies=_protected)

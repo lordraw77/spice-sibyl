@@ -98,6 +98,27 @@ class Settings(BaseSettings):
 
     # Logging level for the application (DEBUG, INFO, WARNING, ERROR, CRITICAL)
     log_level: str = "INFO"
+    # Log output format: "json" for structured logs with request correlation,
+    # anything else keeps the human-readable text format used in local dev.
+    log_format: str = "text"
+
+    # --- Phase 16: observability & ops ---
+    # Optional bearer token guarding GET /metrics. Empty = open (typical when the
+    # endpoint is only reachable on an internal network / behind the proxy).
+    metrics_token: str | None = None
+
+    # Chat completion fallback chain — comma-separated "provider:model" pairs tried
+    # after the requested model when a provider errors/times out *before* emitting
+    # any output.  Empty = no fallback (current behaviour).
+    chat_fallback_chain: str = ""
+
+    # Scheduled SQLite backups. When enabled, a background task snapshots the DB
+    # into backup_dir every backup_interval_hours, keeping the newest
+    # backup_retention files.  backup_dir should live on a mounted volume.
+    backup_enabled: bool = False
+    backup_dir: str = "/data/backups"
+    backup_interval_hours: int = 24
+    backup_retention: int = 7
 
     # Master secret used to derive the Fernet encryption key for vaulted API keys.
     # Override with VAULT_SECRET_KEY env var in production.

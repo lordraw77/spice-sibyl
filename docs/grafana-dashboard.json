@@ -1,0 +1,98 @@
+{
+  "__comment": "SpiceSibyl observability dashboard (Phase 16). Import into Grafana with a Prometheus datasource scraping GET /api/v1/metrics.",
+  "title": "SpiceSibyl — Observability",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "tags": ["spicesibyl", "phase16"],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "HTTP request rate",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(sibyl_http_requests_total[5m]))",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "HTTP error rate (5xx)",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(sibyl_http_requests_total{status=~\"5..\"}[5m])) / sum(rate(sibyl_http_requests_total[5m]))",
+          "legendFormat": "error ratio"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Provider p95 latency",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, provider) (rate(sibyl_provider_latency_seconds_bucket[5m])))",
+          "legendFormat": "{{provider}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Provider request rate by status",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by (provider, status) (rate(sibyl_provider_requests_total[5m]))",
+          "legendFormat": "{{provider}} {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Tokens/sec by provider",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum by (provider, kind) (rate(sibyl_provider_tokens_total[5m]))",
+          "legendFormat": "{{provider}} {{kind}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Active SSE streams",
+      "type": "stat",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "sibyl_active_sse_streams",
+          "legendFormat": "active streams"
+        }
+      ]
+    }
+  ]
+}

@@ -654,6 +654,17 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
           return;
         }
 
+        // Provider fallback event — the requested provider failed before output,
+        // so the gateway switched to the next CHAT_FALLBACK_CHAIN entry.
+        if (event === 'provider_switch') {
+          const from = data['from'] as string;
+          const to = data['to'] as string;
+          this.messages.update(items =>
+            items.map((m, i) => (i === streamingIdx ? { ...m, provider_switch: { from, to } } : m))
+          );
+          return;
+        }
+
         // Tool call event — add to the assistant placeholder's tool_events
         if (event === 'tool_call') {
           const toolEvent: ToolEvent = {

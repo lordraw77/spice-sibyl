@@ -45,6 +45,8 @@ export interface ChatMessage {
   branch_count?: number;
   /** UI-only: knowledge-base chunks retrieved via RAG for this assistant reply */
   rag_sources?: RagSource[];
+  /** UI-only: provider fallback that occurred before the reply (Phase 16) */
+  provider_switch?: { from: string; to: string };
 }
 
 /** Tool call inside an assistant message */

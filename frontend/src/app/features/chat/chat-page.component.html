@@ -506,6 +506,11 @@
 
         <div class="bubble markdown-body" *ngIf="message.content" [innerHTML]="renderedContent(message)"></div>
 
+        <!-- Provider fallback notice: requested provider failed, gateway switched -->
+        <div class="provider-switch" *ngIf="message.provider_switch">
+          ⚠️ {{ message.provider_switch.from }} non disponibile — passato a {{ message.provider_switch.to }}
+        </div>
+
         <!-- RAG citations: knowledge-base chunks used to ground this reply -->
         <div class="rag-sources" *ngIf="message.rag_sources?.length">
           <span class="rag-sources-label">Fonti:</span>

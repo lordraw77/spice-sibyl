@@ -1,6 +1,6 @@
 import { Routes } from '@angular/router';
 
-import { authGuard } from './core/guards/auth.guard';
+import { authGuard, adminGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   { path: '', redirectTo: 'chat', pathMatch: 'full' },
@@ -42,6 +42,12 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/compare/compare-page.component').then((m) => m.ComparePageComponent),
+  },
+  {
+    path: 'ops',
+    canActivate: [authGuard, adminGuard],
+    loadComponent: () =>
+      import('./features/ops/ops-page.component').then((m) => m.OpsPageComponent),
   },
   {
     // Public read-only shared conversation view — no auth required.

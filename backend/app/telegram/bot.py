@@ -791,6 +791,10 @@ async def _stream_reply(
     """Stream a provider response, edit *sent* as tokens arrive, attach quick-action buttons."""
     global _tg_messages_sent, _tg_errors
 
+    # Bind a request id so Telegram-originated provider/sidecar logs correlate.
+    from app.core.logging_context import set_request_id
+    set_request_id()
+
     provider = get_provider(model)
     messages = [ChatMessage(role=m["role"], content=m["content"]) for m in session]
     request = ChatCompletionRequest(model=model, messages=messages, max_tokens=2048)

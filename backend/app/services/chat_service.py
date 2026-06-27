@@ -12,14 +12,30 @@ import time
 
 from sse_starlette.sse import EventSourceResponse
 
+from app.core import metrics
+from app.core.config import settings
 from app.data.model_catalog import get_model_metadata
 from app.schemas.chat import ChatCompletionRequest, ChatMessage, ToolCall, ToolCallFunction
+from app.services import key_resolver
 from app.services.provider_factory import ProviderFactory
 from app.tools.registry import execute_tool
 
 logger = logging.getLogger(__name__)
 
 _MAX_TOOL_ITERATIONS = 5
+
+
+def _parse_fallback_chain() -> list[tuple[str, str]]:
+    """Parse CHAT_FALLBACK_CHAIN into (provider, model) pairs."""
+    raw = settings.chat_fallback_chain or ""
+    out: list[tuple[str, str]] = []
+    for token in raw.split(","):
+        token = token.strip()
+        if ":" not in token:
+            continue
+        provider, model = token.split(":", 1)
+        out.append((provider.strip(), model.strip()))
+    return out
 
 
 def _message_text(content) -> str:
@@ -128,6 +144,35 @@ class ChatService:
             "data": json.dumps({"sources": [s.model_dump() for s in sources]}),
         }
 
+    @staticmethod
+    def _fallback_candidates(model: str) -> list[tuple[str | None, str]]:
+        """Build the ordered (provider, model) list: requested model first, then
+        each configured CHAT_FALLBACK_CHAIN entry (skipping the requested model and
+        unconfigured providers)."""
+        candidates: list[tuple[str | None, str]] = [(None, model)]
+        for provider, fb_model in _parse_fallback_chain():
+            if fb_model == model:
+                continue
+            if not key_resolver.is_configured(provider):
+                continue
+            candidates.append((provider, fb_model))
+        return candidates
+
+    @staticmethod
+    def _record_chat_metrics(provider: str, model: str, meta_chunk: dict, start: float) -> None:
+        """Record per-provider token + latency series from a meta frame."""
+        usage = meta_chunk.get("usage") or {}
+        metrics_data = meta_chunk.get("metrics") or {}
+        prompt_tokens = usage.get("prompt_tokens")
+        completion_tokens = usage.get("completion_tokens")
+        if prompt_tokens:
+            metrics.provider_tokens_total.labels(provider, model, "prompt").inc(prompt_tokens)
+        if completion_tokens:
+            metrics.provider_tokens_total.labels(provider, model, "completion").inc(completion_tokens)
+        latency_ms = metrics_data.get("latency_ms")
+        seconds = (latency_ms / 1000.0) if latency_ms else (time.perf_counter() - start)
+        metrics.provider_latency_seconds.labels(provider, model).observe(seconds)
+
     async def complete(self, request: ChatCompletionRequest):
         """Return a single non-streaming completion."""
         request, _ = await self._apply_rag(request)
@@ -145,21 +190,56 @@ class ChatService:
         if request.tools and not is_agent:
             return EventSourceResponse(self._stream_with_tools(provider, request, rag_sources))
 
+        # agent/* models manage their own provider rotation; don't apply our
+        # gateway-level fallback chain to them.
+        candidates = (
+            [(None, request.model)] if is_agent
+            else self._fallback_candidates(request.model)
+        )
+
         async def _plain():
+            metrics.active_sse_streams.inc()
             try:
                 if rag_sources:
                     yield self._rag_frame(rag_sources)
-                async for chunk in provider.stream(request):
-                    # A provider may emit control frames carrying a named SSE event
-                    # (e.g. the orchestrator's tool_call / tool_result progress).
-                    event = "message"
-                    if isinstance(chunk, dict) and "_sse_event" in chunk:
-                        chunk = dict(chunk)
-                        event = chunk.pop("_sse_event")
-                    yield {"event": event, "data": json.dumps(chunk)}
-                yield {"event": "done", "data": "[DONE]"}
-            except (RuntimeError, OSError, ValueError) as exc:
-                yield {"event": "error", "data": json.dumps({"message": str(exc)})}
+
+                produced = False
+                for idx, (prov_hint, model) in enumerate(candidates):
+                    req = request if model == request.model else request.model_copy(update={"model": model})
+                    attempt_provider = ProviderFactory.get_provider(model)
+                    meta = get_model_metadata(model)
+                    provider_label = meta.get("provider") or prov_hint or "unknown"
+                    start = time.perf_counter()
+                    try:
+                        async for chunk in attempt_provider.stream(req):
+                            # A provider may emit control frames carrying a named SSE
+                            # event (e.g. the orchestrator's tool_call progress).
+                            event = "message"
+                            if isinstance(chunk, dict) and "_sse_event" in chunk:
+                                chunk = dict(chunk)
+                                event = chunk.pop("_sse_event")
+                            produced = True
+                            if isinstance(chunk, dict) and chunk.get("object") == "chat.completion.meta":
+                                self._record_chat_metrics(provider_label, model, chunk, start)
+                            yield {"event": event, "data": json.dumps(chunk)}
+                        metrics.provider_requests_total.labels(provider_label, model, "success").inc()
+                        yield {"event": "done", "data": "[DONE]"}
+                        return
+                    except Exception as exc:  # noqa: BLE001 — fallback must catch any provider failure
+                        metrics.provider_requests_total.labels(provider_label, model, "error").inc()
+                        logger.warning("Chat provider %s (%s) failed: %s", provider_label, model, exc)
+                        # Once output has reached the client we can't safely switch
+                        # providers (would duplicate/garble the reply): surface the error.
+                        if produced or idx + 1 >= len(candidates):
+                            yield {"event": "error", "data": json.dumps({"message": str(exc)})}
+                            return
+                        next_model = candidates[idx + 1][1]
+                        yield {
+                            "event": "provider_switch",
+                            "data": json.dumps({"from": model, "to": next_model, "reason": str(exc)}),
+                        }
+            finally:
+                metrics.active_sse_streams.dec()
 
         return EventSourceResponse(_plain())
 
@@ -167,6 +247,7 @@ class ChatService:
         """Run the server-side tool-execution loop, yielding SSE-compatible dicts."""
         messages: list[ChatMessage] = list(request.messages)
 
+        metrics.active_sse_streams.inc()
         try:
             if rag_sources:
                 yield self._rag_frame(rag_sources)
@@ -310,6 +391,8 @@ class ChatService:
 
         except (RuntimeError, OSError, ValueError) as exc:
             yield {"event": "error", "data": json.dumps({"message": str(exc)})}
+        finally:
+            metrics.active_sse_streams.dec()
 
     async def list_models(self, model: str):
         """Return the model list from the provider that handles the given model id."""

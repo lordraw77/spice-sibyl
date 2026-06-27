@@ -1,0 +1,95 @@
+<div class="ops-shell">
+
+  <header class="page-header">
+    <div>
+      <h1>Observability &amp; Ops</h1>
+      <p class="subtitle">Stato del servizio, metriche e gestione dei backup (solo admin).</p>
+    </div>
+  </header>
+
+  <div class="ops-grid">
+
+    <!-- Readiness -->
+    <section class="ops-card">
+      <div class="card-head">
+        <h2>Stato servizio</h2>
+        <button class="btn-ghost" (click)="refreshReady(); refreshMetrics()">Aggiorna</button>
+      </div>
+      <ng-container *ngIf="ready() as r; else noReady">
+        <div class="status-row">
+          <span class="badge" [class.ok]="r.status === 'ready'" [class.bad]="r.status !== 'ready'">
+            {{ r.status === 'ready' ? 'READY' : 'DEGRADED' }}
+          </span>
+        </div>
+        <ul class="check-list">
+          <li><span class="dot" [class.ok]="r.checks.db" [class.bad]="!r.checks.db"></span> Database</li>
+          <li><span class="dot" [class.ok]="r.checks.providers > 0" [class.bad]="r.checks.providers === 0"></span>
+            Provider configurati: <strong>{{ r.checks.providers }}</strong></li>
+          <li>
+            <span class="dot ok"></span> SSE stream attivi:
+            <strong>{{ activeStreams() !== null ? activeStreams() : '—' }}</strong>
+          </li>
+        </ul>
+      </ng-container>
+      <ng-template #noReady>
+        <p class="muted">Stato non disponibile.</p>
+      </ng-template>
+    </section>
+
+    <!-- Metrics -->
+    <section class="ops-card">
+      <div class="card-head"><h2>Metriche Prometheus</h2></div>
+      <p class="muted">Serie <code>sibyl_*</code> in formato OpenMetrics per lo scraping.</p>
+      <p class="muted" *ngIf="metricsError()">⚠️ /metrics non accessibile (potrebbe richiedere METRICS_TOKEN).</p>
+      <button class="btn" (click)="openMetrics()">Apri /metrics</button>
+    </section>
+
+    <!-- Backups -->
+    <section class="ops-card span-2">
+      <div class="card-head">
+        <h2>Backup database</h2>
+        <div class="head-actions">
+          <button class="btn-ghost" (click)="refreshBackups()">Aggiorna</button>
+          <button class="btn" (click)="createBackup()" [disabled]="backupBusy()">
+            {{ backupBusy() ? 'Creazione…' : 'Crea backup' }}
+          </button>
+        </div>
+      </div>
+
+      <table class="ops-table" *ngIf="backups().length; else noBackups">
+        <thead>
+          <tr><th>Snapshot</th><th>Dimensione</th><th>Data</th><th></th></tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let b of backups()">
+            <td class="mono">{{ b.name }}</td>
+            <td>{{ formatSize(b.size_bytes) }}</td>
+            <td>{{ (b.created_at * 1000) | date:'dd/MM/yyyy HH:mm:ss' }}</td>
+            <td class="right"><button class="btn-danger" (click)="restoreBackup(b)">Ripristina</button></td>
+          </tr>
+        </tbody>
+      </table>
+      <ng-template #noBackups><p class="muted">Nessuno snapshot disponibile.</p></ng-template>
+    </section>
+
+    <!-- Export / import -->
+    <section class="ops-card span-2">
+      <div class="card-head"><h2>Export / Import profilo</h2></div>
+      <div class="io-row">
+        <label class="io-label" for="ops-profile">Profilo</label>
+        <select id="ops-profile" class="ops-select" (change)="onProfileChange($event)">
+          <option *ngFor="let p of profileList()" [value]="p.id" [selected]="p.id === selectedProfile()">
+            {{ p.name }} ({{ p.id }})
+          </option>
+        </select>
+        <button class="btn" (click)="exportProfile()">Esporta .zip</button>
+        <label class="btn import-btn">
+          {{ importBusy() ? 'Import…' : 'Importa .zip' }}
+          <input type="file" accept=".zip,application/zip" (change)="onImportFile($event)" hidden [disabled]="importBusy()" />
+        </label>
+      </div>
+      <p class="muted">L'export include conversazioni, messaggi, knowledge base, template e tag del profilo selezionato.</p>
+    </section>
+
+  </div>
+</div>

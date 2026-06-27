@@ -18,6 +18,7 @@ import json
 import httpx
 
 from app.core.config import settings
+from app.core.logging_context import get_request_id
 from app.providers.base import BaseProvider
 from app.schemas.chat import ChatCompletionRequest
 
@@ -50,11 +51,18 @@ class OrchestratorProvider(BaseProvider):
             "stream": stream,
         }
 
+    @staticmethod
+    def _headers() -> dict[str, str]:
+        """Propagate the request id so the sidecar can correlate its own logs."""
+        rid = get_request_id()
+        return {"X-Request-ID": rid} if rid else {}
+
     async def complete(self, request: ChatCompletionRequest):
         async with httpx.AsyncClient(timeout=self._timeout()) as client:
             resp = await client.post(
                 f"{self._base_url()}/chat/completions",
                 json=self._payload(request, stream=False),
+                headers=self._headers(),
             )
             resp.raise_for_status()
             return resp.json()
@@ -65,6 +73,7 @@ class OrchestratorProvider(BaseProvider):
                 "POST",
                 f"{self._base_url()}/chat/completions",
                 json=self._payload(request, stream=True),
+                headers=self._headers(),
             ) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():

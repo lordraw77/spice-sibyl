@@ -12,6 +12,12 @@ services:
       - /opt/data:/data:rw
       - ./shared-config:/config:z
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/ready')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
   nginx:
     image: lordraw/spice-sibyl-nginx:latest
     container_name: spice-sibyl-nginx
@@ -24,7 +30,8 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl:ro
       - ./certbot-www:/var/www/certbot:ro
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped
   # frontend:
   #   build:
