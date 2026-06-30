@@ -50,6 +50,12 @@ export const routes: Routes = [
       import('./features/ops/ops-page.component').then((m) => m.OpsPageComponent),
   },
   {
+    path: 'mcp',
+    canActivate: [authGuard, adminGuard],
+    loadComponent: () =>
+      import('./features/mcp/mcp-page.component').then((m) => m.McpPageComponent),
+  },
+  {
     // Public read-only shared conversation view — no auth required.
     path: 'shared/:token',
     loadComponent: () =>

@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     # Read timeout (s) for an orchestrator turn — it spawns Docker MCP sub-agents.
     orchestrator_timeout: float = 300.0
 
+    # Phase 18: log every MCP tool call (server, tool, arguments) and the raw
+    # tools/call result. Set MCP_LOG_CALLS=false to silence on noisy servers.
+    mcp_log_calls: bool = True
+    # Truncate the logged raw output to this many chars (0 = no truncation).
+    mcp_log_max_chars: int = 4000
+
     # SQLite database path for conversation persistence
     db_path: str = "spice_sibyl.db"
 

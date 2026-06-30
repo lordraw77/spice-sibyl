@@ -1,0 +1,100 @@
+<div class="mcp-shell">
+
+  <header class="page-header">
+    <div>
+      <h1>Server MCP</h1>
+      <p class="subtitle">
+        Configura i server MCP (formato standard <code>mcpServers</code>), avviati via stdio.
+        I tool rilevati diventano disponibili nella chat. Solo admin.
+      </p>
+    </div>
+    <div class="head-actions">
+      <button class="btn-ghost" (click)="refresh(true)" [disabled]="loading()">Aggiorna</button>
+      <button class="btn-ghost" (click)="exportConfig()">Esporta mcp.json</button>
+      <button class="btn" (click)="reload()" [disabled]="loading()">
+        {{ loading() ? 'Caricamento…' : 'Reload &amp; probe' }}
+      </button>
+    </div>
+  </header>
+
+  <!-- Add / import -->
+  <section class="mcp-card">
+    <div class="card-head"><h2>Aggiungi / Importa</h2></div>
+    <p class="muted">
+      Incolla un bundle <code>{{ '{' }} "mcpServers": {{ '{' }} … {{ '}' }} {{ '}' }}</code>
+      (uno o più server). I server con lo stesso nome vengono sostituiti.
+    </p>
+    <textarea
+      class="mcp-textarea"
+      rows="9"
+      [ngModel]="importJson()"
+      (ngModelChange)="importJson.set($event)"
+      [placeholder]="placeholder"
+      spellcheck="false"></textarea>
+    <div class="form-row">
+      <label class="check">
+        <input type="checkbox" [ngModel]="importEnabled()" (ngModelChange)="importEnabled.set($event)" />
+        Abilita all'import
+      </label>
+      <button class="btn" (click)="importConfig()" [disabled]="importBusy() || !importJson().trim()">
+        {{ importBusy() ? 'Import…' : 'Importa' }}
+      </button>
+    </div>
+  </section>
+
+  <!-- Server list -->
+  <section class="mcp-card">
+    <div class="card-head">
+      <h2>Server registrati ({{ servers().length }})</h2>
+    </div>
+
+    <p class="muted" *ngIf="!servers().length">Nessun server MCP configurato.</p>
+
+    <ul class="server-list">
+      <li class="server" *ngFor="let s of servers()">
+        <div class="server-head">
+          <div class="server-id">
+            <span class="badge"
+                  [class.ok]="s.status === 'ok'"
+                  [class.bad]="s.status === 'error'"
+                  [class.off]="s.status === 'disabled' || s.status === 'unknown'">
+              {{ s.status === 'ok' ? 'OK' : s.status === 'error' ? 'ERRORE' : s.status === 'disabled' ? 'OFF' : '—' }}
+            </span>
+            <strong>{{ s.name }}</strong>
+            <span class="tool-count" *ngIf="s.status === 'ok'">{{ s.tools.length }} tool</span>
+          </div>
+          <div class="server-actions">
+            <button class="btn-ghost" (click)="test(s)" [disabled]="isTesting(s.id)">
+              {{ isTesting(s.id) ? 'Test…' : 'Test' }}
+            </button>
+            <button class="btn-ghost" (click)="toggleExpand(s.id)">
+              {{ isExpanded(s.id) ? 'Nascondi' : 'Dettagli' }}
+            </button>
+            <label class="switch" [title]="s.enabled ? 'Abilitato' : 'Disabilitato'">
+              <input type="checkbox" [checked]="s.enabled" (change)="toggle(s)" />
+              <span class="slider"></span>
+            </label>
+            <button class="btn-danger" (click)="remove(s)">Elimina</button>
+          </div>
+        </div>
+
+        <div class="server-cmd mono">{{ commandLine(s) }}</div>
+        <div class="server-error" *ngIf="s.error">⚠️ {{ s.error }}</div>
+
+        <div class="server-detail" *ngIf="isExpanded(s.id)">
+          <div class="detail-block" *ngIf="s.tools.length">
+            <span class="detail-label">Tool ({{ s.tools.length }})</span>
+            <div class="tool-chips">
+              <span class="tool-chip" *ngFor="let t of s.tools" [title]="t.description">{{ t.name }}</span>
+            </div>
+          </div>
+          <div class="detail-block">
+            <span class="detail-label">Config</span>
+            <pre class="config-json">{{ s.config | json }}</pre>
+          </div>
+        </div>
+      </li>
+    </ul>
+  </section>
+
+</div>

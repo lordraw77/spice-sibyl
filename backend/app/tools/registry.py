@@ -95,6 +95,12 @@ _HANDLERS = {
 
 
 async def execute_tool(name: str, arguments: dict) -> str:
+    # Phase 18: namespaced MCP tools (mcp__server__tool) route to the MCP manager.
+    from app.services import mcp_service
+
+    if mcp_service.is_mcp_tool(name):
+        return await mcp_service.call_tool(name, arguments)
+
     handler = _HANDLERS.get(name)
     if not handler:
         return f"Unknown tool: '{name}'"

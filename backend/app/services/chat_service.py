@@ -283,7 +283,10 @@ class ChatService:
                             ],
                         }),
                     }
-                    metrics = response.get("metrics") or {}
+                    # NB: don't shadow the module-level `metrics` (used for
+                    # active_sse_streams) — that turns it into a function-local
+                    # and breaks the .inc()/.dec() calls with UnboundLocalError.
+                    resp_metrics = response.get("metrics") or {}
                     usage = response.get("usage") or {}
                     model_meta = get_model_metadata(request.model)
                     yield {
@@ -301,12 +304,12 @@ class ChatService:
                                     "content": content,
                                     "model": request.model,
                                     "provider": model_meta.get("provider"),
-                                    "latency_ms": metrics.get("latency_ms"),
-                                    "first_token_ms": metrics.get("first_token_ms"),
+                                    "latency_ms": resp_metrics.get("latency_ms"),
+                                    "first_token_ms": resp_metrics.get("first_token_ms"),
                                     "prompt_tokens": usage.get("prompt_tokens"),
                                     "completion_tokens": usage.get("completion_tokens"),
                                     "total_tokens": usage.get("total_tokens"),
-                                    "tokens_per_second": metrics.get("tokens_per_second"),
+                                    "tokens_per_second": resp_metrics.get("tokens_per_second"),
                                     "finish_reason": finish_reason,
                                     "created_at": int(time.time()),
                                     "capabilities": model_meta.get("capabilities", []),
@@ -314,7 +317,7 @@ class ChatService:
                                 },
                             }],
                             "usage": usage,
-                            "metrics": metrics,
+                            "metrics": resp_metrics,
                         }),
                     }
                     break

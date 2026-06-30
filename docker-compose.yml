@@ -11,6 +11,14 @@ services:
     volumes:
       - /opt/data:/data:rw
       - ./shared-config:/config:z
+      # Docker-out-of-Docker: lets the backend launch MCP servers defined as
+      # `docker run …` as sibling containers on the host daemon.
+      - /var/run/docker.sock:/var/run/docker.sock
+    # GID of the host's `docker` group (owner of docker.sock) so the non-root
+    # `app` user can access the socket. Adjust if your host differs:
+    #   stat -c '%g' /var/run/docker.sock
+    group_add:
+      - "319"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/ready')"]

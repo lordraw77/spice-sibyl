@@ -54,6 +54,12 @@ import { AuthService } from '../core/services/auth.service';
             Ops
           </a>
         </li>
+        <li *ngIf="auth.hasRole('admin')">
+          <a routerLink="/mcp" routerLinkActive="active" ariaCurrentWhenActive="page">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><path d="M6.5 10v4.5a2 2 0 0 0 2 2H10"/><path d="M17.5 10v4"/></svg>
+            MCP
+          </a>
+        </li>
       </ul>
       <div class="navbar-actions">
         <div class="accent-picker-wrapper">

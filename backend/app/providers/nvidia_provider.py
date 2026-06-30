@@ -69,14 +69,35 @@ def _headers(api_key: str) -> dict:
     }
 
 
+def _serialize_message(m) -> dict:
+    """Map a ChatMessage to an OpenAI-compatible dict, preserving the fields the
+    server-side tool loop relies on (assistant tool_calls, tool-result linkage)."""
+    msg: dict = {'role': m.role}
+    # Content may be None on an assistant turn that carries only tool_calls.
+    if m.content is not None:
+        msg['content'] = m.content
+    if getattr(m, 'tool_calls', None):
+        msg['tool_calls'] = [tc.model_dump() for tc in m.tool_calls]
+    if getattr(m, 'tool_call_id', None):
+        msg['tool_call_id'] = m.tool_call_id
+    if getattr(m, 'name', None):
+        msg['name'] = m.name
+    return msg
+
+
 def _body(request: ChatCompletionRequest, stream: bool) -> dict:
-    return {
+    payload = {
         'model': _strip_prefix(request.model),
-        'messages': [{'role': m.role, 'content': m.content} for m in request.messages],
+        'messages': [_serialize_message(m) for m in request.messages],
         'stream': stream,
         'temperature': request.temperature if request.temperature is not None else 0.7,
         'max_tokens': request.max_tokens if request.max_tokens is not None else 1024,
     }
+    # Forward tools (built-in + MCP) so NIM models can do function calling.
+    if request.tools:
+        payload['tools'] = [t.model_dump() for t in request.tools]
+        payload['tool_choice'] = request.tool_choice or 'auto'
+    return payload
 
 
 class NvidiaProvider(BaseProvider):
@@ -109,6 +130,27 @@ class NvidiaProvider(BaseProvider):
         choice = (data.get('choices') or [{}])[0]
         message = choice.get('message') or {}
         finish_reason = choice.get('finish_reason') or 'stop'
+        tool_calls = message.get('tool_calls')
+
+        out_message = {
+            'role': message.get('role', 'assistant'),
+            'content': message.get('content', ''),
+            'model': request.model,
+            'provider': 'nvidia',
+            'latency_ms': wall_ms,
+            'first_token_ms': wall_ms,
+            'prompt_tokens': prompt_tokens,
+            'completion_tokens': completion_tokens,
+            'total_tokens': total_tokens,
+            'tokens_per_second': None,
+            'finish_reason': finish_reason,
+            'created_at': data.get('created', int(time.time())),
+            'capabilities': model_meta.get('capabilities', []),
+            'free': model_meta.get('free', False),
+        }
+        # Propagate function calls so the server-side tool loop can execute them.
+        if tool_calls:
+            out_message['tool_calls'] = tool_calls
 
         return {
             'id': data.get('id', f'nv-{int(time.time() * 1000)}'),
@@ -119,22 +161,7 @@ class NvidiaProvider(BaseProvider):
                 {
                     'index': 0,
                     'finish_reason': finish_reason,
-                    'message': {
-                        'role': message.get('role', 'assistant'),
-                        'content': message.get('content', ''),
-                        'model': request.model,
-                        'provider': 'nvidia',
-                        'latency_ms': wall_ms,
-                        'first_token_ms': wall_ms,
-                        'prompt_tokens': prompt_tokens,
-                        'completion_tokens': completion_tokens,
-                        'total_tokens': total_tokens,
-                        'tokens_per_second': None,
-                        'finish_reason': finish_reason,
-                        'created_at': data.get('created', int(time.time())),
-                        'capabilities': model_meta.get('capabilities', []),
-                        'free': model_meta.get('free', False),
-                    },
+                    'message': out_message,
                 }
             ],
             'usage': {

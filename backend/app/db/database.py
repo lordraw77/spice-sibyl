@@ -237,6 +237,18 @@ AFTER UPDATE OF content ON messages BEGIN
     INSERT INTO messages_fts(id, conversation_id, content)
     VALUES (new.id, new.conversation_id, new.content);
 END;
+
+-- Phase 18: MCP server registry. One row per stdio MCP server, stored in the
+-- standard `mcpServers` config shape (command/args/env/... kept verbatim in
+-- `config`). Global (admin-managed), not per-profile.
+CREATE TABLE IF NOT EXISTS mcp_servers (
+    id          TEXT    PRIMARY KEY,
+    name        TEXT    NOT NULL UNIQUE,
+    config      TEXT    NOT NULL,              -- JSON: {command, args, env, cwd, ...}
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
 """
 
 _MIGRATIONS = [

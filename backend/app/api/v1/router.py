@@ -33,6 +33,7 @@ from app.api.v1.endpoints import (
     images,
     knowledge,
     admin,
+    mcp,
     metrics,
     mistral_discovery,
     models,
@@ -89,3 +90,4 @@ api_router.include_router(templates.router, prefix="/templates", tags=["template
 api_router.include_router(tags.router, prefix="/tags", tags=["tags"], dependencies=_protected)
 api_router.include_router(telegram_link.router, prefix="/telegram", tags=["telegram"], dependencies=_protected)
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"], dependencies=_protected)
+api_router.include_router(mcp.router, prefix="/mcp", tags=["mcp"], dependencies=_protected)
