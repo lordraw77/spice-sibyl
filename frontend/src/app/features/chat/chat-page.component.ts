@@ -89,6 +89,10 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   readonly availabilityFilter = signal<'all' | 'free'>(this.savedPrefs.availabilityFilter);
   readonly toolsEnabled = signal(this.savedPrefs.toolsEnabled);
   readonly availableTools = signal<ToolDefinition[]>([]);
+  readonly modelSearchQuery = signal('');
+
+  /** MCP group collapsed state: key = group name, value = true if expanded */
+  readonly mcpGroupExpanded = signal<Record<string, boolean>>({});
 
   // Knowledge base / RAG
   readonly ragEnabled = signal(this.savedPrefs.ragEnabled);
@@ -271,11 +275,12 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     return ['all', ...Array.from(caps).sort()];
   });
 
-  /** Models visible in the selector after applying provider, capability, and availability filters. */
+  /** Models visible in the selector after applying provider, capability, availability, and name search filters. */
   readonly filteredModels = computed(() => {
     const capability = this.capabilityFilter();
     const availability = this.availabilityFilter();
     const enabledProviders = new Set(this.selectedProviders());
+    const search = this.modelSearchQuery().trim().toLowerCase();
 
     return this.models().filter((model) => {
       const providerOk =
@@ -287,9 +292,36 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
       const availabilityOk =
         availability === 'all' || !!model.free;
 
-      return providerOk && capabilityOk && availabilityOk;
+      const searchOk =
+        !search ||
+        (model.label || model.id).toLowerCase().includes(search) ||
+        (model.id).toLowerCase().includes(search);
+
+      return providerOk && capabilityOk && availabilityOk && searchOk;
     });
   });
+
+  /** Tools grouped by MCP server name. Built-in tools use the group key '__builtin__'. */
+  readonly mcpToolGroups = computed(() => {
+    const groups = new Map<string, ToolDefinition[]>();
+    for (const tool of this.availableTools()) {
+      const name = tool.function.name;
+      const mcpMatch = name.match(/^mcp__(.+?)__/);
+      const groupKey = mcpMatch ? mcpMatch[1] : '__builtin__';
+      const list = groups.get(groupKey) ?? [];
+      list.push(tool);
+      groups.set(groupKey, list);
+    }
+    return Array.from(groups.entries()).map(([name, tools]) => ({ name, tools }));
+  });
+
+  toggleMcpGroup(name: string): void {
+    this.mcpGroupExpanded.update(state => ({ ...state, [name]: !state[name] }));
+  }
+
+  isMcpGroupExpanded(name: string): boolean {
+    return !!this.mcpGroupExpanded()[name];
+  }
 
   prompt = '';
   model = this.savedPrefs.selectedModel ?? 'ollama/qwen2.5:7b-instruct';
@@ -378,6 +410,11 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     return Object.entries(args)
       .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
       .join(', ');
+  }
+
+  isToolCallPending(events: ToolEvent[] | undefined, callId: string): boolean {
+    if (!events) return false;
+    return !events.some(e => e.kind === 'result' && e.id === callId);
   }
 
   setAvailabilityFilter(value: 'all' | 'free'): void {

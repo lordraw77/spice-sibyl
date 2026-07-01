@@ -1,7 +1,7 @@
 # SpiceSibyl — Developer Guide
 
-> **Version:** 0.6.0  
-> **Stack:** Python 3.11 · FastAPI · LiteLLM · aiosqlite · cryptography · Angular 18 · Docker Compose
+> **Version:** 0.18.0  
+> **Stack:** Python 3.11 · FastAPI · LiteLLM · aiosqlite · cryptography · passlib · python-jose · Angular 18 · Docker Compose
 
 ---
 
@@ -17,10 +17,11 @@
    - [Provider System](#35-provider-system)
    - [Key Resolver & Vault](#36-key-resolver--vault)
    - [Database Layer](#37-database-layer)
-   - [Tool System](#38-tool-system)
-   - [Model Catalog](#39-model-catalog)
-   - [Provider Factory Dependency](#310-provider-factory-dependency)
-   - [Endpoint Reference](#311-endpoint-reference)
+   - [Tool System & MCP](#38-tool-system--mcp)
+   - [Authentication](#39-authentication)
+   - [Model Catalog](#310-model-catalog)
+   - [Provider Factory Dependency](#311-provider-factory-dependency)
+   - [Endpoint Reference](#312-endpoint-reference)
 4. [Frontend](#4-frontend)
    - [Application Bootstrap](#41-application-bootstrap)
    - [Runtime Configuration](#42-runtime-configuration)
@@ -32,7 +33,9 @@
    - [Profile Modal](#48-profile-modal)
    - [Discovery Page](#49-discovery-page)
    - [Stats Page](#410-stats-page)
-   - [Routing](#411-routing)
+   - [MCP Page](#411-mcp-page)
+   - [Ops Page](#412-ops-page)
+   - [Routing](#413-routing)
 5. [Shared Configuration](#5-shared-configuration)
 6. [Docker & Infrastructure](#6-docker--infrastructure)
 7. [Adding a New Provider](#7-adding-a-new-provider)
@@ -46,12 +49,18 @@ SpiceSibyl is an **OpenAI-compatible multi-provider AI gateway** with a built-in
 The provider is selected at request time by inspecting the **model-ID prefix** (e.g. `cloudflare/…`, `gemini/…`, `groq/…`). Every response is enriched with a `metrics` block (latency, token throughput, cost).
 
 Beyond routing, the gateway also provides:
-- **Conversation persistence** — full history stored in SQLite, scoped per profile
+- **Conversation persistence** — full history stored in SQLite, scoped per profile; branching, pinning, tags, and templates
 - **Conversation search** — FTS5 full-text search over message content, kept in sync by DB triggers
 - **API key vault** — provider keys encrypted with Fernet and cached in-memory
 - **Profile system** — named identities stored client-side (localStorage) + server-side (SQLite)
-- **Tool calling** — server-side loop with three built-in tools; `tool_call`/`tool_result` SSE events
-- **Usage stats** — aggregated per profile, provider, and model; includes Telegram bot counters
+- **Tool calling** — server-side loop with four built-in tools; `tool_call`/`tool_result` SSE events
+- **MCP server management** — stdio JSON-RPC MCP servers stored in DB, spawned on demand, tools namespaced and merged into the tool registry
+- **Authentication & access control** — JWT + bcrypt, role-based permissions, audit log
+- **Knowledge base / RAG** — document ingestion, hybrid search (vector + FTS5), optional LLM reranker
+- **Prometheus metrics** — OpenMetrics endpoint, request correlation via `X-Request-ID`, structured JSON logging
+- **Automatic provider fallback chain** — transparent retry with SSE `provider_switch` event
+- **DB backup & restore** — scheduled snapshots + admin endpoints for backup, restore, export, import
+- **Usage stats** — aggregated per profile, provider, and model; daily time-series charts; includes Telegram bot counters
 
 ---
 
@@ -64,35 +73,64 @@ spice-sibyl/
 │   │   ├── api/v1/
 │   │   │   ├── router.py
 │   │   │   └── endpoints/
+│   │   │       ├── auth.py              # /auth/*: login, refresh, logout, users, audit
+│   │   │       ├── admin.py             # /admin/*: backup, restore, export, import
 │   │   │       ├── chat.py
 │   │   │       ├── images.py
-│   │   │       ├── conversations.py
-│   │   │       ├── health.py
+│   │   │       ├── conversations.py     # + pins, branches, sharing
+│   │   │       ├── health.py            # /health + /ready
+│   │   │       ├── metrics.py           # /metrics (Prometheus OpenMetrics)
+│   │   │       ├── mcp.py              # /mcp/*: servers CRUD + test + reload + config + import
 │   │   │       ├── models.py
 │   │   │       ├── profiles.py
 │   │   │       ├── providers.py
-│   │   │       ├── stats.py
+│   │   │       ├── stats.py             # + /stats/daily
 │   │   │       ├── tools.py
+│   │   │       ├── knowledge.py         # RAG: documents, search, reembed, chunks, source, urls
+│   │   │       ├── tags.py
+│   │   │       ├── templates.py
+│   │   │       ├── sharing.py
+│   │   │       ├── telegram_link.py
 │   │   │       ├── cloudflare_discovery.py
 │   │   │       ├── openrouter_discovery.py
 │   │   │       ├── gemini_discovery.py
 │   │   │       ├── groq_discovery.py
 │   │   │       ├── cerebras_discovery.py
-│   │   │       └── mistral_discovery.py
+│   │   │       ├── mistral_discovery.py
+│   │   │       ├── nvidia_discovery.py
+│   │   │       └── ollama_discovery.py
 │   │   ├── core/
-│   │   │   └── config.py
+│   │   │   ├── config.py
+│   │   │   ├── logging_context.py       # request_id ContextVar
+│   │   │   └── metrics.py               # Prometheus counters/histograms
 │   │   ├── data/
 │   │   │   ├── model_catalog.py
-│   │   │   └── provider_models.yaml
+│   │   │   ├── runtime_config.py
+│   │   │   └── provider_models.py
 │   │   ├── db/
-│   │   │   ├── database.py              # Schema, init_db(), get_db()
+│   │   │   ├── database.py
 │   │   │   ├── conversation_repository.py
 │   │   │   ├── profile_repository.py
 │   │   │   ├── vault_repository.py
 │   │   │   ├── stats_repository.py
-│   │   │   └── search_repository.py
+│   │   │   ├── search_repository.py
+│   │   │   ├── kb_repository.py
+│   │   │   ├── audit_repository.py
+│   │   │   ├── token_repository.py
+│   │   │   ├── user_repository.py
+│   │   │   ├── mcp_repository.py
+│   │   │   ├── tag_repository.py
+│   │   │   ├── template_repository.py
+│   │   │   ├── share_repository.py
+│   │   │   ├── telegram_link_repository.py
+│   │   │   ├── telegram_prefs_repository.py
+│   │   │   └── telegram_reminder_repository.py
 │   │   ├── dependencies/
-│   │   │   └── provider_factory.py
+│   │   │   ├── provider_factory.py
+│   │   │   ├── auth.py                  # get_current_user, require_admin, resolve_profile
+│   │   │   └── rate_limit.py
+│   │   ├── middleware/
+│   │   │   └── request_context.py       # RequestContextMiddleware
 │   │   ├── providers/
 │   │   │   ├── base.py
 │   │   │   ├── litellm_provider.py
@@ -101,20 +139,35 @@ spice-sibyl/
 │   │   │   ├── cloudflare_provider.py
 │   │   │   ├── cerebras_provider.py
 │   │   │   ├── mistral_provider.py
+│   │   │   ├── nvidia_provider.py
+│   │   │   ├── orchestrator_provider.py
 │   │   │   └── mock_provider.py
 │   │   ├── schemas/
+│   │   │   ├── auth.py
 │   │   │   ├── chat.py
 │   │   │   ├── conversations.py
+│   │   │   ├── knowledge.py
+│   │   │   ├── mcp.py
 │   │   │   ├── profiles.py
-│   │   │   └── stats.py
+│   │   │   ├── providers.py
+│   │   │   ├── stats.py
+│   │   │   ├── tags.py
+│   │   │   └── templates.py
 │   │   ├── services/
+│   │   │   ├── auth_service.py
+│   │   │   ├── backup_service.py
 │   │   │   ├── chat_service.py
+│   │   │   ├── embedding_service.py
 │   │   │   ├── image_service.py
 │   │   │   ├── key_resolver.py
+│   │   │   ├── mcp_client.py            # Minimal stdio JSON-RPC client
+│   │   │   ├── mcp_service.py           # Registry, discovery, routing cache
+│   │   │   ├── provider_factory.py
+│   │   │   ├── rag_service.py
 │   │   │   └── vault_service.py
 │   │   ├── tools/
 │   │   │   ├── __init__.py
-│   │   │   ├── builtin.py
+│   │   │   ├── builtin.py               # get_datetime · calculator · web_search · read_url
 │   │   │   └── registry.py
 │   │   └── main.py
 │   ├── tests/
@@ -127,25 +180,48 @@ spice-sibyl/
 │       │   ├── config/
 │       │   │   ├── app-config.model.ts
 │       │   │   └── app-config.service.ts
+│       │   ├── guards/
+│       │   │   └── auth.guard.ts         # authGuard + adminGuard
 │       │   ├── interceptors/
+│       │   │   ├── auth.interceptor.ts   # Bearer header + silent refresh on 401
 │       │   │   ├── error.interceptor.ts
 │       │   │   └── profile.interceptor.ts
 │       │   ├── models/
 │       │   │   └── chat.models.ts
 │       │   └── services/
+│       │       ├── auth.service.ts
 │       │       ├── chat.service.ts
+│       │       ├── chat-state.service.ts # Singleton: messages + loading state survives navigation
 │       │       ├── conversation.service.ts
 │       │       ├── discovery.service.ts
+│       │       ├── knowledge.service.ts
+│       │       ├── mcp.service.ts
 │       │       ├── notification.service.ts
+│       │       ├── onboarding.service.ts
+│       │       ├── ops.service.ts
 │       │       ├── profile.service.ts
-│       │       └── stats.service.ts
+│       │       ├── push-notify.service.ts
+│       │       ├── stats.service.ts
+│       │       ├── tag.service.ts
+│       │       ├── template.service.ts
+│       │       ├── theme.service.ts
+│       │       └── user-preferences.service.ts
 │       ├── features/
-│       │   ├── chat/
-│       │   ├── profile/
-│       │   ├── discovery/
-│       │   └── stats/
-│       ├── shared/toast-container/
-│       └── layout/navbar.component.ts
+│       │   ├── auth/          login.component.ts
+│       │   ├── chat/          chat-page.component.ts/.html/.css
+│       │   ├── compare/       compare-page.component.ts
+│       │   ├── discovery/     discovery-page.component.ts
+│       │   ├── mcp/           mcp-page.component.ts
+│       │   ├── onboarding/    onboarding.component.ts
+│       │   ├── ops/           ops-page.component.ts
+│       │   ├── profile/       profile-modal.component.ts
+│       │   ├── providers/     providers-page.component.ts
+│       │   ├── shared/        shared-view.component.ts
+│       │   └── stats/         stats-page.component.ts
+│       ├── layout/navbar.component.ts
+│       └── shared/
+│           ├── pipes/unique-values.pipe.ts
+│           └── toast-container/toast-container.component.ts
 ├── shared-config/provider_models.yaml
 ├── docker-compose.yml
 ├── Makefile
@@ -188,13 +264,18 @@ On every boot: tables are created (idempotently), migrations applied (including 
 |---|---|---|
 | `APP_NAME` | `SpiceSibyl API` | Shown in API responses |
 | `APP_ENV` | `development` | Environment tag |
-| `API_KEY` | `change-me` | Bearer token |
 | `CORS_ORIGINS` | `http://localhost:4200,...` | Comma-separated allowed origins |
 | `DEFAULT_MODEL` | `ollama/qwen2.5:7b-instruct` | Fallback model |
 | `LITELLM_PROVIDER` | `litellm` | Set `mock` for testing |
 | `OLLAMA_API_BASE` | `http://host.docker.internal:11434` | Ollama URL |
 | `DB_PATH` | `spice_sibyl.db` | SQLite file path |
-| `VAULT_SECRET_KEY` | `change-me-in-production` | Master secret for key encryption |
+| `VAULT_SECRET_KEY` | `change-me-in-production` | Master secret for Fernet key encryption |
+| `ADMIN_EMAIL` | — | Bootstrap admin email (first boot) |
+| `ADMIN_PASSWORD` | — | Bootstrap admin password (first boot) |
+| `JWT_SECRET_KEY` | `change-me-jwt` | HS256 signing secret for JWT tokens |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | JWT access token lifetime |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `14` | Refresh token lifetime |
+| `RATE_LIMIT_DEFAULT` | `60/minute` | Per-user sliding-window rate limit |
 | `OPENAI_API_KEY` | `dummy` | OpenAI (default for unprefixed models) |
 | `GROQ_API_KEY` | — | Groq Cloud |
 | `OPENROUTER_API_KEY` | — | OpenRouter |
@@ -207,7 +288,16 @@ On every boot: tables are created (idempotently), migrations applied (including 
 | `CEREBRAS_API_KEY` | — | Cerebras Cloud |
 | `HF_TOKEN` | — | HuggingFace |
 | `NVIDIA_API_KEY` | — | NVIDIA NIM |
-| `IMAGE_GENERATION_CHAIN` | *(see below)* | Comma-separated `provider:model` pairs for text-to-image fallback chain |
+| `IMAGE_GENERATION_CHAIN` | *(see below)* | Comma-separated `provider:model` pairs for text-to-image |
+| `CHAT_FALLBACK_CHAIN` | — | Comma-separated `provider:model` pairs for chat fallback |
+| `EMBEDDING_CHAIN` | `ollama:nomic-embed-text,...` | Provider fallback chain for RAG embeddings |
+| `RAG_HYBRID` | `false` | Enable hybrid FTS5 + vector search with RRF |
+| `RAG_RERANK` | — | Set `llm` to enable LLM-based reranking |
+| `RAG_RERANK_MODEL` | — | Model to use for LLM reranker |
+| `BACKUP_ENABLED` | `false` | Enable scheduled DB snapshots |
+| `BACKUP_DIR` | `backups/` | Directory for DB snapshot files |
+| `METRICS_TOKEN` | — | Optional Bearer token to protect `/metrics` |
+| `LOG_FORMAT` | `text` | Set `json` for structured JSON logging |
 | `MODEL_CATALOG_PATH` | — | Explicit YAML path override |
 
 **`IMAGE_GENERATION_CHAIN` default:**
@@ -222,42 +312,66 @@ Supported providers: `gemini`, `huggingface`, `cloudflare`, `together_ai`. Each 
 
 **File:** `backend/app/api/v1/router.py`
 
+Key route groups (see §3.12 for full reference):
+
 ```
-GET    /api/v1/health
-GET    /api/v1/models
-POST   /api/v1/images/generations
-GET    /api/v1/providers
-PATCH  /api/v1/providers/{id}
-PUT    /api/v1/providers/{id}/key
-DELETE /api/v1/providers/{id}/key
-POST   /api/v1/providers/{id}/test
+GET    /api/v1/health  /ready  /metrics
+POST   /api/v1/auth/login|refresh|logout
+GET    /api/v1/auth/me|users|audit
 POST   /api/v1/chat/completions
 GET    /api/v1/tools
-GET    /api/v1/stats
-GET    /api/v1/profiles
-POST   /api/v1/profiles
-DELETE /api/v1/profiles/{id}
-GET    /api/v1/conversations?profile_id=<uuid>
+GET    /api/v1/models
+POST   /api/v1/images/generations
+GET    /api/v1/stats  /stats/daily
+GET/POST/PATCH/DELETE  /api/v1/mcp/servers
+POST   /api/v1/mcp/reload  /mcp/servers/{id}/test
+GET    /api/v1/mcp/config
+POST   /api/v1/mcp/import
+GET/POST/DELETE  /api/v1/knowledge/documents
+POST   /api/v1/knowledge/documents/{id}/reembed
+GET    /api/v1/knowledge/documents/{id}/chunks|source
+POST   /api/v1/knowledge/urls  /knowledge/search
+GET/POST/DELETE  /api/v1/profiles
+GET/PATCH/DELETE /api/v1/providers
+PUT/DELETE       /api/v1/providers/{id}/key
+POST   /api/v1/providers/{id}/test
+GET/POST/PATCH/DELETE  /api/v1/tags  /templates
+GET    /api/v1/conversations
 POST   /api/v1/conversations
-GET    /api/v1/conversations/{id}
-PATCH  /api/v1/conversations/{id}
-DELETE /api/v1/conversations/{id}
+GET/PATCH/DELETE /api/v1/conversations/{id}
 POST   /api/v1/conversations/{id}/messages
-GET    /api/v1/conversations/search?q=&profile_id=
-POST   /api/v1/{cloudflare|openrouter|gemini|groq|cerebras|mistral}-discovery/run
+GET    /api/v1/conversations/search
+POST   /api/v1/conversations/{id}/share
+GET    /api/v1/shared/{token}
+GET    /api/v1/conversations/{id}/pins
+POST   /api/v1/conversations/{id}/messages/{msg_id}/pin
+GET    /api/v1/conversations/{id}/branches/{parent_id}
+POST   /api/v1/admin/backup|restore
+GET    /api/v1/admin/backups
+GET    /api/v1/admin/export
+POST   /api/v1/admin/import
+POST   /api/v1/{cloudflare|openrouter|gemini|groq|cerebras|mistral|nvidia|ollama}-discovery/run
 ```
 
 ---
 
 ### 3.4 Schemas
 
-**`backend/app/schemas/chat.py`** — `ChatMessage` (with `tool_calls`, `tool_call_id`, `name`), `ChatCompletionRequest` (with `tools` field), `ChatCompletionResponse`, `ChatMetrics`, `ChatUsage`, `ToolCall`, `ToolCallFunction`, `ToolDefinition`, `ToolFunction`. The `content` field is now `str | list | None` to support tool message envelopes.
+**`backend/app/schemas/chat.py`** — `ChatMessage` (with `tool_calls`, `tool_call_id`, `name`, `tool_events`, `rag_sources`, `provider_switch`), `ChatCompletionRequest` (with `tools`, `rag`, `profile_id`, `rag_document_ids`), `ChatCompletionResponse`, `ChatMetrics`, `ChatUsage`, `ToolCall`, `ToolCallFunction`, `ToolDefinition`, `ToolFunction`, `ToolEvent`, `RagSource`. The `content` field is `str | list | None`.
 
-**`backend/app/schemas/conversations.py`** — `ConversationCreate`, `ConversationUpdate`, `ConversationSummary`, `Conversation`, `AppendMessagesRequest`, `SearchResult`
+**`backend/app/schemas/conversations.py`** — `ConversationCreate`, `ConversationUpdate`, `ConversationSummary` (with `tags[]`), `Conversation`, `AppendMessagesRequest`, `SearchResult`
+
+**`backend/app/schemas/auth.py`** — `UserCreate`, `UserOut`, `Token`, `TokenRefreshRequest`
+
+**`backend/app/schemas/knowledge.py`** — `KbDocument`, `KbChunk`, `KbSearchResult`, `RagSource`
+
+**`backend/app/schemas/mcp.py`** — `McpServerConfig`, `McpServerCreate`, `McpServerOut`, `McpToolInfo`, `McpConfigBundle`
+
+**`backend/app/schemas/tags.py`** / **`templates.py`** — `Tag`, `Template` with CRUD variants
 
 **`backend/app/schemas/profiles.py`** — `ProfileCreate`, `Profile`
 
-**`backend/app/schemas/stats.py`** — `StatsResponse` and related breakdown types
+**`backend/app/schemas/stats.py`** — `StatsResponse`, `DailyStats`, and related breakdown types
 
 ---
 
@@ -366,7 +480,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
 
 ---
 
-### 3.8 Tool System
+### 3.8 Tool System & MCP
 
 **`backend/app/tools/builtin.py`**
 
@@ -375,10 +489,13 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
 | `get_datetime` | Returns current date/time for an IANA timezone string |
 | `calculator` | Evaluates a math expression using AST parsing (no `eval`) |
 | `web_search` | Searches via DuckDuckGo HTML endpoint (real snippets); falls back to the DDG instant-answer JSON API if the HTML scrape yields nothing |
+| `read_url` | Fetches a web page and returns plain-text content (HTML stripped, max 4 000 chars) |
 
 **`backend/app/tools/registry.py`**
 
-`ToolRegistry` maps tool names to their implementations. `GET /api/v1/tools` returns all registered tool definitions in OpenAI function-calling format.
+`ToolRegistry` maps tool names to their implementations. `GET /api/v1/tools` returns all registered tool definitions in OpenAI function-calling format, merged with MCP server tools.
+
+**MCP server management** — `mcp_service.py` manages a registry of stdio JSON-RPC MCP servers stored in `mcp_servers`. On `refresh(db)` it probes each enabled server by spawning a subprocess via `mcp_client.open_session()`, performing the `initialize` handshake, and calling `tools/list`. Discovered tools are namespaced `mcp__<server>__<tool>` and injected into the tool registry. `call_tool(name, arguments, db)` routes a tool call back to the correct server. The routing cache (`_routes`) is rebuilt on every `refresh()` call and is used on the hot path with no DB round-trip.
 
 **Tool execution loop in `ChatService.stream()`:**
 
@@ -386,16 +503,43 @@ When `tools` are present in the request, `stream()` enters a loop (max 5 iterati
 1. Call `provider.complete()` (non-streaming, synchronous inside the loop)
 2. If the response contains `tool_calls`, for each call:
    - Emit `event: tool_call` SSE
-   - Execute via `ToolRegistry`
+   - Execute via `ToolRegistry` (built-in) or `mcp_service.call_tool()` (MCP namespaced)
    - Emit `event: tool_result` SSE
    - Append tool and result messages
 3. Loop back to step 1 with updated messages
 4. When no more tool calls, stream the final response normally
-5. If all 5 iterations are exhausted without a final answer, emit `event: error` with a descriptive message and log a WARNING
+5. If all 5 iterations are exhausted without a final answer, emit `event: error` and log a WARNING
 
 ---
 
-### 3.9 Model Catalog
+### 3.9 Authentication
+
+**`backend/app/services/auth_service.py`**
+
+```python
+create_user(email, password, role) -> User   # bcrypt hash
+verify_password(plain, hashed) -> bool
+create_access_token(user_id, role) -> str    # JWT HS256, 30 min
+create_refresh_token(db, user_id) -> str     # random token, 14 d, stored in refresh_tokens
+verify_refresh_token(db, token) -> User | None
+revoke_refresh_token(db, token) -> None
+```
+
+**`backend/app/dependencies/auth.py`**
+
+FastAPI dependencies used on protected routes:
+
+| Dependency | Effect |
+|---|---|
+| `get_current_user` | Decodes Bearer JWT → `User`; 401 on invalid/expired |
+| `require_admin` | Checks `user.role == "admin"`; 403 otherwise |
+| `resolve_profile` | Takes `profile_id` param → verifies `profile.user_id == user.id` (admin may pass any) |
+
+**Public allowlist** (no auth required): `/api/v1/auth/*`, `GET /api/v1/health`, `GET /api/v1/ready`, `GET /api/v1/shared/{token}`.
+
+---
+
+### 3.10 Model Catalog
 
 **File:** `backend/app/data/model_catalog.py`
 
@@ -406,7 +550,7 @@ Lookup order:
 
 ---
 
-### 3.10 Provider Factory Dependency
+### 3.11 Provider Factory Dependency
 
 **File:** `backend/app/dependencies/provider_factory.py`
 
@@ -420,47 +564,95 @@ Routing rules evaluated in order on the model-ID prefix:
 | `gemini/` | `GeminiProvider` |
 | `cerebras/` | `CerebrasProvider` |
 | `mistral/` | `MistralProvider` |
+| `nvidia/` | `NvidiaProvider` |
 | *(anything else)* | `LiteLLMProvider` |
 
 ---
 
-### 3.11 Endpoint Reference
+### 3.12 Endpoint Reference
 
-#### `POST /api/v1/chat/completions`
-Supports both streaming (`stream: true` → SSE) and non-streaming. When `tools` is present in the request body, runs the server-side tool execution loop. Errors map to `429` (rate limit) or `500`.
+#### Auth (`/api/v1/auth/`)
+- `POST /auth/login` — `{ email, password }` → `{ access_token, refresh_token }`
+- `POST /auth/refresh` — `{ refresh_token }` → `{ access_token }`
+- `POST /auth/logout` — revokes current refresh token
+- `GET /auth/me` — returns current user info
+- `GET /auth/users` (admin) — list all users
+- `POST /auth/users` (admin) — create user
+- `PATCH /auth/users/{id}` (admin) — update role / disable
+- `DELETE /auth/users/{id}` (admin) — delete user
+- `GET /auth/audit` (admin) — audit log
 
-#### `POST /api/v1/images/generations`
-Body: `{ prompt: str, width?: int, height?: int, provider?: str }`. Generates an image from a text prompt using the configured provider chain (`IMAGE_GENERATION_CHAIN`). Returns `{ b64_json, provider, model }`. If `provider` is specified, only entries matching that provider are tried. Errors: `502` (all providers failed), `503` (no provider configured).
+#### Chat
+- `POST /api/v1/chat/completions` — streaming (`stream: true` → SSE) and non-streaming. When `tools` is present, runs the server-side tool execution loop including MCP tools. Errors map to `429` (rate limit) or `500`.
 
-#### `GET /api/v1/tools`
-Returns all built-in tool definitions in OpenAI function-calling format.
+#### Images
+- `POST /api/v1/images/generations` — `{ prompt, width?, height?, provider? }` → `{ b64_json, provider, model }`. Uses `IMAGE_GENERATION_CHAIN`. Errors: `502` (all failed), `503` (none configured).
 
-#### `GET /api/v1/stats?profile_id=`
-Returns `StatsResponse` with global totals, per-profile breakdown, per-provider (with profile drilldown), per-model (with profile drilldown), and Telegram bot counters. `profile_id` is optional.
+#### Tools
+- `GET /api/v1/tools` — returns built-in + MCP tool definitions in OpenAI function-calling format.
 
-#### `GET /api/v1/conversations/search?q=&profile_id=`
-FTS5 prefix-match search over message content. `profile_id` is optional. Returns `SearchResult[]` including a text snippet for each hit.
+#### MCP servers (`/api/v1/mcp/`)
+- `GET /mcp/servers` — list all registered MCP servers
+- `POST /mcp/servers` — add a server (`{ name, config: { command, args, env, cwd } }`)
+- `PATCH /mcp/servers/{id}` — update name/config/enabled
+- `DELETE /mcp/servers/{id}` — remove a server
+- `POST /mcp/servers/{id}/test` — probe server: spawn, handshake, list tools; returns `{ status, tools[], error? }`
+- `POST /mcp/reload` — trigger `mcp_service.refresh()` to rebuild the routing cache
+- `GET /mcp/config` — export current registry as standard `{"mcpServers": {...}}` bundle
+- `POST /mcp/import` — bulk import from `{"mcpServers": {...}}` bundle
 
-#### `POST /api/v1/providers/{id}/test`
-Tests provider connectivity. For Ollama: queries `/api/tags`. For all configured cloud providers (groq, openrouter, gemini, mistral, cerebras, nvidia, openai): sends a minimal 5-token completion to verify the API key actually works, not just that it is present. Returns `{ ok, latency_ms, error? }`.
+#### Stats
+- `GET /api/v1/stats?profile_id=` — global totals, per-profile/provider/model breakdown, Telegram counters
+- `GET /api/v1/stats/daily?range=7d|30d|90d` — daily time-series for tokens + cost charts
 
-#### `PUT /api/v1/providers/{id}/key`
-Encrypts the supplied key with Fernet and stores it in `api_keys`. Updates the in-memory vault cache immediately. Returns `{ ok, configured, vaulted }`.
+#### Knowledge base (RAG)
+- `GET /v1/knowledge/documents?profile_id=`
+- `POST /v1/knowledge/documents` — multipart upload (PDF, TXT, DOCX, MD)
+- `DELETE /v1/knowledge/documents/{id}`
+- `POST /v1/knowledge/documents/{id}/reembed` — re-chunk + re-embed from stored source text
+- `GET /v1/knowledge/documents/{id}/chunks` — chunk preview
+- `GET /v1/knowledge/documents/{id}/source` — full source text with `char_start`/`char_end` spans
+- `POST /v1/knowledge/urls` — ingest a web page URL
+- `POST /v1/knowledge/search` — semantic + hybrid search
 
-#### `DELETE /api/v1/providers/{id}/key`
-Removes the vaulted key; provider falls back to env var.
+#### Admin (`/api/v1/admin/`, admin-only)
+- `POST /admin/backup` — trigger snapshot
+- `GET /admin/backups` — list snapshots
+- `POST /admin/restore` — restore from snapshot
+- `GET /admin/export?profile_id=` — zip archive (conversations, KB, templates, tags)
+- `POST /admin/import` — import zip archive
 
-#### `GET /api/v1/conversations?profile_id=<uuid>`
-Returns conversations belonging to the given profile, newest first.
+#### Conversations
+- `GET /api/v1/conversations?profile_id=<uuid>` — newest first
+- `POST /api/v1/conversations` — `{ title, model, profile_id }` → `ConversationSummary`
+- `GET /api/v1/conversations/{id}`
+- `PATCH /api/v1/conversations/{id}`
+- `DELETE /api/v1/conversations/{id}`
+- `POST /api/v1/conversations/{id}/messages` — append messages; FTS trigger fires automatically
+- `GET /api/v1/conversations/search?q=&profile_id=` — FTS5 prefix-match, `SearchResult[]`
+- `POST /api/v1/conversations/{id}/share` — generate share token
+- `GET /api/v1/shared/{token}` — public read-only view (no auth)
+- `GET /api/v1/conversations/{id}/pins` — list pinned messages
+- `POST /api/v1/conversations/{id}/messages/{msg_id}/pin` — toggle pin
+- `GET /api/v1/conversations/{id}/branches/{parent_id}` — list branch siblings
 
-#### `POST /api/v1/conversations`
-Body: `{ title: str, model: str, profile_id: str }`. Creates and returns a `ConversationSummary`.
+#### Tags & Templates
+- `GET/POST/PATCH/DELETE /api/v1/tags` — CRUD
+- `PUT /api/v1/conversations/{id}/tags` — assign tags
+- `GET/POST/PATCH/DELETE /api/v1/templates` — CRUD
 
-#### `POST /api/v1/conversations/{id}/messages`
-Body: `{ messages: ChatMessage[] }`. Appends messages and bumps `updated_at`. Each inserted message is indexed by the `messages_fts_ai` trigger.
+#### Providers
+- `PUT /api/v1/providers/{id}/key` — encrypt + store key; updates cache immediately
+- `DELETE /api/v1/providers/{id}/key` — remove vaulted key
+- `POST /api/v1/providers/{id}/test` — connectivity test; returns `{ ok, latency_ms, error? }`
 
-#### `GET /api/v1/profiles` / `POST /api/v1/profiles` / `DELETE /api/v1/profiles/{id}`
-CRUD for profiles. DELETE cascades to conversations (messages are deleted via FK cascade).
+#### Profiles
+- `GET/POST/DELETE /api/v1/profiles` — CRUD; DELETE cascades to conversations
+
+#### Health
+- `GET /api/v1/health` — liveness
+- `GET /api/v1/ready` — verifies DB + at least one configured provider
+- `GET /api/v1/metrics` — Prometheus OpenMetrics (optional `METRICS_TOKEN` guard)
 
 ---
 
@@ -471,12 +663,13 @@ CRUD for profiles. DELETE cascades to conversations (messages are deleted via FK
 **File:** `frontend/src/app/app.config.ts`
 
 ```typescript
-provideHttpClient(withFetch(), withInterceptors([profileInterceptor, errorInterceptor]))
+provideHttpClient(withFetch(), withInterceptors([authInterceptor, profileInterceptor, errorInterceptor]))
 ```
 
-Two interceptors registered in order:
-1. `profileInterceptor` — injects `X-Profile-ID` header from `ProfileService.currentId`
-2. `errorInterceptor` — catches HTTP errors → `NotificationService`
+Three interceptors registered in order:
+1. `authInterceptor` — adds `Authorization: Bearer <access_token>`; on 401 calls `POST /auth/refresh` silently and retries
+2. `profileInterceptor` — injects `X-Profile-ID` header from `ProfileService.currentId`
+3. `errorInterceptor` — catches HTTP errors → `NotificationService`
 
 ---
 
@@ -538,14 +731,39 @@ clear(): void           // sets signal to null, removes from localStorage
 ```
 
 #### StatsService
-HTTP client for `GET /stats`.
+HTTP client for `GET /stats` and `GET /stats/daily`.
 
 ```typescript
 getStats(profileId?: string): Observable<StatsResponse>
+getDaily(range: '7d' | '30d' | '90d'): Observable<DailyStatsResponse>
 ```
 
+#### KnowledgeService
+HTTP client for all `/knowledge/*` endpoints (list, upload, delete, reembed, search, url ingest).
+
+#### TemplateService / TagService
+HTTP clients for `/templates` and `/tags` CRUD + tag assignment.
+
+#### McpService
+HTTP client for all `/mcp/*` endpoints (servers CRUD, test, reload, config, import).
+
+#### OpsService
+HTTP client for `/admin/*` endpoints (backup, restore, export, import) and `/ready`/`/metrics`.
+
+#### ThemeService
+Manages dark/light/system theme via `[data-theme]` on `<html>`; stores preference in `localStorage`. `setAccent(color)` updates all `--accent-*` CSS custom properties dynamically.
+
+#### UserPreferencesService
+Persists sidebar section state, selected model, temperature, max tokens, provider filters, capability filter, RAG toggle, tools toggle, and sidebar open state across reloads.
+
+#### ChatStateService
+Singleton service (not destroyed on navigation) that holds `messages` signal, `loading` signal, `streaming` signal, and `currentConversationId`. Prevents the chat from resetting when the user navigates to `/stats` and back.
+
+#### OnboardingService / PushNotifyService
+`OnboardingService` drives the first-run guided tour. `PushNotifyService` wraps the Notifications API for background system notifications on long-running completions.
+
 #### NotificationService
-Signal-based toast queue. `add(type, title, detail?, durationMs?)` — auto-dismiss via `setTimeout`.
+Signal-based toast queue. `add(type, title, detail?, durationMs?, action?)` — auto-dismiss via `setTimeout`.
 
 ---
 
@@ -579,7 +797,7 @@ Streaming errors arrive as `event: error` SSE frames → parsed by `ChatService`
 
 | Signal | Type | Description |
 |---|---|---|
-| `messages` | `ChatMessage[]` | Full conversation including telemetry and `tool_events[]` |
+| `messages` | `ChatMessage[]` | Delegated to `ChatStateService`; survives navigation |
 | `conversations` | `ConversationSummary[]` | Sidebar list for the active profile |
 | `models` | `ChatModel[]` | All models from `GET /models` |
 | `providers` | `ProviderSummary[]` | Per-provider summaries |
@@ -587,39 +805,46 @@ Streaming errors arrive as `event: error` SSE frames → parsed by `ChatService`
 | `availabilityFilter` | `'all'\|'free'` | Free-only toggle |
 | `selectedProviders` | `string[]` | Provider IDs in the sidebar filter |
 | `toolsEnabled` | `boolean` | Whether tools are sent with requests |
-| `tools` | `ToolDefinition[]` | Fetched from `GET /tools` on load |
-| `searchQuery` | `string` | Current search bar input |
-| `searchResults` | `SearchResult[]` | Inline results from FTS5 search |
+| `availableTools` | `ToolDefinition[]` | Fetched from `GET /tools` on load (built-ins + MCP) |
+| `ragEnabled` | `boolean` | RAG toggle |
+| `kbDocuments` | `KbDocument[]` | Knowledge base documents for active profile |
+| `templates` | `PromptTemplate[]` | Saved system-prompt templates |
+| `tags` | `Tag[]` | All tags for active profile |
+| `pinnedMessages` | `ChatMessage[]` | Pinned messages for current conversation |
+| `activeBranches` | `Record<string, number>` | Active branch index per parent message ID |
+| `searchQuery` / `searchResults` | `string` / `SearchResult[]` | FTS5 search state |
 
 #### Computed
 
-| Signal | Description |
+| Computed | Description |
 |---|---|
 | `availableCapabilities` | Distinct capabilities across loaded models |
-| `filteredModels` | Models passing provider + capability + availability filters |
+| `filteredModels` | Models passing provider + capability + availability + name search filters |
+| `filteredConversations` | Conversations filtered by selected tag |
+| `mcpToolGroups` | Tools grouped by MCP server name (key `__builtin__` for built-ins) |
 | `showProfileModal` | `true` when `profileService.current()` is null |
 
 #### Key methods
 
 | Method | Description |
 |---|---|
-| `send()` | Appends user message (with optional `image_b64`), starts SSE stream, stores the `Subscription` in `streamSubscription`, updates messages on each chunk. Sends `tools` when enabled. Detects `/imagine` prefix and routes to `handleImagineCommand()`. Transforms attached images into OpenAI multipart content format before sending |
-| `handleImagineCommand(prompt)` | Calls `chatService.generateImage()`, shows placeholder, displays generated image inline on success |
-| `triggerImageUpload()` | Opens native file picker for images; reads as base64 data URL |
-| `onPaste(event)` | Handles paste events to capture pasted images from clipboard |
-| `cancelStream()` | Unsubscribes `streamSubscription` (triggers `AbortController` in `ChatService`), resets `loading` and `streaming` to false. Shown as a red stop button in the composer during streaming |
-| `onEnter(event)` | Enter sends, Shift+Enter inserts newline |
-| `selectConversation(id)` | GET conversation → `messages.set(conv.messages)`, closes sidebar on mobile |
-| `newConversation()` | Resets to welcome state, closes sidebar on mobile |
-| `deleteConversation(id, event)` | Delete + refresh list |
-| `switchProfile()` | Calls `profileService.clear()` → modal reappears |
-| `persistExchange(userMsg, assistantIdx)` | After stream: create conversation if new, then append messages |
-| `loadConversationList()` | GET `/conversations?profile_id=<current>` → updates `conversations` signal |
-| `onSearch(q)` | Debounced 300 ms → `conversationService.search(q)` → updates `searchResults` |
+| `send(overrideMessages?)` | Builds SSE stream; handles `/imagine` prefix; transforms image attachments to OpenAI multipart format; tracks `streamSubscription` for cancellation; emits `provider_switch`, `rag_context`, `tool_call`, `tool_result` events |
+| `isToolCallPending(events, callId)` | Returns `true` if a `tool_call` has no matching `tool_result` yet — used to show the pending spinner |
+| `cancelStream()` | Unsubscribes → triggers `AbortController` in `ChatService`; resets `loading`/`streaming` |
+| `regenerate()` | If message has `parent_id`: branching mode (keeps old response); else simple replace |
+| `switchBranch(message, direction)` | Loads sibling branch from `GET /conversations/{id}/branches/{parent_id}` |
+| `editLastUserMessage()` | Loads last user message into composer; removes it and everything after from history |
+| `togglePin(message, idx)` | `POST /conversations/{id}/messages/{msg_id}/pin` → updates in-memory + pinned bar |
+| `handleImagineCommand(prompt)` | `POST /images/generations`; shows placeholder; renders inline on success |
+| `selectConversation(id)` | Loads conversation; resolves branches (shows latest per parent); closes sidebar on mobile |
+| `persistExchange(userMsg, assistantIdx)` | After stream: create conversation if new; set `parent_id` + `branch_index` on assistant message; append both to DB |
 
 #### SSE handling
 
-`tool_call` and `tool_result` events are stored as `tool_events[]` on the assistant `ChatMessage` and rendered as colored bubbles above the reply text.
+All SSE event types are dispatched in `stream()`:
+- `tool_call` / `tool_result` → stored as `tool_events[]` on the assistant `ChatMessage`, rendered as colored bubbles; pending calls (no result yet) show a spinner
+- `rag_context` → stored as `rag_sources[]` on the message, rendered as citation chips
+- `provider_switch` → stored as `provider_switch` on the message, rendered as a warning notice
 
 #### Effect (constructor)
 ```typescript
@@ -657,7 +882,7 @@ Standalone component, no external modal library. Shown as a full-screen overlay 
 
 **File:** `frontend/src/app/features/discovery/discovery-page.component.ts`
 
-Tabs: `cloudflare | openrouter | gemini | groq | cerebras | mistral`. Each tab calls the corresponding `*-discovery/run` endpoint and renders a YAML editor with syntax highlighting.
+Tabs: `cloudflare | openrouter | gemini | groq | cerebras | mistral | nvidia | ollama`. Each tab calls the corresponding `*-discovery/run` endpoint and renders a YAML editor with syntax highlighting, plus stat cards (total/free/unique capabilities) and a model grid with capability badges.
 
 ---
 
@@ -665,23 +890,58 @@ Tabs: `cloudflare | openrouter | gemini | groq | cerebras | mistral`. Each tab c
 
 **File:** `frontend/src/app/features/stats/stats-page.component.ts`
 
-Loaded at route `/stats`. Calls `StatsService.getStats()` on init and renders:
+Loaded at route `/stats`. Renders:
 
 - **Summary cards** — global totals (messages, tokens, conversations)
 - **Per-profile table** — one row per profile with message and token counts
-- **Per-provider table** — expandable rows with per-profile drilldown
-- **Per-model table** — expandable rows with per-profile drilldown
+- **Per-provider / per-model tables** — expandable rows with per-profile drilldown
 - **Telegram section** — `messages_received`, `messages_sent`, `errors`, `active_chats`
+- **Daily charts** — tokens area chart + cost bar chart; switchable 7d/30d/90d range (calls `GET /stats/daily`)
 
 ---
 
-### 4.11 Routing
+### 4.11 MCP Page
+
+**File:** `frontend/src/app/features/mcp/mcp-page.component.ts`
+
+Admin-only route (`/mcp`). Provides:
+
+- Paste or import a standard `{"mcpServers": {...}}` bundle via `POST /mcp/import`
+- Table of registered servers with enable/disable toggle (`PATCH /mcp/servers/{id}`)
+- Per-server: last probe status, discovered tools list, test button (`POST /mcp/servers/{id}/test`)
+- Add / edit / delete individual servers
+- Export current registry as `mcp.json` (`GET /mcp/config`)
+- Force reload button (`POST /mcp/reload`)
+
+---
+
+### 4.12 Ops Page
+
+**File:** `frontend/src/app/features/ops/ops-page.component.ts`
+
+Admin-only route (`/ops`). Provides:
+
+- **Live readiness** — DB status, provider count, active SSE streams (parsed from `/metrics`)
+- **Link to raw `/metrics`** — for Prometheus / Grafana
+- **Backup management** — list existing snapshots, create new backup, restore from snapshot
+- **Per-profile export/import** — download or upload a zip archive (conversations, KB, templates, tags)
+
+---
+
+### 4.13 Routing
 
 ```
-/           → ChatPageComponent      (lazy-loaded)
-/discovery  → DiscoveryPageComponent (lazy-loaded)
-/providers  → ProvidersPageComponent (lazy-loaded)
-/stats      → StatsPageComponent     (lazy-loaded)
+/                → redirect to /chat
+/login           → LoginComponent         (public)
+/chat            → ChatPageComponent      (authGuard)
+/compare         → ComparePageComponent   (authGuard)
+/discovery       → DiscoveryPageComponent (authGuard)
+/providers       → ProvidersPageComponent (authGuard)
+/stats           → StatsPageComponent     (authGuard)
+/ops             → OpsPageComponent       (authGuard + adminGuard)
+/mcp             → McpPageComponent       (authGuard + adminGuard)
+/shared/:token   → SharedViewComponent    (public — no auth)
+**               → redirect to /chat
 ```
 
 ---

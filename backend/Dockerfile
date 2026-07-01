@@ -5,7 +5,7 @@ RUN addgroup --system app && adduser --system --ingroup app app
 
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt  
 
 # Docker CLI (client only) so MCP servers configured as `docker run …` can be
 # launched as sibling containers via the host daemon socket (mounted at runtime

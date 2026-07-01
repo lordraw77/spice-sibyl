@@ -7,6 +7,7 @@
 - Modern chat-style web UI with real-time per-message telemetry
 - End-to-end SSE streaming with structured error handling
 - Tool calling with server-side execution loop (max 5 iterations)
+- MCP server management: spawn, discover, and call stdio JSON-RPC MCP servers
 - Multi-agent orchestration via the `agent/*` model family (Multi-MCP orchestrator sidecar)
 - Telegram bot with chat/agent mode toggle, reachable through the same gateway
 - Usage statistics dashboard per profile, provider, and model
@@ -15,9 +16,11 @@
 - Global error notifications (toast) in the frontend
 - Conversation persistence on SQLite with per-profile history separation
 - Encrypted API key vault (Fernet) with environment variable fallback
-- System prompt, model parameters, voice input, message actions, conversation export, and syntax highlighting in the chat UI
-- Image-to-text (vision): image upload in web UI and photo handling in Telegram
-- Text-to-image generation via configurable provider chain (Gemini, Hugging Face, Cloudflare, Together AI)
+- Authentication & access control (JWT + bcrypt, roles, audit log)
+- Knowledge base / RAG with hybrid search and optional LLM reranker
+- Prometheus metrics with Grafana dashboard; structured JSON logging with request correlation
+- Automatic provider fallback chain for chat completions
+- DB backup & restore; per-profile export/import
 
 ---
 
@@ -26,54 +29,134 @@
 ```
 spice-sibyl/
 ├── backend/app/
-│   ├── api/v1/endpoints/       # REST endpoints
-│   │   ├── chat.py             # POST /chat/completions
-│   │   ├── images.py           # POST /images/generations (text-to-image)
-│   │   ├── conversations.py    # CRUD conversations + messages + FTS5 search + export
-│   │   ├── profiles.py         # CRUD profiles
-│   │   ├── providers.py        # GET/PATCH/PUT/DELETE providers + key vault + real connectivity test
-│   │   ├── stats.py            # GET /stats — usage statistics
-│   │   ├── tools.py            # GET /tools — built-in tool definitions
-│   │   └── *_discovery.py      # Discovery × 8 providers (Cloudflare, OpenRouter, Gemini, Groq, Cerebras, Mistral, NVIDIA, Ollama)
-│   ├── core/config.py          # Settings (env / .env)
-│   ├── data/                   # YAML catalog loader
+│   ├── api/v1/endpoints/
+│   │   ├── chat.py
+│   │   ├── images.py
+│   │   ├── conversations.py    # CRUD + FTS5 search + export + pins + branches + sharing
+│   │   ├── profiles.py
+│   │   ├── providers.py
+│   │   ├── stats.py            # GET /stats + GET /stats/daily
+│   │   ├── tools.py            # GET /tools  (built-ins + MCP tools merged)
+│   │   ├── knowledge.py        # RAG: documents, search, reembed, chunks, source, url ingest
+│   │   ├── health.py           # GET /health + GET /ready
+│   │   ├── metrics.py          # GET /metrics (Prometheus OpenMetrics)
+│   │   ├── auth.py             # /auth/* (login, refresh, logout, users, audit)
+│   │   ├── admin.py            # /admin/* (backup, restore, export, import)
+│   │   ├── mcp.py              # /mcp/* (servers CRUD + test + reload + config + import)
+│   │   ├── tags.py
+│   │   ├── templates.py
+│   │   ├── sharing.py
+│   │   ├── telegram_link.py
+│   │   └── *_discovery.py      # Discovery × 8 providers
+│   ├── core/
+│   │   ├── config.py           # Settings (env / .env)
+│   │   ├── logging_context.py  # request_id ContextVar
+│   │   └── metrics.py          # Prometheus counters/histograms
 │   ├── db/
-│   │   ├── database.py         # SQLite schema + indexes, init_db(), get_db()
+│   │   ├── database.py         # SQLite schema + indexes + migrations, init_db(), get_db()
 │   │   ├── conversation_repository.py
 │   │   ├── profile_repository.py
-│   │   ├── vault_repository.py # API key encryption/decryption
-│   │   ├── stats_repository.py # Usage aggregation queries
-│   │   └── search_repository.py # FTS5 full-text search queries
-│   ├── dependencies/           # provider_factory.py — FastAPI dependency
+│   │   ├── vault_repository.py
+│   │   ├── stats_repository.py
+│   │   ├── search_repository.py
+│   │   ├── kb_repository.py
+│   │   ├── audit_repository.py
+│   │   ├── token_repository.py
+│   │   ├── user_repository.py
+│   │   ├── mcp_repository.py
+│   │   ├── tag_repository.py
+│   │   ├── template_repository.py
+│   │   ├── share_repository.py
+│   │   ├── telegram_link_repository.py
+│   │   ├── telegram_prefs_repository.py
+│   │   └── telegram_reminder_repository.py
+│   ├── dependencies/
+│   │   ├── provider_factory.py
+│   │   ├── auth.py             # get_current_user, require_admin, resolve_profile
+│   │   └── rate_limit.py
+│   ├── middleware/
+│   │   └── request_context.py  # RequestContextMiddleware
 │   ├── providers/              # BaseProvider + concrete adapters
-│   ├── schemas/
-│   │   ├── chat.py             # ChatMessage, ToolCall, ToolDefinition, …
-│   │   ├── conversations.py    # ConversationSummary, SearchResult, …
-│   │   ├── profiles.py
-│   │   └── stats.py            # StatsResponse and related types
+│   ├── schemas/                # Pydantic models (chat, conversations, profiles, stats,
+│   │                           #   knowledge, mcp, auth, tags, templates, providers)
 │   ├── services/
-│   │   ├── chat_service.py     # SSE streaming orchestration + tool loop
-│   │   ├── image_service.py    # Text-to-image with configurable provider chain
-│   │   ├── key_resolver.py     # Vault → env fallback for API keys
-│   │   └── vault_service.py    # Fernet encrypt/decrypt + in-memory cache
+│   │   ├── chat_service.py
+│   │   ├── image_service.py
+│   │   ├── key_resolver.py
+│   │   ├── vault_service.py
+│   │   ├── embedding_service.py
+│   │   ├── rag_service.py
+│   │   ├── auth_service.py
+│   │   ├── backup_service.py
+│   │   ├── mcp_client.py       # Minimal stdio JSON-RPC MCP client
+│   │   └── mcp_service.py      # Registry, tool discovery, routing cache, call routing
 │   └── tools/
-│       ├── __init__.py
 │       ├── builtin.py          # get_datetime · calculator · web_search · read_url
-│       └── registry.py         # ToolRegistry — lookup by name
-├── frontend/src/app/
-│   ├── core/
-│   │   ├── config/             # AppConfigService (app-config.json runtime)
-│   │   ├── interceptors/       # error.interceptor · profile.interceptor
-│   │   ├── models/             # TypeScript interfaces (mirror Pydantic)
-│   │   └── services/           # ChatService · ConversationService · ProfileService · StatsService · …
-│   ├── features/
-│   │   ├── chat/               # ChatPageComponent — main chat UI (system prompt, parameters, voice, message actions, export, stream cancel, image upload, /imagine)
-│   │   ├── profile/            # ProfileModalComponent — profile selector
-│   │   ├── discovery/          # DiscoveryPageComponent
-│   │   └── stats/              # StatsPageComponent — usage dashboard
-│   ├── shared/toast-container/
-│   └── layout/navbar.component.ts
+│       └── registry.py         # ToolRegistry (built-ins + MCP tools)
+├── frontend/src/app/           # Angular 18 SPA
+│   ├── core/                   # config, guards, interceptors, models, services
+│   ├── features/               # chat, auth, compare, discovery, mcp, onboarding,
+│   │                           #   ops, profile, providers, shared, stats
+│   ├── layout/navbar.component.ts
+│   └── shared/                 # toast-container, pipes
 └── shared-config/provider_models.yaml
+```
+
+---
+
+## Authentication flow
+
+```
+POST /api/v1/auth/login  { email, password }
+  │
+  ▼
+AuthService
+  │  bcrypt.verify(password, stored_hash)
+  │  create JWT access token (30 min, HS256)
+  │  create refresh token (14 d) → token_repository
+  ▼
+{ access_token, refresh_token }
+
+Frontend authInterceptor
+  │  Adds Bearer header to all /api/v1 requests
+  │  On 401: calls POST /auth/refresh → gets new access_token
+  │            → retries original request
+  ▼
+Protected endpoints
+  │  get_current_user(token) → User
+  │  require_admin(user) → checks role == 'admin'
+  │  resolve_profile(profile_id, user) → validates ownership
+```
+
+---
+
+## MCP tool system (Phase 18)
+
+```
+Admin: POST /api/v1/mcp/servers  { name, config: { command, args, env, cwd } }
+  │  stored in mcp_servers table  (enabled = true by default)
+  ▼
+mcp_service.refresh(db)
+  │  for each enabled server:
+  │    mcp_client.open_session(config) — spawns subprocess, stdio JSON-RPC
+  │    session.initialize()
+  │    tools = session.list_tools()
+  │    builds _routes[namespaced(server, tool)] = (config, raw_name)
+  ▼
+GET /api/v1/tools
+  │  built-ins + mcp_service.get_tool_defs()
+  │  tools are namespaced: mcp__<server>__<tool>
+  ▼
+POST /api/v1/chat/completions  { tools: [...mcp tools...] }
+  │  ChatService tool loop
+  │  ToolRegistry.execute(namespaced_name, arguments)
+  │    mcp_service.is_mcp_tool(name) → True
+  │    mcp_service.call_tool(name, arguments, db)
+  │      open_session(server_config)
+  │      session.call_tool(raw_name, arguments)
+  │  emits event: tool_call / event: tool_result
+  ▼
+Browser: tool bubble + loading spinner (pending) → result bubble
 ```
 
 ---
@@ -81,9 +164,7 @@ spice-sibyl/
 ## Multi-MCP orchestrator integration (agent mode)
 
 The gateway can front an external **multi-agent orchestrator** (the `multi-mcp`
-project) and expose it as the `agent/*` model family. This keeps the integration
-in one place — both the web console and the Telegram bot reach it through the
-same `get_provider()` routing, with no channel-specific code.
+project) and expose it as the `agent/*` model family.
 
 ```
 Angular / Telegram ──► FastAPI gateway ──(agent/*)──► OrchestratorProvider
@@ -98,73 +179,51 @@ Angular / Telegram ──► FastAPI gateway ──(agent/*)──► Orchestrat
                                           MCP servers (sibling containers / mcp-proxy)
 ```
 
-**Components**
-
-- `app/providers/orchestrator_provider.py` — `OrchestratorProvider`, a thin
-  proxy to the sidecar (`complete` / `stream` / `list_models`), configured via
-  `ORCHESTRATOR_BASE_URL` and `ORCHESTRATOR_TIMEOUT`.
-- `app/dependencies/provider_factory.py` — routes the `agent/` prefix to it.
-- `shared-config/provider_models.yaml` — declares the `agent/multi-mcp` model so
-  it appears in the model picker and `GET /models`.
-
-**Progress streaming** — the sidecar emits control frames carrying a named SSE
-event (`tool_call` / `tool_result`) as the orchestrator delegates. `ChatService`
-maps these onto the SSE events the frontend already renders as tool bubbles; the
-Telegram bot turns them into progressive status edits. The protocol is additive:
-any provider may emit a `{"_sse_event": …}` control frame; providers that don't
-are unaffected.
-
-Deployment of the sidecar (Docker image, Docker-out-of-Docker, host-path volumes)
-is documented in the `multi-mcp` project's `DEPLOY.md`.
-
 ---
 
 ## Database — SQLite
 
 The backend maintains a SQLite database (`spice_sibyl.db`, path configurable via `DB_PATH`).
 
-### Schema
+### Schema (key tables)
 
 ```sql
-profiles (
-    id         TEXT PRIMARY KEY,   -- UUID generated by the backend
-    name       TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-)
+-- Identity & auth
+users (id TEXT PK, email TEXT UNIQUE, hashed_password TEXT, role TEXT, is_active BOOL, created_at INT)
+refresh_tokens (id TEXT PK, user_id TEXT REFERENCES users, token_hash TEXT UNIQUE, expires_at INT, revoked BOOL)
+audit_log (id TEXT PK, user_id TEXT, action TEXT, detail TEXT, ip TEXT, created_at INT)
 
-conversations (
-    id         TEXT PRIMARY KEY,
-    profile_id TEXT NOT NULL DEFAULT 'default',
-    title      TEXT NOT NULL,      -- first 60 characters of the first user message
-    model      TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-)
+-- Profiles & conversations
+profiles (id TEXT PK, user_id TEXT REFERENCES users, name TEXT, created_at INT)
+conversations (id TEXT PK, profile_id TEXT, title TEXT, model TEXT, created_at INT, updated_at INT)
+messages (id TEXT PK, conversation_id TEXT REFERENCES conversations ON DELETE CASCADE,
+          role TEXT, content TEXT, model TEXT, provider TEXT, latency_ms INT, ...)
+conversation_tags (conversation_id TEXT, tag_id TEXT, PRIMARY KEY (...))
+tags (id TEXT PK, profile_id TEXT, name TEXT, color TEXT)
+prompt_templates (id TEXT PK, profile_id TEXT, name TEXT, content TEXT)
+shared_conversations (id TEXT PK, conversation_id TEXT, share_token TEXT UNIQUE, created_at INT)
 
-messages (
-    id                TEXT PRIMARY KEY,
-    conversation_id   TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    role              TEXT NOT NULL,
-    content           TEXT NOT NULL,
-    -- optional telemetry fields (model, provider, latency_ms, token counts, …)
-    created_at        INTEGER NOT NULL
-)
+-- FTS5 full-text search
+CREATE VIRTUAL TABLE messages_fts USING fts5(id UNINDEXED, conversation_id UNINDEXED, content, tokenize='unicode61');
+-- Kept in sync by 3 triggers: messages_fts_ai (INSERT), messages_fts_ad (DELETE), messages_fts_au (UPDATE)
 
-api_keys (
-    provider_id   TEXT PRIMARY KEY,
-    encrypted_key TEXT NOT NULL,   -- encrypted with Fernet
-    updated_at    INTEGER NOT NULL
-)
+-- Knowledge base (RAG)
+kb_documents (id TEXT PK, profile_id TEXT, filename TEXT, source_type TEXT, source_url TEXT,
+              source_text TEXT, size_bytes INT, chunk_count INT, status TEXT, error TEXT, created_at INT)
+kb_chunks (id TEXT PK, document_id TEXT REFERENCES kb_documents ON DELETE CASCADE,
+           chunk_index INT, content TEXT, char_start INT, char_end INT, embedding BLOB)
+CREATE VIRTUAL TABLE kb_chunks_fts USING fts5(id UNINDEXED, document_id UNINDEXED, content, ...)
 
--- FTS5 virtual table for full-text search on messages
-CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
-    id UNINDEXED,
-    conversation_id UNINDEXED,
-    content,
-    tokenize='unicode61'
-);
--- Kept in sync by 3 triggers: messages_fts_ai (INSERT),
--- messages_fts_ad (DELETE), messages_fts_au (UPDATE)
+-- API key vault
+api_keys (provider_id TEXT PK, encrypted_key TEXT, updated_at INT)
+
+-- MCP servers
+mcp_servers (id TEXT PK, name TEXT UNIQUE, config TEXT JSON, enabled BOOL, created_at INT, updated_at INT)
+
+-- Telegram
+telegram_links (profile_id TEXT PK, telegram_user_id INT, username TEXT, linked_at INT)
+telegram_prefs (chat_id INT PK, locale TEXT, ...)
+telegram_reminders (id TEXT PK, chat_id INT, remind_at INT, message TEXT, job_id TEXT)
 ```
 
 ### Indexes
@@ -177,8 +236,6 @@ CREATE INDEX idx_messages_provider ON messages(provider);
 CREATE INDEX idx_messages_role ON messages(role);
 ```
 
-The database is initialized at boot via `lifespan` in `main.py`. Additive migrations (e.g. adding the `profile_id` column, creating the FTS5 table) are applied idempotently with structured logging. On first run with the FTS5 migration, the table is populated from existing messages.
-
 ---
 
 ## Request flow — chat completion
@@ -186,26 +243,33 @@ The database is initialized at boot via `lifespan` in `main.py`. Additive migrat
 ```
 Frontend (ChatPageComponent)
   │  POST /api/v1/chat/completions  (fetch + ReadableStream)
-  │  body includes tools[] when the toggle is active
-  │  body includes temperature, max_tokens from sidebar controls
+  │  body includes tools[] (built-ins + MCP tools) when the toggle is active
+  │  body includes temperature, max_tokens, rag, profile_id
   │  system prompt is prepended to messages when configured
+  │  authInterceptor adds Authorization: Bearer <access_token>
   ▼
 FastAPI chat.py
+  │  get_current_user(token) → User  [auth]
+  │  rate_limit(user) → check sliding window
   │  get_provider(model) → provider adapter
   ▼
 ChatService.stream()
+  │  if rag=true → RagService.retrieve(query, profile_id)
+  │    └── emits event: rag_context  { sources: [{ filename, chunk_index, snippet }] }
+  │  if CHAT_FALLBACK_CHAIN → try primary provider
+  │    on error (before first token) → switch to next
+  │    └── emits event: provider_switch  { from, to }
   │  if tools[] present → tool execution loop (max 5 iterations)
   │    ├── provider.complete() → tool_calls in response
-  │    ├── emits event: tool_call  (SSE)
+  │    ├── emits event: tool_call   { id, name, arguments }
   │    ├── ToolRegistry.execute(name, arguments)
-  │    └── emits event: tool_result (SSE)
-  │  if loop exhausts iterations → emits event: error
+  │    │     built-in → builtin.py
+  │    │     mcp__*   → mcp_service.call_tool(name, arguments, db)
+  │    └── emits event: tool_result { id, name, result }
   │  EventSourceResponse(event_generator())
   ▼
 Provider.stream()
-  │  key_resolver.resolve(provider_id)
-  │    └── vault_service.get(id)  →  in-memory cache
-  │         └── fallback: settings.*_api_key
+  │  key_resolver.resolve(provider_id)  →  in-memory vault cache
   ▼
 Provider API  (Groq / Gemini / Cloudflare / OpenRouter / Ollama / Mistral / Cerebras / NVIDIA / …)
 
@@ -222,14 +286,16 @@ conversation_repository → SQLite
 
 ### SSE event types
 
-| Event         | Emitted by        | Content                                                          |
-|---------------|-------------------|------------------------------------------------------------------|
-| `message`     | ChatService       | Delta chunk (`chat.completion.chunk`)                            |
-| `message`     | LiteLLMProvider   | Final `chat.completion.meta` chunk with telemetry                |
-| `done`        | ChatService       | `[DONE]` — signals end of stream                                |
-| `error`       | ChatService       | `{"message": "..."}` — error inside generator or tool loop exhausted |
-| `tool_call`   | ChatService       | `{"id": "...", "name": "...", "arguments": {...}}`               |
-| `tool_result` | ChatService       | `{"id": "...", "name": "...", "result": "..."}`                  |
+| Event             | Emitted by        | Content                                                              |
+|-------------------|-------------------|----------------------------------------------------------------------|
+| `message`         | ChatService       | Delta chunk (`chat.completion.chunk`)                                |
+| `message`         | Provider          | Final `chat.completion.meta` chunk with telemetry                    |
+| `done`            | ChatService       | `[DONE]` — signals end of stream                                     |
+| `error`           | ChatService       | `{"message": "..."}` — error or tool loop exhausted                  |
+| `tool_call`       | ChatService       | `{"id": "...", "name": "...", "arguments": {...}}`                   |
+| `tool_result`     | ChatService       | `{"id": "...", "name": "...", "result": "..."}`                      |
+| `rag_context`     | ChatService       | `{"sources": [{ filename, chunk_index, snippet, char_start, ... }]}` |
+| `provider_switch` | ChatService       | `{"from": "provider_a", "to": "provider_b"}`                         |
 
 ---
 
@@ -242,8 +308,9 @@ conversation_repository → SQLite
 | `gemini/`      | `GeminiProvider`      | LiteLLM via Google Generative AI            |
 | `cerebras/`    | `CerebrasProvider`    | Direct HTTP, time_info for telemetry        |
 | `mistral/`     | `MistralProvider`     | Direct HTTP                                 |
+| `nvidia/`      | `NvidiaProvider`      | Direct HTTP (NIM endpoints)                 |
 | `agent/`       | `OrchestratorProvider`| Routes to external Multi-MCP sidecar        |
-| everything else| `LiteLLMProvider`     | Ollama, Groq, Together, Fireworks, HF, NVIDIA, … |
+| everything else| `LiteLLMProvider`     | Ollama, Groq, Together, Fireworks, HF, … |
 
 All API keys are resolved via `key_resolver.resolve(provider_id)`:
 1. Check the in-memory vault cache (encrypted key in DB)
@@ -256,7 +323,9 @@ All API keys are resolved via `key_resolver.resolve(provider_id)`:
 ```
 GET /api/v1/tools
   ▼
-tools/registry.py → list of definitions in OpenAI function-calling format
+ToolRegistry.list_definitions()
+  ├── built-ins (get_datetime, calculator, web_search, read_url)
+  └── mcp_service.get_tool_defs()  [merged, namespaced mcp__*]
 
 POST /api/v1/chat/completions  { tools: [...] }
   ▼
@@ -265,13 +334,47 @@ ChatService.stream()
   │  response contains tool_calls[]
   ▼
 ToolRegistry.execute(name, arguments)
-  │  builtin.py:
-  │    get_datetime(timezone) → datetime ISO string
-  │    calculator(expression) → numeric result (AST safe eval)
-  │    web_search(query)      → DuckDuckGo HTML scraping results (JSON API fallback)
-  │    read_url(url)          → plain-text page content (HTML stripped, max 4000 chars)
+  │  if is_mcp_tool(name):
+  │    mcp_service.call_tool(name, arguments, db)
+  │  else:
+  │    builtin.py:
+  │      get_datetime(timezone)
+  │      calculator(expression)
+  │      web_search(query)
+  │      read_url(url)
   ▼
-messages updated with tool and tool_result, then final call to provider
+messages updated with tool and tool_result, then final provider call
+```
+
+---
+
+## RAG flow
+
+```
+POST /api/v1/knowledge/documents  (multipart/form-data)
+  │  EmbeddingService.ingest(file, profile_id)
+  │    extract text → chunk (800 chars / 120 overlap)
+  │    embed via EMBEDDING_CHAIN (Ollama → Gemini → Mistral)
+  │    store in kb_documents + kb_chunks (embedding as float32 BLOB)
+  ▼
+POST /api/v1/chat/completions  { rag: true, profile_id: "..." }
+  │
+  ▼
+ChatService.stream()
+  │  RagService.retrieve(last_user_message, profile_id, top_k)
+  │    if RAG_HYBRID:
+  │      vector arm: cosine similarity scan over kb_chunks
+  │      lexical arm: kb_chunks_fts FTS5 BM25 search
+  │      Reciprocal Rank Fusion merge
+  │    else:
+  │      vector arm only
+  │    if RAG_RERANK=llm:
+  │      LLM reranker reorders fused candidates
+  │    inject top-k chunk texts into last user message
+  │    emit event: rag_context { sources: [...] }
+  ▼
+Provider sees enriched context → answer is grounded in KB content
+Frontend: citation chips below assistant bubble with filename + chunk index
 ```
 
 ---
@@ -285,15 +388,9 @@ Frontend: /imagine <prompt>
 images.py → image_service.generate_image()
   │  parses IMAGE_GENERATION_CHAIN ("provider:model,...")
   │  for each entry:
-  │    ├── skip if provider key not configured
-  │    ├── try _CALLERS[provider](prompt, width, height, model)
-  │    └── on failure → log WARNING → try next entry
-  ▼
-Provider callers:
-  gemini       → generativelanguage.googleapis.com  (:generateContent or :predict)
-  huggingface  → api-inference.huggingface.co
-  cloudflare   → api.cloudflare.com/client/v4/accounts/{id}/ai/run/{model}
-  together_ai  → api.together.xyz/v1/images/generations
+  │    skip if provider key not configured
+  │    try _CALLERS[provider](prompt, width, height, model)
+  │    on failure → log WARNING → try next entry
   ▼
 { b64_json, provider, model }
   ▼
@@ -301,25 +398,25 @@ Frontend: displays inline image in assistant bubble
 Telegram: sends as photo message with caption
 ```
 
-### Configuration
+---
 
-```env
-IMAGE_GENERATION_CHAIN=gemini:gemini-2.5-flash-image,gemini:gemini-3.1-flash-image,huggingface:black-forest-labs/FLUX.1-schnell,cloudflare:@cf/stabilityai/stable-diffusion-xl-base-1.0,together_ai:black-forest-labs/FLUX.1-schnell-Free
-```
-
-## Image-to-text — vision
+## Metrics & observability
 
 ```
-Frontend: user attaches image via 📎 button or paste
-  │  image → FileReader → base64 data URL
-  │  message.content = [{"type":"text","text":"..."}, {"type":"image_url","image_url":{"url":"data:..."}}]
-  │  POST /api/v1/chat/completions  (standard streaming)
+Every HTTP request → RequestContextMiddleware
+  │  generates / reuses X-Request-ID
+  │  binds to request_id ContextVar
+  │  echoes on response header
   ▼
-Provider (must support vision: Gemini, Groq/Llama-4-Scout, etc.)
-  ▼
-Streamed text response describing the image
+Prometheus counters/histograms updated at route exit:
+  sibyl_http_requests_total{method, path, status}
+  sibyl_http_request_duration_seconds{method, path}
+  sibyl_provider_requests_total{provider, status}
+  sibyl_provider_tokens_total{provider, kind}
+  sibyl_provider_latency_seconds{provider}
+  sibyl_active_sse_streams (gauge)
 
-Telegram: user sends photo → bot downloads → base64 → same multimodal content format
+GET /api/v1/metrics  → OpenMetrics text format (optional METRICS_TOKEN guard)
 ```
 
 ---
@@ -341,43 +438,6 @@ Frontend: search bar in sidebar with 300ms debounce
 
 ---
 
-## Conversation export
-
-```
-GET /api/v1/conversations/{id}/export?format=md|json
-  ▼
-conversation_repository.get_conversation(db, id)
-  ▼
-format == "json"  → full Conversation JSON with telemetry
-format == "md"    → Markdown with YAML front-matter + role headings
-  ▼
-Response with Content-Disposition: attachment
-```
-
----
-
-## Usage stats
-
-```
-GET /api/v1/stats?profile_id=<uuid>
-  ▼
-stats_repository.get_stats(db, profile_id)
-  │  SQL aggregations on messages + conversations
-  │  + get_telegram_stats() from the bot's in-memory counters
-  ▼
-StatsResponse {
-  global_totals,
-  per_profile[],
-  per_provider[] (with per-profile drilldown),
-  per_model[]    (with per-profile drilldown),
-  telegram { messages_received, messages_sent, errors, active_chats }
-}
-  ▼
-StatsPageComponent: summary cards + expandable tables
-```
-
----
-
 ## API key vault
 
 ```
@@ -393,75 +453,7 @@ vault_repository.store_key(db, provider_id, plaintext)
 On next request: key_resolver.resolve(provider_id) → reads from cache (O(1))
 ```
 
-At boot, `vault_repository.load_all()` decrypts all keys and loads them into the cache. If `VAULT_SECRET_KEY` is still set to the default placeholder, a `SECURITY` warning is logged.
-
----
-
-## Profile system
-
-```
-First visit → ProfileModalComponent (no profile in localStorage)
-  │  POST /api/v1/profiles  { name: "Alessandro" }
-  │  ← { id: "uuid", name: "Alessandro", created_at: ... }
-  │  localStorage.setItem('spicesibyl_profile', JSON.stringify(profile))
-  ▼
-profileInterceptor  (all subsequent HTTP requests)
-  │  reads ProfileService.currentId  → adds X-Profile-ID header
-  ▼
-  │  GET  /api/v1/conversations?profile_id=uuid   ← filtered by profile
-  │  POST /api/v1/conversations  { ..., profile_id: uuid }
-```
-
-Profiles are lightweight entities with no passwords. The UUID generated by the backend is the unique discriminator. Data is separated at the database level (`WHERE profile_id = ?`), not at the application level.
-
----
-
-## Discovery flow
-
-```
-DiscoveryPageComponent (tabs: Cloudflare / OpenRouter / Gemini / Groq / Cerebras / Mistral / NVIDIA / Ollama)
-  │  POST /api/v1/{provider}-discovery/run
-  ▼
-discovery endpoint  (httpx → provider API)
-  │
-  ▼
-{ model_count, yaml, models[] }
-  │
-  ▼
-DiscoveryPageComponent
-  ├── YAML editor with syntax highlighting
-  ├── Stat cards (total, free, unique capabilities)
-  └── Model grid with capability badges
-```
-
----
-
-## Error handling — frontend
-
-```
-HttpClient calls
-  │  HTTP error
-  ▼
-ErrorInterceptor  (error.interceptor.ts)
-  │  extracts FastAPI detail
-  ▼
-NotificationService.add('error', title, detail)
-  │
-  ▼
-ToastContainerComponent  (fixed top-right, auto-dismiss 6s, clickable)
-
-Streaming fetch  (chat completions)
-  │  event: error  SSE
-  ▼
-chat.service.ts  →  subscriber.error(new Error(message))
-  │
-  ▼
-ChatPageComponent.error handler
-  ├── NotificationService.add(...)   → toast
-  └── messages.update(...)           → message in the bubble
-```
-
-Toast types: `error` (pink), `warning` (gold), `info` (blue), `success` (green).
+At boot, `vault_repository.load_all()` decrypts all keys and loads them into the cache.
 
 ---
 

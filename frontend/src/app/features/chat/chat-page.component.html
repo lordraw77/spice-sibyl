@@ -167,6 +167,13 @@
               {{ capability === 'all' ? 'Tutte le capacità' : capability }}
             </option>
           </select>
+          <input
+            class="model-search-input mb-2"
+            type="text"
+            placeholder="Cerca modello…"
+            [ngModel]="modelSearchQuery()"
+            (ngModelChange)="modelSearchQuery.set($event)"
+          />
           <select class="form-select" [ngModel]="model" (ngModelChange)="onModelChange($event)">
             <option *ngFor="let item of filteredModels()" [value]="item.id">{{ item.label || item.id }}</option>
           </select>
@@ -284,9 +291,18 @@
           </button>
         </div>
         <ul class="tools-list" *ngIf="toolsEnabled()">
-          <li *ngFor="let t of availableTools()" class="tool-item">
-            <span class="tool-icon">⚙</span>
-            <span class="tool-name">{{ t.function.name }}</span>
+          <li *ngFor="let group of mcpToolGroups()" class="tool-group">
+            <button class="tool-group-header" (click)="toggleMcpGroup(group.name)">
+              <svg class="tool-group-chevron" [class.open]="isMcpGroupExpanded(group.name)" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+              <span class="tool-icon">⚙</span>
+              <span class="tool-group-name">{{ group.name === '__builtin__' ? 'built-in' : group.name }}</span>
+              <span class="tool-group-count" *ngIf="!isMcpGroupExpanded(group.name)">{{ group.tools.length }}</span>
+            </button>
+            <ul class="tool-group-children" *ngIf="isMcpGroupExpanded(group.name)">
+              <li *ngFor="let t of group.tools" class="tool-item">
+                <span class="tool-name">{{ t.function.name.replace('mcp__' + group.name + '__', '') }}</span>
+              </li>
+            </ul>
           </li>
         </ul>
       </div>
@@ -471,6 +487,18 @@
       </div>
     </header>
 
+    <!-- Loading bar: visible while waiting for model / agent -->
+    <div class="loading-bar-wrap" *ngIf="loading">
+      <div class="loading-bar-track">
+        <div class="loading-bar-fill" [class.tool-phase]="streaming && (messages()[messages().length - 1]?.tool_events?.length ?? 0) > 0"></div>
+      </div>
+      <span class="loading-bar-label">
+        <ng-container *ngIf="!streaming">In attesa del modello…</ng-container>
+        <ng-container *ngIf="streaming && (messages()[messages().length - 1]?.tool_events?.length ?? 0) > 0">Esecuzione tool…</ng-container>
+        <ng-container *ngIf="streaming && !(messages()[messages().length - 1]?.tool_events?.length ?? 0)">Generazione in corso…</ng-container>
+      </span>
+    </div>
+
     <!-- Pinned messages bar -->
     <div class="pinned-bar" *ngIf="pinnedMessages().length">
       <span class="pinned-bar-label">Fissati</span>
@@ -502,8 +530,9 @@
         <!-- Tool call / result events shown above the reply text -->
         <ng-container *ngIf="message.tool_events?.length">
           <ng-container *ngFor="let ev of message.tool_events">
-            <div class="tool-bubble tool-call" *ngIf="ev.kind === 'call'">
-              <span class="tool-bubble-icon">⚙</span>
+            <div class="tool-bubble tool-call" *ngIf="ev.kind === 'call'" [class.tool-call-pending]="streaming && isToolCallPending(message.tool_events, ev.id)">
+              <span class="tool-call-spin" *ngIf="streaming && isToolCallPending(message.tool_events, ev.id)"></span>
+              <span class="tool-bubble-icon" *ngIf="!streaming || !isToolCallPending(message.tool_events, ev.id)">⚙</span>
               <span class="tool-bubble-name">{{ ev.name }}</span>
               <span class="tool-bubble-args" *ngIf="toolArgsSummary(ev.arguments)">{{ toolArgsSummary(ev.arguments) }}</span>
             </div>
