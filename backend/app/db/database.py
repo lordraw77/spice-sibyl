@@ -249,6 +249,57 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
     created_at  INTEGER NOT NULL,
     updated_at  INTEGER NOT NULL
 );
+
+-- Phase 18: user-defined custom tools. HTTP-backed functions registered from
+-- the UI, injected into the chat tool loop namespaced `custom__<name>`.
+-- Per profile; name unique within a profile.
+CREATE TABLE IF NOT EXISTS custom_tools (
+    id          TEXT    PRIMARY KEY,
+    profile_id  TEXT    NOT NULL DEFAULT 'default',
+    name        TEXT    NOT NULL,
+    description TEXT    NOT NULL DEFAULT '',
+    parameters  TEXT    NOT NULL,              -- JSON schema of the arguments
+    endpoint    TEXT    NOT NULL,              -- JSON: {url, method, headers, auth, timeout}
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL,
+    UNIQUE (profile_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_custom_tools_profile ON custom_tools(profile_id);
+
+-- Phase 18: persistent multi-step workflows (agent runs). The run's full
+-- message history is serialized in `messages` after every iteration so a
+-- paused/interrupted run can resume exactly where it stopped.
+CREATE TABLE IF NOT EXISTS agent_runs (
+    id           TEXT    PRIMARY KEY,
+    profile_id   TEXT    NOT NULL DEFAULT 'default',
+    goal         TEXT    NOT NULL,
+    model        TEXT    NOT NULL,
+    status       TEXT    NOT NULL DEFAULT 'pending',  -- pending|running|paused|completed|failed|cancelled
+    max_steps    INTEGER NOT NULL DEFAULT 20,
+    current_step INTEGER NOT NULL DEFAULT 0,
+    messages     TEXT,                                -- JSON: serialized conversation state
+    result       TEXT,
+    error        TEXT,
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_runs_profile ON agent_runs(profile_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_run_steps (
+    id         TEXT    PRIMARY KEY,
+    run_id     TEXT    NOT NULL,
+    step_index INTEGER NOT NULL,
+    kind       TEXT    NOT NULL,   -- assistant|tool_call|tool_result|final|error|note
+    name       TEXT,               -- tool name for tool_call/tool_result
+    content    TEXT    NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_run_steps_run ON agent_run_steps(run_id, step_index);
 """
 
 _MIGRATIONS = [

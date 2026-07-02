@@ -301,13 +301,14 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     });
   });
 
-  /** Tools grouped by MCP server name. Built-in tools use the group key '__builtin__'. */
+  /** Tools grouped by MCP server name. Built-in tools use the group key
+   *  '__builtin__'; user-defined custom tools (custom__*) the group 'custom'. */
   readonly mcpToolGroups = computed(() => {
     const groups = new Map<string, ToolDefinition[]>();
     for (const tool of this.availableTools()) {
       const name = tool.function.name;
       const mcpMatch = name.match(/^mcp__(.+?)__/);
-      const groupKey = mcpMatch ? mcpMatch[1] : '__builtin__';
+      const groupKey = mcpMatch ? mcpMatch[1] : name.startsWith('custom__') ? 'custom' : '__builtin__';
       const list = groups.get(groupKey) ?? [];
       list.push(tool);
       groups.set(groupKey, list);

@@ -11,8 +11,11 @@ import { AuthService } from '../core/services/auth.service';
   template: `
     <nav class="navbar">
       <div class="brand">
-        <span class="brand-name">SpiceSibyl</span>
-        <span class="brand-tag">One gateway, many minds.</span>
+        <img class="brand-logo" src="logo.png" alt="SpiceSibyl logo" />
+        <div class="brand-text">
+          <span class="brand-name">SpiceSibyl</span>
+          <span class="brand-tag">One gateway, many minds.</span>
+        </div>
       </div>
       <button class="nav-toggle" (click)="toggleMobileMenu()" [attr.aria-expanded]="mobileMenuOpen()" aria-label="Apri menu di navigazione">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -46,6 +49,18 @@ import { AuthService } from '../core/services/auth.service';
           <a routerLink="/compare" routerLinkActive="active" ariaCurrentWhenActive="page">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="8" height="18" rx="1"/><rect x="14" y="3" width="8" height="18" rx="1"/></svg>
             Compare
+          </a>
+        </li>
+        <li>
+          <a routerLink="/tools" routerLinkActive="active" ariaCurrentWhenActive="page">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            Tools
+          </a>
+        </li>
+        <li>
+          <a routerLink="/workflows" routerLinkActive="active" ariaCurrentWhenActive="page">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="3"/><path d="M5 9v6a2 2 0 0 0 2 2h8"/><circle cx="19" cy="17" r="3"/><path d="M19 14V8a2 2 0 0 0-2-2h-4"/></svg>
+            Workflow
           </a>
         </li>
         <li *ngIf="auth.hasRole('admin')">
@@ -107,7 +122,9 @@ import { AuthService } from '../core/services/auth.service';
       top: 0;
       z-index: 100;
     }
-    .brand { display: flex; flex-direction: column; gap: .1rem; }
+    .brand { display: flex; align-items: center; gap: .6rem; }
+    .brand-logo { height: 2.2rem; width: auto; }
+    .brand-text { display: flex; flex-direction: column; gap: .1rem; }
     .brand-name { font-size: 1.1rem; font-weight: 700; color: var(--text-primary); }
     .brand-tag { font-size: .72rem; color: var(--accent); }
     .nav-links {
@@ -273,6 +290,7 @@ import { AuthService } from '../core/services/auth.service';
     @media (max-width: 575.98px) {
       .navbar { padding: .6rem 1rem; }
       .brand-tag { display: none; }
+      .brand-logo { height: 1.7rem; }
       .nav-toggle { display: inline-flex; }
       /* Nav links collapse into a dropdown panel under the navbar */
       .nav-links {

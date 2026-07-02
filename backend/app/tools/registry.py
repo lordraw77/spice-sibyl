@@ -1,4 +1,6 @@
+from app.core.config import settings
 from app.tools.builtin import calculator, get_datetime, read_url, web_search
+from app.tools.code_interpreter import python_exec
 
 TOOL_DEFINITIONS = [
     {
@@ -86,20 +88,56 @@ TOOL_DEFINITIONS = [
     },
 ]
 
+# Phase 18: sandboxed Python code interpreter — opt-out via CODE_INTERPRETER_ENABLED.
+if settings.code_interpreter_enabled:
+    TOOL_DEFINITIONS.append({
+        "type": "function",
+        "function": {
+            "name": "python_exec",
+            "description": (
+                "Executes Python code in an isolated sandbox (no network, CPU/memory/time "
+                "limits) and returns stdout, stderr and any files the code creates. "
+                "Use for calculations, data analysis, text processing, or generating files. "
+                "The code runs in a fresh interpreter: print() what you want to see."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "The Python code to execute.",
+                    },
+                    "files": {
+                        "type": "object",
+                        "description": (
+                            "Optional input files written into the working directory before "
+                            "the run: a map of relative file name to text content."
+                        ),
+                    },
+                },
+                "required": ["code"],
+            },
+        },
+    })
+
 _HANDLERS = {
     "get_datetime": get_datetime,
     "calculator": calculator,
     "web_search": web_search,
     "read_url": read_url,
+    "python_exec": python_exec,
 }
 
 
-async def execute_tool(name: str, arguments: dict) -> str:
-    # Phase 18: namespaced MCP tools (mcp__server__tool) route to the MCP manager.
-    from app.services import mcp_service
+async def execute_tool(name: str, arguments: dict, profile_id: str = "default") -> str:
+    # Phase 18: namespaced MCP tools (mcp__server__tool) route to the MCP manager;
+    # namespaced custom tools (custom__tool) route to the per-profile HTTP registry.
+    from app.services import custom_tool_service, mcp_service
 
     if mcp_service.is_mcp_tool(name):
         return await mcp_service.call_tool(name, arguments)
+    if custom_tool_service.is_custom_tool(name):
+        return await custom_tool_service.call_tool(name, arguments, profile_id)
 
     handler = _HANDLERS.get(name)
     if not handler:

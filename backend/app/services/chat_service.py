@@ -358,7 +358,9 @@ class ChatService:
                     }
 
                     try:
-                        result = await execute_tool(func_name, func_args)
+                        result = await execute_tool(
+                            func_name, func_args, profile_id=request.profile_id or "default"
+                        )
                     except (RuntimeError, ValueError, OSError) as exc:
                         result = f"Error: {exc}"
 

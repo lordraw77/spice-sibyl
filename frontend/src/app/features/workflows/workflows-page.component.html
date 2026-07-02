@@ -1,0 +1,117 @@
+<div class="wf-shell">
+
+  <header class="page-header">
+    <div>
+      <h1>Workflow</h1>
+      <p class="subtitle">
+        Run agentici persistenti: il modello lavora su un obiettivo con tutti i tool
+        disponibili (built-in, MCP, custom) per molti step, con stato durevole.
+        Puoi mettere in pausa, riprendere e ispezionare ogni step — anche dopo un riavvio.
+      </p>
+    </div>
+    <div class="head-actions">
+      <button class="btn-ghost" (click)="refresh()" [disabled]="loading()">Aggiorna</button>
+    </div>
+  </header>
+
+  <!-- Create -->
+  <section class="wf-card">
+    <div class="card-head"><h2>Nuovo run</h2></div>
+
+    <label class="field">
+      <span class="field-label">Obiettivo</span>
+      <textarea class="wf-textarea" rows="3" [(ngModel)]="goal"
+                placeholder="Es. Cerca le ultime notizie su X, riassumile e calcola…"></textarea>
+    </label>
+
+    <div class="field-grid">
+      <label class="field grow">
+        <span class="field-label">Modello</span>
+        <select class="wf-input" [(ngModel)]="model">
+          <option value="" disabled>Seleziona un modello…</option>
+          <option *ngFor="let m of models()" [value]="m">{{ m }}</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="field-label">Max step</span>
+        <input class="wf-input" type="number" min="1" max="100" [(ngModel)]="maxSteps" />
+      </label>
+    </div>
+
+    <label class="field">
+      <span class="field-label">Istruzioni aggiuntive (opzionale)</span>
+      <textarea class="wf-textarea" rows="2" [(ngModel)]="systemPrompt"
+                placeholder="Vincoli o stile della risposta…"></textarea>
+    </label>
+
+    <div class="form-row">
+      <span></span>
+      <button class="btn" (click)="create()" [disabled]="creating() || !goal.trim() || !model.trim()">
+        {{ creating() ? 'Avvio…' : 'Avvia run' }}
+      </button>
+    </div>
+  </section>
+
+  <!-- Run list -->
+  <section class="wf-card">
+    <div class="card-head"><h2>Run ({{ runs().length }})</h2></div>
+
+    <p class="muted" *ngIf="!runs().length">Nessun workflow per questo profilo.</p>
+
+    <ul class="run-list">
+      <li class="run" *ngFor="let r of runs()">
+        <div class="run-head">
+          <div class="run-id">
+            <span class="badge"
+                  [class.ok]="r.status === 'completed'"
+                  [class.bad]="r.status === 'failed' || r.status === 'cancelled'"
+                  [class.busy]="isActive(r)"
+                  [class.off]="r.status === 'paused'">
+              {{ statusLabel(r.status) }}
+            </span>
+            <strong class="run-goal" [title]="r.goal">{{ r.goal }}</strong>
+          </div>
+          <div class="run-actions">
+            <button class="btn-ghost" *ngIf="isActive(r)" (click)="pause(r)">Pausa</button>
+            <button class="btn-ghost" *ngIf="r.status === 'paused'" (click)="resume(r)">Riprendi</button>
+            <button class="btn-ghost" *ngIf="isActive(r) || r.status === 'paused'" (click)="cancel(r)">Annulla</button>
+            <button class="btn-ghost" (click)="toggleExpand(r.id)">
+              {{ expanded() === r.id ? 'Nascondi' : 'Step' }}
+            </button>
+            <button class="btn-danger" (click)="remove(r)">Elimina</button>
+          </div>
+        </div>
+
+        <div class="run-meta">
+          <span class="mono">{{ r.model }}</span>
+          <span>step {{ r.current_step }}/{{ r.max_steps }}</span>
+          <span>{{ r.updated_at * 1000 | date: 'dd/MM/yyyy HH:mm' }}</span>
+        </div>
+        <div class="run-error" *ngIf="r.error">⚠️ {{ r.error }}</div>
+
+        <!-- Step timeline -->
+        <div class="run-detail" *ngIf="expanded() === r.id">
+          <p class="muted" *ngIf="!detail()">Caricamento step…</p>
+          <ng-container *ngIf="detail() as d">
+            <p class="muted" *ngIf="!d.steps?.length">Nessuno step registrato (ancora).</p>
+            <ol class="step-list" *ngIf="d.steps?.length">
+              <li class="step" *ngFor="let s of d.steps" [class.step-error]="s.kind === 'error'">
+                <div class="step-head">
+                  <span class="step-kind">{{ kindLabel(s.kind) }}</span>
+                  <span class="step-tool mono" *ngIf="s.name">{{ s.name }}</span>
+                  <span class="step-index">#{{ s.step_index }}</span>
+                </div>
+                <pre class="step-content">{{ s.content }}</pre>
+              </li>
+            </ol>
+            <div class="detail-block" *ngIf="d.result">
+              <span class="detail-label">Risultato</span>
+              <pre class="step-content result">{{ d.result }}</pre>
+            </div>
+          </ng-container>
+        </div>
+      </li>
+    </ul>
+  </section>
+
+</div>

@@ -50,6 +50,20 @@ export const routes: Routes = [
       import('./features/ops/ops-page.component').then((m) => m.OpsPageComponent),
   },
   {
+    path: 'tools',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/tools/tools-page.component').then((m) => m.ToolsPageComponent),
+  },
+  {
+    path: 'workflows',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/workflows/workflows-page.component').then(
+        (m) => m.WorkflowsPageComponent
+      ),
+  },
+  {
     path: 'mcp',
     canActivate: [authGuard, adminGuard],
     loadComponent: () =>

@@ -48,6 +48,7 @@ from app.api.v1.endpoints import (
     telegram_link,
     templates,
     tools,
+    workflows,
 )
 
 api_router = APIRouter(prefix="/v1")
@@ -91,3 +92,4 @@ api_router.include_router(tags.router, prefix="/tags", tags=["tags"], dependenci
 api_router.include_router(telegram_link.router, prefix="/telegram", tags=["telegram"], dependencies=_protected)
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"], dependencies=_protected)
 api_router.include_router(mcp.router, prefix="/mcp", tags=["mcp"], dependencies=_protected)
+api_router.include_router(workflows.router, prefix="/workflows", tags=["workflows"], dependencies=_protected)

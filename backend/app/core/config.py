@@ -66,6 +66,22 @@ class Settings(BaseSettings):
     # Truncate the logged raw output to this many chars (0 = no truncation).
     mcp_log_max_chars: int = 4000
 
+    # --- Phase 18: sandboxed code interpreter (python_exec built-in tool) ---
+    # Runs model-supplied Python in an isolated subprocess with resource limits
+    # and no network. Set CODE_INTERPRETER_ENABLED=false to remove the tool.
+    code_interpreter_enabled: bool = True
+    # Wall-clock timeout (s) for one execution; also used as the CPU-seconds limit.
+    code_interpreter_timeout: float = 20.0
+    # Address-space (memory) cap for the sandbox process.
+    code_interpreter_memory_mb: int = 512
+    # Truncate captured stdout/stderr to this many chars each.
+    code_interpreter_max_output_chars: int = 8000
+
+    # --- Phase 18: persistent multi-step workflows (agent runs) ---
+    # Default / hard cap on agent-loop iterations for a workflow run.
+    workflow_default_max_steps: int = 20
+    workflow_max_steps_limit: int = 100
+
     # SQLite database path for conversation persistence
     db_path: str = "spice_sibyl.db"
 

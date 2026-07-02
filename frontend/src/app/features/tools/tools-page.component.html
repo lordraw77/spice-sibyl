@@ -1,0 +1,152 @@
+<div class="tools-shell">
+
+  <header class="page-header">
+    <div>
+      <h1>Custom tools</h1>
+      <p class="subtitle">
+        Registra tool HTTP personalizzati senza modifiche al codice: nome, parametri
+        (JSON schema) ed endpoint. I tool abilitati diventano disponibili nella chat
+        come <code>custom__&lt;nome&gt;</code>, per il profilo corrente.
+      </p>
+    </div>
+    <div class="head-actions">
+      <button class="btn-ghost" (click)="refresh()" [disabled]="loading()">Aggiorna</button>
+      <button class="btn" (click)="formOpen() ? closeForm() : openForm()">
+        {{ formOpen() ? 'Chiudi' : 'Nuovo tool' }}
+      </button>
+    </div>
+  </header>
+
+  <!-- Create / edit form -->
+  <section class="tools-card" *ngIf="formOpen()">
+    <div class="card-head"><h2>Definizione tool</h2></div>
+
+    <div class="field-grid">
+      <label class="field">
+        <span class="field-label">Nome</span>
+        <input class="tools-input" [(ngModel)]="name" placeholder="get_weather" spellcheck="false" />
+      </label>
+      <label class="field">
+        <span class="field-label">Descrizione (per il modello)</span>
+        <input class="tools-input" [(ngModel)]="description" placeholder="Meteo attuale per una città" />
+      </label>
+    </div>
+
+    <label class="field">
+      <span class="field-label">Parametri (JSON schema, formato OpenAI)</span>
+      <textarea class="tools-textarea" rows="7" [(ngModel)]="parametersJson" spellcheck="false"></textarea>
+    </label>
+
+    <div class="field-grid">
+      <label class="field grow">
+        <span class="field-label">Endpoint URL</span>
+        <input class="tools-input" [(ngModel)]="url" placeholder="https://api.example.com/weather" spellcheck="false" />
+      </label>
+      <label class="field">
+        <span class="field-label">Metodo</span>
+        <select class="tools-input" [(ngModel)]="method">
+          <option>POST</option><option>GET</option><option>PUT</option><option>PATCH</option><option>DELETE</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="field-label">Timeout (s)</span>
+        <input class="tools-input" type="number" min="1" max="120" [(ngModel)]="timeout" />
+      </label>
+    </div>
+
+    <div class="field-grid">
+      <label class="field">
+        <span class="field-label">Autenticazione</span>
+        <select class="tools-input" [(ngModel)]="authType">
+          <option value="none">Nessuna</option>
+          <option value="bearer">Bearer token</option>
+          <option value="header">Header personalizzato</option>
+        </select>
+      </label>
+      <label class="field grow" *ngIf="authType === 'bearer'">
+        <span class="field-label">Token</span>
+        <input class="tools-input" type="password" [(ngModel)]="authToken" spellcheck="false" />
+      </label>
+      <ng-container *ngIf="authType === 'header'">
+        <label class="field">
+          <span class="field-label">Nome header</span>
+          <input class="tools-input" [(ngModel)]="authHeaderName" placeholder="X-Api-Key" spellcheck="false" />
+        </label>
+        <label class="field grow">
+          <span class="field-label">Valore</span>
+          <input class="tools-input" type="password" [(ngModel)]="authHeaderValue" spellcheck="false" />
+        </label>
+      </ng-container>
+    </div>
+
+    <p class="muted">
+      Gli argomenti della chiamata vengono inviati come body JSON (POST/PUT/PATCH)
+      o query string (GET); la risposta è restituita al modello come risultato del tool.
+      Un tool con lo stesso nome viene sostituito.
+    </p>
+
+    <div class="form-row">
+      <button class="btn-ghost" (click)="closeForm()">Annulla</button>
+      <button class="btn" (click)="save()" [disabled]="saving() || !name.trim() || !url.trim()">
+        {{ saving() ? 'Salvataggio…' : 'Salva tool' }}
+      </button>
+    </div>
+  </section>
+
+  <!-- Tool list -->
+  <section class="tools-card">
+    <div class="card-head"><h2>Tool registrati ({{ tools().length }})</h2></div>
+
+    <p class="muted" *ngIf="!tools().length">Nessun custom tool per questo profilo.</p>
+
+    <ul class="tool-list">
+      <li class="tool" *ngFor="let t of tools()">
+        <div class="tool-head">
+          <div class="tool-id">
+            <span class="badge" [class.ok]="t.enabled" [class.off]="!t.enabled">
+              {{ t.enabled ? 'ON' : 'OFF' }}
+            </span>
+            <strong class="mono">custom__{{ t.name }}</strong>
+            <span class="param-count" *ngIf="paramNames(t).length">
+              {{ paramNames(t).join(', ') }}
+            </span>
+          </div>
+          <div class="tool-actions">
+            <button class="btn-ghost" (click)="openForm(t)">Modifica</button>
+            <button class="btn-ghost" (click)="toggleExpand(t.id)">
+              {{ isExpanded(t.id) ? 'Nascondi' : 'Dettagli' }}
+            </button>
+            <label class="switch" [title]="t.enabled ? 'Abilitato' : 'Disabilitato'">
+              <input type="checkbox" [checked]="t.enabled" (change)="toggle(t)" />
+              <span class="slider"></span>
+            </label>
+            <button class="btn-danger" (click)="remove(t)">Elimina</button>
+          </div>
+        </div>
+
+        <div class="tool-endpoint mono">{{ t.endpoint.method }} {{ t.endpoint.url }}</div>
+        <div class="tool-desc" *ngIf="t.description">{{ t.description }}</div>
+
+        <div class="tool-detail" *ngIf="isExpanded(t.id)">
+          <div class="detail-block">
+            <span class="detail-label">Parametri (JSON schema)</span>
+            <pre class="config-json">{{ paramsJson(t) }}</pre>
+          </div>
+          <div class="detail-block">
+            <span class="detail-label">Test</span>
+            <textarea class="tools-textarea" rows="3" [(ngModel)]="testArgsJson"
+                      placeholder='{"query": "test"}' spellcheck="false"></textarea>
+            <div class="form-row">
+              <span></span>
+              <button class="btn" (click)="test(t)" [disabled]="isTesting(t.id)">
+                {{ isTesting(t.id) ? 'Test…' : 'Invoca' }}
+              </button>
+            </div>
+            <pre class="config-json" *ngIf="testResults()[t.id]">{{ testResults()[t.id] }}</pre>
+          </div>
+        </div>
+      </li>
+    </ul>
+  </section>
+
+</div>
