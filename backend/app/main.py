@@ -50,6 +50,13 @@ async def lifespan(application: FastAPI):
         from app.services import backup_service
         backup_task = asyncio.create_task(backup_service.backup_loop())
 
+    # Keep the discovered model catalog fresh (first pass runs at startup)
+    discovery_task = None
+    if settings.discovery_refresh_enabled and settings.discovery_refresh_hours > 0:
+        import asyncio
+        from app.services import discovery_refresh
+        discovery_task = asyncio.create_task(discovery_refresh.refresh_loop())
+
     # Start Telegram bot if a token is configured
     tg_app = None
     if settings.telegram_bot_token:
@@ -66,6 +73,13 @@ async def lifespan(application: FastAPI):
         backup_task.cancel()
         try:
             await backup_task
+        except Exception:
+            pass
+
+    if discovery_task:
+        discovery_task.cancel()
+        try:
+            await discovery_task
         except Exception:
             pass
 

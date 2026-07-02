@@ -7,7 +7,7 @@ VERSION       ?= $(GIT_TAG)
 
 .PHONY: up down logs backend frontend test-backend install-backend install-frontend \
         build push release prod-up prod-down \
-        dev dev-build dev-build-backend dev-build-frontend rebuild
+        dev dev-build dev-build-backend dev-build-frontend rebuild publish
 
 # ── Development ───────────────────────────────────────────────────────────────
 # Build EVERYTHING for dev: the backend image (code is baked into the image, so a
@@ -94,3 +94,5 @@ release: build
 	docker push $(FRONTEND_IMAGE):latest
 	docker push $(NGINX_IMAGE):$(VERSION)
 	docker push $(NGINX_IMAGE):latest
+
+publish: build push

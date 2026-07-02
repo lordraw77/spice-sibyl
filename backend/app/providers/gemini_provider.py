@@ -6,8 +6,8 @@ directs the request here.  LiteLLM handles the Google Generative AI API
 translation; this adapter injects the API key from settings and attaches
 gateway metrics to every response.
 
-list_models() returns an empty list because the model catalog is defined
-statically in provider_models.yaml.
+list_models() returns an empty list because the model catalog is served from
+the discovered catalog (see app.data.model_catalog), not per-adapter.
 """
 
 import time
@@ -81,5 +81,5 @@ class GeminiProvider(BaseProvider):
             yield chunk.model_dump()
 
     async def list_models(self):
-        """Model catalog is defined statically in provider_models.yaml."""
+        """The model catalog is served from the discovered catalog, not per-adapter."""
         return []

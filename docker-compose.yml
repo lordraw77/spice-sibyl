@@ -10,7 +10,6 @@ services:
       - "8800:8000"
     volumes:
       - /opt/data:/data:rw
-      - ./shared-config:/config:z
       # Docker-out-of-Docker: lets the backend launch MCP servers defined as
       # `docker run …` as sibling containers on the host daemon.
       - /var/run/docker.sock:/var/run/docker.sock

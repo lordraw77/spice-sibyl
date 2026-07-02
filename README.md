@@ -102,8 +102,6 @@ spice-sibyl/
 │       ├── shared/
 │       │   └── toast-container/
 │       └── layout/             # Navbar
-├── shared-config/
-│   └── provider_models.yaml    # Static model catalog (shared volume)
 ├── docker-compose.yml
 └── Makefile
 ```
@@ -161,7 +159,8 @@ All backend settings are read from environment variables or `backend/.env`.
 | `MISTRAL_API_KEY`       | —                                    | Mistral AI API key                                   |
 | `CEREBRAS_API_KEY`      | —                                    | Cerebras Cloud API key                               |
 | `HF_TOKEN`              | —                                    | HuggingFace API token                                |
-| `MODEL_CATALOG_PATH`    | —                                    | Override path for `provider_models.yaml`             |
+| `DISCOVERY_REFRESH_ENABLED` | `true`                           | Automatic model-catalog discovery refresh loop        |
+| `DISCOVERY_REFRESH_HOURS` | `12`                               | Snapshot TTL before a provider is re-discovered       |
 | `ORCHESTRATOR_BASE_URL` | —                                    | Multi-MCP orchestrator sidecar base, e.g. `http://host.docker.internal:8910/v1`. Empty = `agent/*` models disabled |
 | `ORCHESTRATOR_TIMEOUT`  | `300`                                | Read timeout (s) for an orchestrator turn (it spawns Docker MCP sub-agents) |
 | `TELEGRAM_BOT_TOKEN`    | —                                    | Telegram bot token — leave empty to disable the bot  |
@@ -350,29 +349,18 @@ Profiles are stored in the database and survive page refreshes. Deleting a profi
 
 ## Provider catalog
 
-Static model definitions live in `shared-config/provider_models.yaml`. Example entry:
+The model catalog is built entirely at runtime via provider discovery — there is no static configuration file. Models come from:
 
-```yaml
-providers:
-  gemini:
-    enabled: true
-    models:
-      - id: gemini/gemini-2.0-flash
-        label: Gemini · Gemini 2.0 Flash
-        free: true
-        capabilities: [chat, vision, tools, json]
-```
+1. **Discovery** — `POST /v1/providers/{id}/discover` (or the **Discovery** page) queries the provider's live model API and persists the result in `/data/discovered_models.json`. A background loop refreshes stale snapshots automatically (startup + every `DISCOVERY_REFRESH_HOURS`, for configured & enabled providers).
+2. **`static_models`** — declared on the provider registry descriptor for self-described providers (`mock`, `agent` fallback).
 
-Catalog lookup order:
-1. `MODEL_CATALOG_PATH` env var
-2. `/config/provider_models.yaml` (Docker volume)
-3. `backend/app/data/provider_models.yaml` (bundled fallback)
+Per-provider overrides (enable/disable, default model) live in `/data/runtime_overrides.json`, managed via `PATCH /v1/providers/{id}`.
 
 ---
 
 ## Model discovery
 
-The **Discovery** page fetches the live model catalog from a provider and generates a paste-ready YAML block.
+The **Discovery** page fetches the live model catalog from a provider and saves it into the model catalog — the models are immediately available in the chat model picker.
 
 | Provider   | Endpoint                         | Auth required                                   |
 |------------|----------------------------------|-------------------------------------------------|
@@ -434,7 +422,7 @@ SpiceSibyl gateway ──(agent/* model)──► OrchestratorProvider ──HTT
 
 - The sidecar (`agent_server.py` in the `multi-mcp` project) is an **OpenAI-compatible** HTTP service (default port `8910`). It wraps the orchestrator's own provider rotation pool and `.env` — the same configuration the standalone CLI uses.
 - `OrchestratorProvider` routes any model whose ID starts with **`agent/`** (e.g. `agent/multi-mcp`) to the sidecar, forwarding the request and streaming the response back.
-- Register the model by adding an `agent` provider block to `provider_models.yaml` and pointing `ORCHESTRATOR_BASE_URL` at the sidecar. Then select **`agent/multi-mcp`** in the web model picker (or `/agent` in Telegram).
+- Point `ORCHESTRATOR_BASE_URL` at the sidecar — the `agent/multi-mcp` model is registered automatically (via sidecar discovery or the built-in fallback). Then select **`agent/multi-mcp`** in the web model picker (or `/agent` in Telegram).
 
 ### Streaming progress
 

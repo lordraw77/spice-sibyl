@@ -313,6 +313,6 @@ Per abilitare il modello `agent/multi-mcp` (orchestratore multi-agente), deploya
    ORCHESTRATOR_BASE_URL=http://<orchestrator-host>:8910/v1
    ```
 
-3. **Registra il modello** — assicurati che il catalogo (`provider_models.yaml` in `/config`) contenga un blocco `agent` con `agent/multi-mcp`, poi `docker compose restart backend`.
+3. **Riavvia il backend** — `docker compose restart backend`. Il modello `agent/multi-mcp` viene registrato automaticamente (discovery del sidecar, con fallback statico integrato).
 
 Seleziona **agent/multi-mcp** nel picker modelli web, o usa `/agent` in Telegram.

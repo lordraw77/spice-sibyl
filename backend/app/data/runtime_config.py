@@ -1,27 +1,43 @@
 """Runtime overrides for provider configuration.
 
-Stored as JSON in the same directory as the YAML catalog (or /config/ if mounted).
-Allows enabling/disabling providers and setting API keys without restarting the process.
+Allows enabling/disabling providers and setting API keys without restarting
+the process. Written to the first writable location among /data (the rw
+Docker volume — /config is root-owned and read-only for the container's app
+user), /config, and the directory of this module; reads also consider the
+other locations so overrides saved by older versions in /config are honored.
 """
 
 import json
+import os
 import threading
 from pathlib import Path
 from typing import Any
 
 _LOCK = threading.Lock()
 
-_DEFAULT_PATH = Path('/config/runtime_overrides.json')
-_FALLBACK_PATH = Path(__file__).with_name('runtime_overrides.json')
+_CANDIDATE_DIRS = (Path('/data'), Path('/config'), Path(__file__).parent)
+_FILENAME = 'runtime_overrides.json'
 
 
-def _path() -> Path:
-    return _DEFAULT_PATH if _DEFAULT_PATH.parent.exists() else _FALLBACK_PATH
+def _write_path() -> Path:
+    for d in _CANDIDATE_DIRS:
+        if d.is_dir() and os.access(d, os.W_OK):
+            return d / _FILENAME
+    return _CANDIDATE_DIRS[-1] / _FILENAME
+
+
+def _read_path() -> Path | None:
+    # Prefer the write location, then any legacy location holding the file
+    candidates = [_write_path()] + [d / _FILENAME for d in _CANDIDATE_DIRS]
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
 
 
 def load_overrides() -> dict[str, Any]:
-    p = _path()
-    if not p.exists():
+    p = _read_path()
+    if p is None:
         return {}
     with _LOCK:
         with p.open('r', encoding='utf-8') as fh:
@@ -30,7 +46,7 @@ def load_overrides() -> dict[str, Any]:
 
 def _save(data: dict[str, Any]) -> None:
     with _LOCK:
-        with _path().open('w', encoding='utf-8') as fh:
+        with _write_path().open('w', encoding='utf-8') as fh:
             json.dump(data, fh, indent=2)
 
 

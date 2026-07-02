@@ -5,7 +5,6 @@ services:
     env_file: ./backend/.env
     volumes:
       - ./data:/data:rw
-      - ./shared-config:/config:ro
     expose:
       - "8000"
     restart: unless-stopped

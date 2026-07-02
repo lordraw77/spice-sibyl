@@ -38,6 +38,9 @@ def resolve(provider_id: str) -> str | None:
 def is_configured(provider_id: str) -> bool:
     if provider_id in ("ollama", "mock"):
         return True
+    if provider_id == "agent":
+        # keyless: configured when the Multi-MCP sidecar URL is set
+        return bool(settings.orchestrator_base_url)
     if provider_id == "cloudflare":
         # needs both key and account_id
         key = resolve("cloudflare")

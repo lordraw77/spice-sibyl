@@ -20,7 +20,6 @@ import os
 import logging
 import time
 
-import httpx
 from litellm import acompletion
 
 from app.core.config import settings
@@ -225,58 +224,11 @@ class LiteLLMProvider(BaseProvider):
         }
 
     async def list_models(self):
+        """Return the model list from the discovered catalog (no live provider calls).
+
+        Ollama models are part of the catalog like every other provider's:
+        they appear via POST /providers/ollama/discover or the periodic
+        startup refresh, keeping this call fast and deterministic even when
+        a provider is unreachable.
         """
-        Return a merged model list from Ollama (live) and provider_models.yaml (static).
-
-        Ollama is queried via its /api/tags HTTP endpoint; failures are swallowed so the
-        rest of the catalog is still returned.  Duplicate IDs are deduplicated while
-        preserving insertion order.
-        """
-        models = []
-        url = f"{settings.ollama_api_base.rstrip('/')}/api/tags"
-        logger.debug('Fetching Ollama models from %s', url)
-
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url)
-                resp.raise_for_status()
-                payload = resp.json()
-
-            logger.debug('Ollama /api/tags returned %d model(s)', len(payload.get('models', [])))
-
-            for item in payload.get('models', []):
-                model_name = item.get('model') or item.get('name')
-                if model_name:
-                    capabilities = ['chat']
-                    if 'coder' in model_name.lower():
-                        capabilities.append('code')
-
-                    models.append(
-                        {
-                            'id': f'ollama/{model_name}',
-                            'object': 'model',
-                            'owned_by': 'ollama',
-                            'label': model_name,
-                            'provider': 'ollama',
-                            'enabled': True,
-                            'configured': True,
-                            'default': model_name == settings.default_model.removeprefix('ollama/'),
-                            'free': True,
-                            'capabilities': capabilities,
-                        }
-                    )
-        except (httpx.HTTPError, OSError, ValueError) as exc:
-            logger.warning('Unable to load Ollama models: %s', exc)
-
-        # Append static models from the YAML catalog
-        models.extend(iter_configured_models())
-
-        # Deduplicate by model ID, preserving the first occurrence
-        seen: set = set()
-        unique_models = []
-        for m in models:
-            if m['id'] not in seen:
-                seen.add(m['id'])
-                unique_models.append(m)
-
-        return unique_models
+        return iter_configured_models()

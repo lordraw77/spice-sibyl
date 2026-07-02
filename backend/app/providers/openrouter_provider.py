@@ -5,8 +5,8 @@ The model string must carry the 'openrouter/' prefix so the dependency factory
 directs the request here.  The special 'openrouter/openrouter/free' virtual model
 lets callers reach OpenRouter's free tier without specifying a model explicitly.
 
-list_models() returns an empty list because model discovery for OpenRouter is
-handled by the dedicated openrouter_discovery endpoint.
+list_models() returns an empty list because the model catalog is served from
+the discovered catalog (see app.data.model_catalog), not per-adapter.
 """
 
 import time
@@ -70,5 +70,5 @@ class OpenRouterProvider(BaseProvider):
             yield chunk.model_dump()
 
     async def list_models(self):
-        """Model discovery is handled by the openrouter_discovery endpoint."""
+        """The model catalog is served from the discovered catalog, not per-adapter."""
         return []

@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     # Base URL for the local Ollama instance (host.docker.internal resolves inside Docker)
     ollama_api_base: str = 'http://host.docker.internal:11434'
 
+    # Automatic model-catalog discovery refresh (0 disables the background loop)
+    discovery_refresh_enabled: bool = True
+    discovery_refresh_hours: float = 12.0
+
     # Provider API keys — None means the provider is unconfigured / disabled
     openai_api_key: str = 'dummy'
     groq_api_key: str | None = None
@@ -50,9 +54,6 @@ class Settings(BaseSettings):
     hf_token: str | None = None
     cerebras_api_key: str | None = None
     nvidia_api_key: str | None = None
-
-    # Optional override for the provider_models.yaml catalog path
-    model_catalog_path: str | None = None
 
     # Multi-MCP orchestrator sidecar (agent/* models). Empty = disabled.
     # e.g. http://host.docker.internal:8910/v1

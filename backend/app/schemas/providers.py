@@ -23,7 +23,9 @@ class ProviderTestResult(BaseModel):
 
 
 class ProviderUpdateRequest(BaseModel):
-    enabled: bool
+    enabled: bool | None = None
+    # Model id (e.g. "groq/llama-3.3-70b-versatile") marked as the provider's default
+    default_model: str | None = None
 
 
 class ProviderKeyRequest(BaseModel):

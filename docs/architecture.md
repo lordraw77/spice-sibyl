@@ -46,8 +46,7 @@ spice-sibyl/
 │   │   ├── tags.py
 │   │   ├── templates.py
 │   │   ├── sharing.py
-│   │   ├── telegram_link.py
-│   │   └── *_discovery.py      # Discovery × 8 providers
+│   │   └── telegram_link.py
 │   ├── core/
 │   │   ├── config.py           # Settings (env / .env)
 │   │   ├── logging_context.py  # request_id ContextVar
@@ -99,7 +98,6 @@ spice-sibyl/
 │   │                           #   ops, profile, providers, shared, stats
 │   ├── layout/navbar.component.ts
 │   └── shared/                 # toast-container, pipes
-└── shared-config/provider_models.yaml
 ```
 
 ---
@@ -459,9 +457,9 @@ At boot, `vault_repository.load_all()` decrypts all keys and loads them into the
 
 ## Model catalog
 
-The catalog is a shared YAML file (`shared-config/provider_models.yaml`) mounted as a volume in both containers. The backend re-reads it on every request (no disk cache).
+The catalog is built entirely at runtime from provider discovery — there is no static configuration file. Sources, in order:
 
-Lookup order:
-1. `MODEL_CATALOG_PATH` env var
-2. `/config/provider_models.yaml` (Docker volume)
-3. `backend/app/data/provider_models.yaml` (bundled fallback)
+1. **Discovered models** — persisted in `/data/discovered_models.json` by `POST /v1/providers/{id}/discover` (Discovery page) or by the automatic refresh loop (startup + every `DISCOVERY_REFRESH_HOURS`, default 12h, only for configured & enabled providers).
+2. **`static_models`** — declared on the `ProviderDescriptor` for self-described providers (`mock`, and `agent` as fallback when the sidecar is unreachable).
+
+Per-provider runtime overrides (`/data/runtime_overrides.json`, managed via `PATCH /v1/providers/{id}`) control the `enabled` flag and an optional `default_model`; `DEFAULT_MODEL` marks the global fallback default.

@@ -1,75 +1,13 @@
 <div class="discovery-shell">
 <div class="discovery-submenu">
   <button
+    *ngFor="let source of sources"
     type="button"
     class="submenu-item"
-    [class.active]="activeSource() === 'cloudflare'"
-    (click)="setSource('cloudflare')"
+    [class.active]="activeSource() === source"
+    (click)="setSource(source)"
   >
-    Cloudflare
-  </button>
-
-  <button
-    type="button"
-    class="submenu-item"
-    [class.active]="activeSource() === 'openrouter'"
-    (click)="setSource('openrouter')"
-  >
-    OpenRouter
-  </button>
-
-  <button
-    type="button"
-    class="submenu-item"
-    [class.active]="activeSource() === 'gemini'"
-    (click)="setSource('gemini')"
-  >
-    Gemini
-  </button>
-
-  <button
-    type="button"
-    class="submenu-item"
-    [class.active]="activeSource() === 'groq'"
-    (click)="setSource('groq')"
-  >
-    Groq
-  </button>
-
-  <button
-    type="button"
-    class="submenu-item"
-    [class.active]="activeSource() === 'cerebras'"
-    (click)="setSource('cerebras')"
-  >
-    Cerebras
-  </button>
-
-  <button
-    type="button"
-    class="submenu-item"
-    [class.active]="activeSource() === 'mistral'"
-    (click)="setSource('mistral')"
-  >
-    Mistral
-  </button>
-
-  <button
-    type="button"
-    class="submenu-item"
-    [class.active]="activeSource() === 'nvidia'"
-    (click)="setSource('nvidia')"
-  >
-    NVIDIA
-  </button>
-
-  <button
-    type="button"
-    class="submenu-item"
-    [class.active]="activeSource() === 'ollama'"
-    (click)="setSource('ollama')"
-  >
-    Ollama
+    {{ sourceLabel(source) }}
   </button>
 </div>
 
@@ -87,10 +25,18 @@
     </div>
   </div>
 
+  <div class="save-banner error" *ngIf="errorMessage()">
+    ⚠ {{ errorMessage() }}
+  </div>
+
+  <div class="save-banner ok" *ngIf="modelCount() !== null">
+    ✓ {{ modelCount() }} modelli salvati nel catalogo ({{ savedAtLabel() }})
+  </div>
+
   <div class="result-row" *ngIf="modelCount() !== null">
     <div class="stat-card">
       <span class="stat-num">{{ modelCount() }}</span>
-      <span class="stat-label">modelli Text Generation</span>
+      <span class="stat-label">modelli scoperti</span>
     </div>
     <div class="stat-card">
       <span class="stat-num">{{ freeModelCount() }}</span>
@@ -102,39 +48,8 @@
     </div>
   </div>
 
-  <div class="editor-section" *ngIf="yamlContent()">
-  <div class="editor-toolbar">
-    <span class="toolbar-title">YAML generato — incollalo in <code>provider_models.yaml</code></span>
-
-    <button
-      type="button"
-      class="btn-copy"
-      [class.ok]="copyState() === 'success'"
-      [class.err]="copyState() === 'error'"
-      (click)="copyYaml()"
-    >
-      <span *ngIf="copyState() === 'idle'">📋 Copia</span>
-      <span *ngIf="copyState() === 'success'">✓ Copiato</span>
-      <span *ngIf="copyState() === 'error'">⚠ Copia fallita</span>
-    </button>
-  </div>
-
-  <div class="editor-wrap">
-    <div class="editor-highlight" #highlightLayer [innerHTML]="highlightedYaml()"></div>
-    <textarea
-      #editorTextarea
-      class="editor-textarea"
-      spellcheck="false"
-      autocomplete="off"
-      [value]="yamlContent()"
-      (input)="onYamlChange($any($event.target).value)"
-      (scroll)="syncEditorScroll()"
-    ></textarea>
-  </div>
-</div>
-
   <div class="models-section" *ngIf="models().length > 0">
-    <h3 class="section-title">Anteprima modelli</h3>
+    <h3 class="section-title">Modelli nel catalogo</h3>
     <div class="models-grid">
       <div class="model-card" *ngFor="let m of models(); trackBy: trackByModelId">
         <div class="model-name">{{ m.label }}</div>

@@ -133,100 +133,23 @@
   margin-top: .35rem;
 }
 
-.editor-section {
-  display: flex;
-  flex-direction: column;
-  gap: .5rem;
+.save-banner {
+  padding: .8rem 1.25rem;
+  border-radius: .75rem;
+  font-size: .92rem;
 }
 
-.editor-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: rgba(20, 23, 32, 0.9);
-  border: 1px solid rgba(255,255,255,.08);
-  border-bottom: none;
-  border-radius: .85rem .85rem 0 0;
-  padding: .55rem 1rem;
+.save-banner.ok {
+  color: #8fdd9e;
+  background: rgba(73, 132, 83, 0.16);
+  border: 1px solid rgba(73, 132, 83, 0.24);
 }
 
-.toolbar-title {
-  font-size: .82rem;
-  color: #9fa8ba;
+.save-banner.error {
+  background: rgba(161, 44, 123, 0.18);
+  border: 1px solid rgba(161, 44, 123, 0.4);
+  color: #e8a8d0;
 }
-
-.toolbar-title code {
-  color: #d6b279;
-  background: rgba(214,178,121,.1);
-  padding: .1rem .35rem;
-  border-radius: .3rem;
-}
-
-.btn-copy {
-  background: rgba(214,178,121,.12);
-  border: 1px solid rgba(214,178,121,.25);
-  color: #d6b279;
-  padding: .3rem .75rem;
-  border-radius: .45rem;
-  font-size: .82rem;
-  cursor: pointer;
-  transition: background .15s;
-}
-
-.btn-copy:hover {
-  background: rgba(214,178,121,.22);
-}
-
-.editor-wrap {
-  position: relative;
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 0 0 .85rem .85rem;
-  overflow: auto;
-  min-height: 320px;
-  max-height: 420px;
-  background: #0f1218;
-}
-
-.editor-highlight,
-.editor-textarea {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  min-height: 100%;
-  padding: 1rem 1.25rem;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
-  font-size: .86rem;
-  line-height: 1.65;
-  tab-size: 2;
-  white-space: pre;
-  box-sizing: border-box;
-}
-
-.editor-highlight {
-  color: #c9d1d9;
-  pointer-events: none;
-  z-index: 1;
-}
-
-.editor-textarea {
-  background: transparent;
-  color: transparent;
-  caret-color: #f7f3ea;
-  border: none;
-  resize: none;
-  outline: none;
-  z-index: 2;
-  overflow: hidden;
-}
-
-:host ::ng-deep .yk { color: #79c0ff; }
-:host ::ng-deep .yc { color: #f97583; }
-:host ::ng-deep .ys { color: #a8d8a8; }
-:host ::ng-deep .yb { color: #ffab70; }
-:host ::ng-deep .yn { color: #f8c555; }
-:host ::ng-deep .ycmt { color: #8b949e; font-style: italic; }
-:host ::ng-deep .yarr { color: #79c0ff; }
 
 .models-section {
   display: flex;
@@ -341,28 +264,6 @@
 
   .stat-num {
     font-size: 1.6rem;
-  }
-
-  .editor-toolbar {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: .5rem;
-    padding: .6rem .75rem;
-  }
-
-  .btn-copy {
-    align-self: flex-end;
-  }
-
-  .editor-wrap {
-    min-height: 220px;
-    max-height: 320px;
-  }
-
-  .editor-highlight,
-  .editor-textarea {
-    font-size: .8rem;
-    padding: .75rem;
   }
 }
 

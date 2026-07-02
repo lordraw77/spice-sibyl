@@ -1,9 +1,9 @@
 /**
- * DiscoveryService — HTTP client for the provider model-discovery endpoints.
+ * DiscoveryService — HTTP client for the unified provider discovery endpoint.
  *
- * Each discovery call hits a backend endpoint that queries the respective
- * provider's API and returns a structured model list plus a YAML config block
- * ready to paste into provider_models.yaml.
+ * POST /v1/providers/{id}/discover queries the provider's live model catalog
+ * on the backend and persists the result in the discovered-models catalog;
+ * the returned list is shown as a preview.
  */
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
@@ -19,12 +19,14 @@ export interface DiscoveryModel {
   capabilities: string[];
 }
 
-/** Full payload returned by a discovery endpoint */
+/** Full payload returned by POST /providers/{id}/discover */
 export interface DiscoveryResult {
+  provider_id: string;
   model_count: number;
-  /** YAML snippet ready to paste into provider_models.yaml */
-  yaml: string;
   models: DiscoveryModel[];
+  /** Unix timestamp of when the catalog was saved on the backend */
+  discovered_at: number | null;
+  saved: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -32,66 +34,10 @@ export class DiscoveryService {
   private readonly http = inject(HttpClient);
   private readonly config = inject(AppConfigService);
 
-  /** Trigger a Cloudflare Workers AI model catalog fetch on the backend. */
-  runCloudflareDiscovery(): Observable<DiscoveryResult> {
+  /** Fetch and persist the live model catalog for the given provider. */
+  runDiscovery(providerId: string): Observable<DiscoveryResult> {
     return this.http.post<DiscoveryResult>(
-      `${this.config.apiUrl}/cloudflare-discovery/run`,
-      {}
-    );
-  }
-
-  /** Trigger an OpenRouter model catalog fetch on the backend. */
-  runOpenRouterDiscovery(): Observable<DiscoveryResult> {
-    return this.http.post<DiscoveryResult>(
-      `${this.config.apiUrl}/openrouter-discovery/run`,
-      {}
-    );
-  }
-
-  /** Trigger a Google Gemini model catalog fetch on the backend. */
-  runGeminiDiscovery(): Observable<DiscoveryResult> {
-    return this.http.post<DiscoveryResult>(
-      `${this.config.apiUrl}/gemini-discovery/run`,
-      {}
-    );
-  }
-
-  /** Trigger a Groq model catalog fetch on the backend. */
-  runGroqDiscovery(): Observable<DiscoveryResult> {
-    return this.http.post<DiscoveryResult>(
-      `${this.config.apiUrl}/groq-discovery/run`,
-      {}
-    );
-  }
-
-  /** Trigger a Cerebras model catalog fetch on the backend. */
-  runCerebrasDiscovery(): Observable<DiscoveryResult> {
-    return this.http.post<DiscoveryResult>(
-      `${this.config.apiUrl}/cerebras-discovery/run`,
-      {}
-    );
-  }
-
-  /** Trigger a Mistral AI model catalog fetch on the backend. */
-  runMistralDiscovery(): Observable<DiscoveryResult> {
-    return this.http.post<DiscoveryResult>(
-      `${this.config.apiUrl}/mistral-discovery/run`,
-      {}
-    );
-  }
-
-  /** Trigger a NVIDIA NIM model catalog fetch on the backend. */
-  runNvidiaDiscovery(): Observable<DiscoveryResult> {
-    return this.http.post<DiscoveryResult>(
-      `${this.config.apiUrl}/nvidia-discovery/run`,
-      {}
-    );
-  }
-
-  /** Trigger a local Ollama model catalog fetch on the backend. */
-  runOllamaDiscovery(): Observable<DiscoveryResult> {
-    return this.http.post<DiscoveryResult>(
-      `${this.config.apiUrl}/ollama-discovery/run`,
+      `${this.config.apiUrl}/providers/${providerId}/discover`,
       {}
     );
   }

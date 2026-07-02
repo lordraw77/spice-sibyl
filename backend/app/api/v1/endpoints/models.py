@@ -1,17 +1,16 @@
 """
 GET /v1/models — return all available models and a per-provider summary.
 
-The response merges:
-  - dynamic models discovered at runtime (e.g. Ollama /api/tags)
-  - static models declared in provider_models.yaml
-  - a deduplicated provider summary with aggregate capability lists
+Both come from the discovered catalog (see app.data.model_catalog): models
+are registered by running provider discovery, either manually from the
+Discovery page or via the automatic startup refresh.
 """
 
 import logging
 
 from fastapi import APIRouter, HTTPException
 
-from app.data.model_catalog import merge_provider_summary
+from app.data.model_catalog import provider_summary_from_catalog
 from app.dependencies.provider_factory import get_provider
 
 router = APIRouter()
@@ -28,7 +27,7 @@ async def list_models():
         return {
             'object': 'list',
             'data': data,
-            'providers': merge_provider_summary(data),
+            'providers': provider_summary_from_catalog(),
         }
     except Exception as exc:
         logger.exception('Failed to list models')

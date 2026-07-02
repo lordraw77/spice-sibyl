@@ -90,15 +90,7 @@ spice-sibyl/
 │   │   │       ├── tags.py
 │   │   │       ├── templates.py
 │   │   │       ├── sharing.py
-│   │   │       ├── telegram_link.py
-│   │   │       ├── cloudflare_discovery.py
-│   │   │       ├── openrouter_discovery.py
-│   │   │       ├── gemini_discovery.py
-│   │   │       ├── groq_discovery.py
-│   │   │       ├── cerebras_discovery.py
-│   │   │       ├── mistral_discovery.py
-│   │   │       ├── nvidia_discovery.py
-│   │   │       └── ollama_discovery.py
+│   │   │       └── telegram_link.py
 │   │   ├── core/
 │   │   │   ├── config.py
 │   │   │   ├── logging_context.py       # request_id ContextVar
@@ -222,7 +214,6 @@ spice-sibyl/
 │       └── shared/
 │           ├── pipes/unique-values.pipe.ts
 │           └── toast-container/toast-container.component.ts
-├── shared-config/provider_models.yaml
 ├── docker-compose.yml
 ├── Makefile
 └── README.md
@@ -298,7 +289,8 @@ On every boot: tables are created (idempotently), migrations applied (including 
 | `BACKUP_DIR` | `backups/` | Directory for DB snapshot files |
 | `METRICS_TOKEN` | — | Optional Bearer token to protect `/metrics` |
 | `LOG_FORMAT` | `text` | Set `json` for structured JSON logging |
-| `MODEL_CATALOG_PATH` | — | Explicit YAML path override |
+| `DISCOVERY_REFRESH_ENABLED` | `true` | Automatic catalog discovery refresh loop |
+| `DISCOVERY_REFRESH_HOURS` | `12` | Snapshot TTL before a provider is re-discovered |
 
 **`IMAGE_GENERATION_CHAIN` default:**
 ```
@@ -350,7 +342,7 @@ POST   /api/v1/admin/backup|restore
 GET    /api/v1/admin/backups
 GET    /api/v1/admin/export
 POST   /api/v1/admin/import
-POST   /api/v1/{cloudflare|openrouter|gemini|groq|cerebras|mistral|nvidia|ollama}-discovery/run
+POST   /api/v1/providers/{id}/discover
 ```
 
 ---
@@ -543,10 +535,7 @@ FastAPI dependencies used on protected routes:
 
 **File:** `backend/app/data/model_catalog.py`
 
-Lookup order:
-1. `MODEL_CATALOG_PATH` env var
-2. `/config/provider_models.yaml` (Docker volume)
-3. `backend/app/data/provider_models.yaml` (bundled fallback)
+Built at runtime, no static file. Sources: models discovered via `POST /v1/providers/{id}/discover` (persisted in `/data/discovered_models.json`, auto-refreshed by `app/services/discovery_refresh.py`), plus `static_models` from the provider registry for self-described providers (`mock`, `agent` fallback). Runtime overrides (`/data/runtime_overrides.json`) provide per-provider `enabled` and `default_model`.
 
 ---
 
@@ -882,7 +871,7 @@ Standalone component, no external modal library. Shown as a full-screen overlay 
 
 **File:** `frontend/src/app/features/discovery/discovery-page.component.ts`
 
-Tabs: `cloudflare | openrouter | gemini | groq | cerebras | mistral | nvidia | ollama`. Each tab calls the corresponding `*-discovery/run` endpoint and renders a YAML editor with syntax highlighting, plus stat cards (total/free/unique capabilities) and a model grid with capability badges.
+Tabs: `cloudflare | openrouter | gemini | groq | cerebras | mistral | nvidia | ollama | agent`. Each tab calls `POST /v1/providers/{id}/discover`; the backend fetches the provider's live catalog, persists it in the discovered-models store (`/data/discovered_models.json`) and returns the saved list, rendered as stat cards (total/free/unique capabilities) and a model grid with capability badges.
 
 ---
 
@@ -948,22 +937,17 @@ Admin-only route (`/ops`). Provides:
 
 ## 5. Shared Configuration
 
-**File:** `shared-config/provider_models.yaml`
+There is no static model configuration anymore. The model catalog lives in `/data/discovered_models.json` (written by discovery, refreshed automatically) and per-provider overrides in `/data/runtime_overrides.json`:
 
-Mounted into the backend container at `/config/provider_models.yaml`. Changes take effect on the next `GET /models` request — no restart required.
-
-```yaml
-providers:
-  <provider_key>:
-    label: Human-readable name
-    enabled: true
-    models:
-      - id: <prefix>/<model-id>
-        label: Display name
-        default: false
-        free: true | false
-        capabilities: [chat, tools, vision, reasoning, code, json, audio, fast]
+```json
+{
+  "providers": {
+    "groq": { "enabled": true, "default_model": "groq/llama-3.3-70b-versatile" }
+  }
+}
 ```
+
+Both files sit on the `/data` volume next to the SQLite DB and survive container rebuilds. To (re)populate the catalog run discovery from the UI or `POST /v1/providers/{id}/discover`.
 
 ---
 
@@ -977,7 +961,7 @@ services:
     ports: ["8000:8000"]
     volumes:
       - ./backend:/app:z
-      - ./shared-config:/config:z
+      - /opt/data:/data:rw
 
   frontend:
     build: ./frontend
@@ -1005,10 +989,15 @@ Add to `backend/.env.example` and to `key_resolver._from_settings`:
 "cohere": settings.cohere_api_key,
 ```
 
-Add to `providers.py` `_PROVIDER_META`:
+Add a descriptor to `app/providers/registry.py` `PROVIDERS`:
 ```python
-'cohere': {'key_hint': 'COHERE_API_KEY', 'docs_url': 'https://cohere.com'},
+ProviderDescriptor(
+    id='cohere', label='Cohere', provider_cls=LiteLLMProvider,
+    key_hint='COHERE_API_KEY', docs_url='https://cohere.com',
+    test_model='cohere/command-r',
+),
 ```
+The registry drives model routing, the `/v1/providers` metadata and the connectivity test — no other file needs touching for those.
 
 ### Step 2 — Provider adapter
 
@@ -1034,31 +1023,13 @@ class CohereProvider(BaseProvider):
     # implement complete(), stream(), list_models()
 ```
 
-### Step 3 — Factory
+### Step 3 — Registry descriptor
 
-**`backend/app/dependencies/provider_factory.py`**
-```python
-if model and model.startswith('cohere/'):
-    return CohereProvider()
-```
+Routing, `/v1/providers` metadata and the connectivity test all come from the descriptor added in Step 1; nothing else to wire.
 
-### Step 4 — Catalog
+### Step 4 — Discovery adapter
 
-**`shared-config/provider_models.yaml`**
-```yaml
-cohere:
-  label: Cohere
-  enabled: true
-  models:
-    - id: cohere/command-r-plus
-      label: Command R+
-      free: false
-      capabilities: [chat, tools]
-```
-
-### Step 5 — (Optional) Discovery endpoint
-
-Follow the pattern of `groq_discovery.py`. Register in `router.py`. Add tab to the Angular discovery page.
+Add a `discover_<name>()` coroutine in `app/services/model_discovery.py` (follow the existing adapters) and wire it to the descriptor's `discover` field in `registry.py`. The generic `POST /v1/providers/{id}/discover` endpoint, the persisted catalog and the automatic refresh loop work without further changes; add a tab to the Angular discovery page to expose it in the UI. Providers without a listing API can declare `static_models` on the descriptor instead.
 
 ### Checklist
 
@@ -1067,10 +1038,7 @@ Follow the pattern of `groq_discovery.py`. Register in `router.py`. Add tab to t
 | 1 | `core/config.py` | Add `*_api_key` field |
 | 1 | `.env.example` | Add env var |
 | 1 | `services/key_resolver.py` | Add to `_from_settings` map |
-| 1 | `api/v1/endpoints/providers.py` | Add to `_PROVIDER_META` |
 | 2 | `providers/<name>_provider.py` | New class, use `key_resolver.resolve()` |
-| 3 | `dependencies/provider_factory.py` | Add `startswith` branch |
-| 4 | `shared-config/provider_models.yaml` | New provider block |
-| 5 | `api/v1/endpoints/<name>_discovery.py` | (Optional) Discovery endpoint |
-| 5 | `api/v1/router.py` | (Optional) Register router |
+| 3 | `providers/registry.py` | Add `ProviderDescriptor` (routing + metadata + test model + discover) |
+| 4 | `services/model_discovery.py` | Discovery adapter (or `static_models` on the descriptor) |
 | 5 | Frontend discovery | (Optional) Add tab |

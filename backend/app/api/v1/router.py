@@ -6,15 +6,8 @@ Route map:
   GET  /v1/models                     — list available models
   GET  /v1/providers                  — list providers with configuration status
   POST /v1/providers/{id}/test        — test provider connectivity
+  POST /v1/providers/{id}/discover    — fetch and persist a provider's live model catalog
   POST /v1/chat/completions           — chat completion (streaming or non-streaming)
-  POST /v1/cloudflare-discovery/run   — fetch Cloudflare Workers AI model catalog
-  POST /v1/openrouter-discovery/run   — fetch OpenRouter model catalog
-  POST /v1/gemini-discovery/run       — fetch Google Gemini model catalog
-  POST /v1/groq-discovery/run         — fetch Groq model catalog
-  POST /v1/cerebras-discovery/run     — fetch Cerebras model catalog
-  POST /v1/mistral-discovery/run      — fetch Mistral AI model catalog
-  POST /v1/nvidia-discovery/run       — fetch NVIDIA NIM model catalog
-  POST /v1/ollama-discovery/run       — fetch local Ollama model catalog
 """
 
 from fastapi import APIRouter, Depends
@@ -23,23 +16,15 @@ from app.dependencies.auth import block_read_only
 from app.dependencies.rate_limit import rate_limit
 from app.api.v1.endpoints import (
     auth,
-    cerebras_discovery,
     chat,
-    cloudflare_discovery,
     conversations,
-    gemini_discovery,
-    groq_discovery,
     health,
     images,
     knowledge,
     admin,
     mcp,
     metrics,
-    mistral_discovery,
     models,
-    nvidia_discovery,
-    ollama_discovery,
-    openrouter_discovery,
     profiles,
     providers,
     sharing,
@@ -73,14 +58,6 @@ api_router.include_router(sharing.router, tags=["sharing"])
 api_router.include_router(models.router, prefix="/models", tags=["models"], dependencies=_protected)
 api_router.include_router(providers.router, prefix="/providers", tags=["providers"], dependencies=_protected)
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"], dependencies=_protected)
-api_router.include_router(cloudflare_discovery.router, prefix="/cloudflare-discovery", tags=["cloudflare-discovery"], dependencies=_protected)
-api_router.include_router(openrouter_discovery.router, prefix="/openrouter-discovery", tags=["openrouter-discovery"], dependencies=_protected)
-api_router.include_router(gemini_discovery.router, prefix="/gemini-discovery", tags=["gemini-discovery"], dependencies=_protected)
-api_router.include_router(groq_discovery.router, prefix="/groq-discovery", tags=["groq-discovery"], dependencies=_protected)
-api_router.include_router(cerebras_discovery.router, prefix="/cerebras-discovery", tags=["cerebras-discovery"], dependencies=_protected)
-api_router.include_router(mistral_discovery.router, prefix="/mistral-discovery", tags=["mistral-discovery"], dependencies=_protected)
-api_router.include_router(nvidia_discovery.router, prefix="/nvidia-discovery", tags=["nvidia-discovery"], dependencies=_protected)
-api_router.include_router(ollama_discovery.router, prefix="/ollama-discovery", tags=["ollama-discovery"], dependencies=_protected)
 api_router.include_router(images.router, prefix="/images", tags=["images"], dependencies=_protected)
 api_router.include_router(conversations.router, prefix="/conversations", tags=["conversations"], dependencies=_protected)
 api_router.include_router(profiles.router, prefix="/profiles", tags=["profiles"], dependencies=_protected)
