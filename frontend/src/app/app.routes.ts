@@ -70,6 +70,18 @@ export const routes: Routes = [
       import('./features/mcp/mcp-page.component').then((m) => m.McpPageComponent),
   },
   {
+    path: 'help',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/help/help-page.component').then((m) => m.HelpPageComponent),
+  },
+  {
+    path: 'help/:slug',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/help/help-page.component').then((m) => m.HelpPageComponent),
+  },
+  {
     path: 'info',
     canActivate: [authGuard],
     loadComponent: () =>

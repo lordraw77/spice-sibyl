@@ -9,8 +9,14 @@ VERSION       ?= $(GIT_TAG)
 APP_VERSION   := $(patsubst v%,%,$(VERSION))
 
 .PHONY: up down logs backend frontend test-backend install-backend install-frontend \
-        build push release prod-up prod-down \
+        build push release prod-up prod-down frontend-docs \
         dev dev-build dev-build-backend dev-build-frontend rebuild publish
+
+# Copy docs/funzionalita + screenshots into frontend/public/docs (in-app Help
+# page). Must run before the frontend/nginx image builds: their contexts only
+# include frontend/, so the repo-root docs/ tree is not visible to Docker.
+frontend-docs:
+	node frontend/scripts/copy-docs.mjs
 
 # ── Development ───────────────────────────────────────────────────────────────
 # Build EVERYTHING for dev: the backend image (code is baked into the image, so a
@@ -23,7 +29,7 @@ dev-build: dev-build-frontend dev-build-backend
 dev-build-backend:
 	docker compose build --build-arg APP_VERSION=$(APP_VERSION) backend
 
-dev-build-frontend:
+dev-build-frontend: frontend-docs
 	docker build --build-arg APP_VERSION=$(APP_VERSION) -f ./nginx/Dockerfile -t $(NGINX_IMAGE):latest .
 
 # One-shot dev workflow: rebuild all images, (re)start the stack detached, tail logs.
@@ -69,7 +75,7 @@ prod-down:
 	docker compose -f docker-compose.prod.yml down
 
 # ── Docker Hub ────────────────────────────────────────────────────────────────
-build:
+build: frontend-docs
 	docker build --build-arg APP_VERSION=$(APP_VERSION) -t $(BACKEND_IMAGE):$(VERSION) ./backend
 	docker build --build-arg APP_VERSION=$(APP_VERSION) -f ./frontend/Dockerfile.prod -t $(FRONTEND_IMAGE):$(VERSION) ./frontend
 	docker build --build-arg APP_VERSION=$(APP_VERSION) -f ./nginx/Dockerfile -t $(NGINX_IMAGE):$(VERSION) .

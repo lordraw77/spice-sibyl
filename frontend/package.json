@@ -3,7 +3,10 @@
   "version": "1.9.0",
   "private": true,
   "scripts": {
+    "docs": "node scripts/copy-docs.mjs",
+    "prestart": "npm run docs",
     "start": "ng serve",
+    "prebuild": "npm run docs",
     "build": "ng build",
     "test": "ng test"
   },

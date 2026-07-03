@@ -76,6 +76,12 @@ import { AuthService } from '../core/services/auth.service';
           </a>
         </li>
         <li>
+          <a routerLink="/help" routerLinkActive="active" ariaCurrentWhenActive="page" title="Guida alle funzionalità">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Guida
+          </a>
+        </li>
+        <li>
           <a routerLink="/info" routerLinkActive="active" ariaCurrentWhenActive="page" title="Versioni ed endpoint">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
             Info
