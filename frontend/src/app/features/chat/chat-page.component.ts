@@ -39,11 +39,13 @@ import { ProfileService } from '../../core/services/profile.service';
 import { TemplateService } from '../../core/services/template.service';
 import { TagService } from '../../core/services/tag.service';
 import { KnowledgeService } from '../../core/services/knowledge.service';
+import { MemoryService } from '../../core/services/memory.service';
+import { FeedbackService } from '../../core/services/feedback.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ProfileModalComponent } from '../profile/profile-modal.component';
 import { OnboardingComponent } from '../onboarding/onboarding.component';
 import { OnboardingService } from '../../core/services/onboarding.service';
-import { ChatCompletionResponse, ChatMessage, ChatModel, ConversationSummary, KbDocument, PromptTemplate, ProviderSummary, RagSource, SearchResult, Tag, TelegramLinkStatus, ToolDefinition, ToolEvent } from '../../core/models/chat.models';
+import { ChatCompletionResponse, ChatMessage, ChatModel, ConversationSummary, KbDocument, ProfileMemory, PromptTemplate, ProviderSummary, RagSource, SearchResult, Tag, TelegramLinkStatus, ToolDefinition, ToolEvent } from '../../core/models/chat.models';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked, Renderer } from 'marked';
 import DOMPurify from 'dompurify';
@@ -73,6 +75,8 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly templateService = inject(TemplateService);
   private readonly tagService = inject(TagService);
   private readonly knowledgeService = inject(KnowledgeService);
+  private readonly memoryService = inject(MemoryService);
+  private readonly feedbackService = inject(FeedbackService);
   private readonly auth = inject(AuthService);
   readonly pushNotify = inject(PushNotifyService);
   readonly onboarding = inject(OnboardingService);
@@ -100,6 +104,13 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   readonly kbUploading = signal(false);
   readonly kbUrl = signal('');
 
+  // Phase 19: persistent memory
+  readonly memoryEnabled = signal(this.savedPrefs.memoryEnabled); // per-chat (incognito) toggle
+  readonly memoryProfileEnabled = signal(true);                   // per-profile switch (backend)
+  readonly memories = signal<ProfileMemory[]>([]);
+  memoryFormContent = '';
+  memoryFormCategory: ProfileMemory['category'] = 'fact';
+
   readonly conversationsOpen = signal(this.savedPrefs.sectionsOpen.conversations);
   readonly modelOpen = signal(this.savedPrefs.sectionsOpen.model);
   readonly providerOpen = signal(this.savedPrefs.sectionsOpen.provider);
@@ -108,6 +119,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   readonly templatesOpen = signal(false);
   readonly tagsOpen = signal(false);
   readonly knowledgeOpen = signal(this.savedPrefs.sectionsOpen.knowledge);
+  readonly memoryOpen = signal(this.savedPrefs.sectionsOpen.memory);
 
   // Prompt templates
   readonly templates = signal<PromptTemplate[]>([]);
@@ -140,6 +152,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   toggleTemplates(): void { this.templatesOpen.update(v => !v); }
   toggleTags(): void { this.tagsOpen.update(v => !v); }
   toggleKnowledge(): void { this.knowledgeOpen.update(v => !v); this.userPrefs.setSection('knowledge', this.knowledgeOpen()); }
+  toggleMemorySection(): void { this.memoryOpen.update(v => !v); this.userPrefs.setSection('memory', this.memoryOpen()); }
 
   /** Conversations filtered by the selected tag */
   readonly filteredConversations = computed(() => {
@@ -161,6 +174,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
         this.loadTemplates();
         this.loadTags();
         this.loadKbDocuments();
+        this.loadMemories();
         if (profile.id !== this.chatState.lastActiveProfileId) {
           this.chatState.lastActiveProfileId = profile.id;
           this.currentConversationId = null;
@@ -675,10 +689,19 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
       max_tokens: maxTokens,
       tools,
       rag: this.ragEnabled() || undefined,
-      profile_id: this.ragEnabled() ? this.profileService.currentId : undefined,
+      memory: this.memoryEnabled() ? undefined : false,
+      profile_id: this.profileService.currentId,
     }).subscribe({
       next: ({ event, data }) => {
         if (event === 'done') {
+          return;
+        }
+
+        // Phase 19: this reply is grounded with the profile's persistent memory
+        if (event === 'memory_context') {
+          this.messages.update(items =>
+            items.map((m, i) => (i === streamingIdx ? { ...m, memory_used: true } : m))
+          );
           return;
         }
 
@@ -765,6 +788,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
                       created_at: (metaMsg['created_at'] ?? data['created']) as number | undefined,
                       capabilities: (metaMsg['capabilities'] as string[] | undefined) ?? [],
                       free: metaMsg['free'] as boolean | undefined,
+                      cached: (data['cached'] ?? metaMsg['cached']) as boolean | undefined,
                     }
                   : m
               )
@@ -822,6 +846,94 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
           });
         }
       },
+    });
+  }
+
+  // ── Persistent memory (Phase 19) ───────────────────────────
+  loadMemories(): void {
+    this.memoryService.list().subscribe({
+      next: items => this.memories.set(items),
+      error: () => {},
+    });
+    this.memoryService.getSettings().subscribe({
+      next: s => this.memoryProfileEnabled.set(s.memory_enabled),
+      error: () => {},
+    });
+  }
+
+  /** Per-chat incognito toggle: OFF = no injection/extraction for new exchanges. */
+  toggleMemory(): void {
+    this.memoryEnabled.update(v => !v);
+    this.userPrefs.set('memoryEnabled', this.memoryEnabled());
+  }
+
+  /** Per-profile master switch (backend: no extraction, no injection at all). */
+  toggleMemoryProfile(): void {
+    const next = !this.memoryProfileEnabled();
+    this.memoryService.setSettings(next).subscribe({
+      next: s => this.memoryProfileEnabled.set(s.memory_enabled),
+      error: () => this.notifications.add('error', 'Memoria', 'Aggiornamento impostazione fallito.'),
+    });
+  }
+
+  addMemory(): void {
+    const content = this.memoryFormContent.trim();
+    if (!content) return;
+    this.memoryService.create(content, this.memoryFormCategory).subscribe({
+      next: mem => {
+        this.memories.update(items => [mem, ...items]);
+        this.memoryFormContent = '';
+      },
+      error: () => this.notifications.add('error', 'Memoria', 'Salvataggio fallito.'),
+    });
+  }
+
+  toggleMemoryItem(mem: ProfileMemory): void {
+    this.memoryService.update(mem.id, { enabled: !mem.enabled }).subscribe({
+      next: updated => this.memories.update(items => items.map(m => m.id === mem.id ? updated : m)),
+      error: () => {},
+    });
+  }
+
+  deleteMemory(id: string, event?: Event): void {
+    event?.stopPropagation();
+    this.memoryService.delete(id).subscribe({
+      next: () => this.memories.update(items => items.filter(m => m.id !== id)),
+      error: () => {},
+    });
+  }
+
+  forgetAllMemories(): void {
+    if (!confirm('Dimenticare tutti i ricordi di questo profilo?')) return;
+    this.memoryService.forgetAll().subscribe({
+      next: () => {
+        this.memories.set([]);
+        this.notifications.add('success', 'Memoria', 'Tutti i ricordi sono stati eliminati.');
+      },
+      error: () => this.notifications.add('error', 'Memoria', 'Eliminazione fallita.'),
+    });
+  }
+
+  // ── Feedback 👍/👎 (Phase 19) ──────────────────────────────
+  rateMessage(message: ChatMessage, idx: number, rating: 1 | -1): void {
+    if (!message.id) return;
+    // Clicking the active rating clears it.
+    if (message.rating === rating) {
+      this.feedbackService.clear(message.id).subscribe({
+        next: () => this.messages.update(items =>
+          items.map((m, i) => i === idx ? { ...m, rating: null, feedback_note: null } : m)),
+        error: () => {},
+      });
+      return;
+    }
+    let note: string | undefined;
+    if (rating === -1) {
+      note = prompt('Cosa non va in questa risposta? (opzionale)') || undefined;
+    }
+    this.feedbackService.rate(message.id, rating, note).subscribe({
+      next: () => this.messages.update(items =>
+        items.map((m, i) => i === idx ? { ...m, rating, feedback_note: note ?? null } : m)),
+      error: () => this.notifications.add('error', 'Feedback', 'Invio feedback fallito.'),
     });
   }
 
@@ -1602,7 +1714,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
       // Only save the assistant branch, not the user message again
       const saveMessages = () => {
         this.conversationService
-          .appendMessages(this.currentConversationId!, [assistantMessage])
+          .appendMessages(this.currentConversationId!, [assistantMessage], this.memoryEnabled())
           .subscribe({ next: () => this.loadConversationList() });
       };
       if (this.currentConversationId) {
@@ -1624,8 +1736,13 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
 
     const saveMessages = () => {
       this.conversationService
-        .appendMessages(this.currentConversationId!, [userToSave, assistantMessage])
-        .subscribe({ next: () => this.loadConversationList() });
+        .appendMessages(this.currentConversationId!, [userToSave, assistantMessage], this.memoryEnabled())
+        .subscribe({ next: () => {
+          this.loadConversationList();
+          // Phase 19: memory extraction runs async after the exchange is saved —
+          // refresh the sidebar list shortly after so new memories appear.
+          setTimeout(() => this.loadMemories(), 6000);
+        } });
     };
 
     if (this.currentConversationId) {
@@ -1637,6 +1754,9 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
         next: (conv) => {
           this.currentConversationId = conv.id;
           saveMessages();
+          // Phase 19: the LLM auto-title lands a few seconds after the first
+          // exchange is persisted — refresh the list to pick it up.
+          setTimeout(() => this.loadConversationList(), 6000);
         },
       });
     }

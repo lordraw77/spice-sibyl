@@ -7,13 +7,27 @@ Settings instance is created for the lifetime of the process.
 """
 
 from functools import lru_cache
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Fallback release version when APP_VERSION isn't stamped into the build.
+_DEFAULT_VERSION = '1.9.0'
 
 
 class Settings(BaseSettings):
     # General service configuration
     app_name: str = 'SpiceSibyl API'
+    # Release version surfaced by GET /v1/info and the FastAPI docs. Stamped by
+    # the Docker build from the git tag (--build-arg APP_VERSION); an empty env
+    # value falls back to the default below.
+    app_version: str = _DEFAULT_VERSION
     app_env: str = 'development'
+
+    @field_validator('app_version')
+    @classmethod
+    def _version_fallback(cls, value: str) -> str:
+        return value.strip().lstrip('v') or _DEFAULT_VERSION
     app_debug: bool = True
     app_host: str = '0.0.0.0'
     app_port: int = 8000
@@ -128,6 +142,35 @@ class Settings(BaseSettings):
     rag_rerank: str = ""
     # Model used when rag_rerank == "llm" (provider/model id the gateway can route).
     rag_rerank_model: str = "groq/llama-3.1-8b-instant"
+
+    # --- Phase 19: per-profile persistent memory ---
+    # Master switch for the memory feature (per-profile toggles live in the DB).
+    memory_enabled: bool = True
+    # Low-cost model used for the async memory-extraction call after each
+    # exchange. Empty = use default_model. "provider/model" id the gateway routes.
+    memory_extraction_model: str = ""
+    # Char budget for the <user_memory> block injected into the system prompt.
+    memory_max_chars: int = 2000
+    # Hard cap on stored memories per profile (oldest disabled ones pruned first).
+    memory_max_items: int = 100
+
+    # --- Phase 19: LLM auto-titling ---
+    # Generate a concise conversation title from the first exchange.
+    auto_title_enabled: bool = True
+    # Model used for titling. Empty = memory_extraction_model, then default_model.
+    title_model: str = ""
+
+    # --- Phase 19: http_request tool ---
+    # Optional comma-separated domain-suffix allowlist for the http_request
+    # built-in tool (empty = any public host; private IPs are always blocked).
+    http_request_allowed_domains: str = ""
+
+    # --- Phase 19: response cache ---
+    # Exact-match cache of completed replies (same model/messages/params) to cut
+    # latency and cost on repeated queries. In-memory, per-process.
+    response_cache_enabled: bool = True
+    response_cache_ttl_seconds: int = 600
+    response_cache_max_entries: int = 256
 
     # IANA timezone used for Telegram reminder parsing and display (/remind).
     # Keeps reminders correct regardless of the container's system TZ.

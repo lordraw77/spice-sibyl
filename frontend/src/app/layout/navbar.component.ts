@@ -75,6 +75,12 @@ import { AuthService } from '../core/services/auth.service';
             MCP
           </a>
         </li>
+        <li>
+          <a routerLink="/info" routerLinkActive="active" ariaCurrentWhenActive="page" title="Versioni ed endpoint">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            Info
+          </a>
+        </li>
       </ul>
       <div class="navbar-actions">
         <div class="accent-picker-wrapper">

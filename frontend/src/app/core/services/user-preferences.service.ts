@@ -11,6 +11,8 @@ export interface UserPreferences {
   maxTokens: number;
   toolsEnabled: boolean;
   ragEnabled: boolean;
+  /** Phase 19: false = incognito chat (no memory injection/extraction) */
+  memoryEnabled: boolean;
   sidebarOpen: boolean;
   sectionsOpen: {
     conversations: boolean;
@@ -19,6 +21,7 @@ export interface UserPreferences {
     system: boolean;
     params: boolean;
     knowledge: boolean;
+    memory: boolean;
   };
 }
 
@@ -31,6 +34,7 @@ const DEFAULTS: UserPreferences = {
   maxTokens: 0,
   toolsEnabled: false,
   ragEnabled: false,
+  memoryEnabled: true,
   sidebarOpen: window.innerWidth >= 992,
   sectionsOpen: {
     conversations: true,
@@ -39,6 +43,7 @@ const DEFAULTS: UserPreferences = {
     system: false,
     params: false,
     knowledge: false,
+    memory: false,
   },
 };
 

@@ -47,6 +47,25 @@ export interface ChatMessage {
   rag_sources?: RagSource[];
   /** UI-only: provider fallback that occurred before the reply (Phase 16) */
   provider_switch?: { from: string; to: string };
+  /** Phase 19: 👍(1) / 👎(-1) feedback on assistant messages */
+  rating?: number | null;
+  feedback_note?: string | null;
+  /** UI-only: this reply was grounded with the profile's persistent memory (🧠) */
+  memory_used?: boolean;
+  /** UI-only: this reply was served from the response cache */
+  cached?: boolean;
+}
+
+/** Phase 19: a persistent per-profile memory entry. */
+export interface ProfileMemory {
+  id: string;
+  profile_id: string;
+  content: string;
+  category: 'preference' | 'fact' | 'project' | 'instruction';
+  source_conversation_id?: string | null;
+  enabled: boolean;
+  created_at: number;
+  updated_at: number;
 }
 
 /** Tool call inside an assistant message */
@@ -117,6 +136,8 @@ export interface ChatCompletionRequest {
   rag_top_k?: number;
   /** Profile scope for RAG retrieval (the streaming fetch bypasses the interceptor) */
   profile_id?: string;
+  /** Phase 19: false = incognito request (no memory injection server-side) */
+  memory?: boolean;
 }
 
 /** Token consumption reported by the provider */

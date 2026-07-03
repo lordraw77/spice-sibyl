@@ -1864,3 +1864,27 @@ select.form-select-sm:focus {
   opacity: .6;
   margin-left: .15rem;
 }
+
+/* ── Phase 19: persistent memory panel ── */
+.memory-profile-toggle {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .72rem;
+  color: var(--text-secondary);
+  margin: .3rem 0 .5rem;
+  cursor: pointer;
+}
+.memory-profile-toggle input { accent-color: var(--accent); cursor: pointer; }
+.memory-item .kb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memory-item.memory-disabled .kb-name { opacity: .45; text-decoration: line-through; }
+.memory-category { font-size: .7rem; flex-shrink: 0; }
+.memory-forget-all { width: 100%; margin-top: .4rem; }
+
+/* ── Phase 19: memory / cache chips on assistant replies ── */
+.memory-chip { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.cache-chip { background: color-mix(in srgb, #5ac8c8 18%, transparent); }
+
+/* ── Phase 19: feedback thumbs ── */
+.feedback-btn.active-up { color: #89d39a; }
+.feedback-btn.active-down { color: #e07070; }

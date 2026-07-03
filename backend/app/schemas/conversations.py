@@ -29,6 +29,8 @@ class Conversation(ConversationSummary):
 
 class AppendMessagesRequest(BaseModel):
     messages: list[ChatMessage]
+    # Phase 19: false = incognito exchange — skip memory extraction for this batch
+    memory: bool = True
 
 
 class SearchResult(BaseModel):

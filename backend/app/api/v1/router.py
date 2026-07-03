@@ -22,7 +22,10 @@ from app.api.v1.endpoints import (
     images,
     knowledge,
     admin,
+    feedback,
+    info,
     mcp,
+    memories,
     metrics,
     models,
     profiles,
@@ -70,3 +73,6 @@ api_router.include_router(telegram_link.router, prefix="/telegram", tags=["teleg
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"], dependencies=_protected)
 api_router.include_router(mcp.router, prefix="/mcp", tags=["mcp"], dependencies=_protected)
 api_router.include_router(workflows.router, prefix="/workflows", tags=["workflows"], dependencies=_protected)
+api_router.include_router(memories.router, prefix="/memories", tags=["memories"], dependencies=_protected)
+api_router.include_router(feedback.router, prefix="/feedback", tags=["feedback"], dependencies=_protected)
+api_router.include_router(info.router, prefix="/info", tags=["info"], dependencies=_protected)

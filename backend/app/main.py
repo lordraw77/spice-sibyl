@@ -120,7 +120,7 @@ if settings.public_url:
 
 app = FastAPI(
     title=settings.app_name,
-    version='0.2.0',
+    version=settings.app_version,
     description='OpenAI-compatible multi-provider AI gateway',
     lifespan=lifespan,
 )

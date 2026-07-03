@@ -7,6 +7,10 @@ RUN apk add --no-cache python3 make g++
 COPY frontend/package*.json ./
 RUN npm ci --prefer-offline
 COPY frontend/ .
+# Release version stamped by the Makefile (--build-arg APP_VERSION=x.y.z, from
+# the git tag) so the UI's Info page matches the build. Empty = keep package.json.
+ARG APP_VERSION=
+RUN if [ -n "$APP_VERSION" ]; then npm pkg set version="$APP_VERSION"; fi
 RUN npm run build -- --configuration production
 
 # ── Stage 2: Nginx reverse proxy + static files ─────────────────────

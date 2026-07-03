@@ -88,6 +88,13 @@ _action_messages: dict[int, int] = {}
 # chat_id → UI locale (warm-started from telegram_prefs at boot, updated on /lang)
 _locales: dict[int, str] = {}
 
+# Phase 19: chat_id → memory injection toggle (/memory on|off), warm-cached like _locales
+_memory_prefs: dict[int, bool] = {}
+
+# The running Application, set by build_application — lets the create_reminder
+# tool schedule jobs on the live JobQueue from outside the bot.
+_application: "Application | None" = None
+
 
 def _locale(chat_id: int) -> str:
     """Resolve the UI locale for a chat (synchronous, cache-backed)."""
@@ -455,6 +462,71 @@ async def cmd_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def _linked_profile_id(telegram_id: int) -> str | None:
+    """Return the web profile linked to this Telegram user, or None."""
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+        from app.db import telegram_link_repository as tl_repo
+        row = await tl_repo.get_by_telegram_id(db, telegram_id)
+    return row["profile_id"] if row else None
+
+
+async def cmd_memory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Phase 19: /memory on|off|list|del <id> — personal memory over the linked profile."""
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        return
+    chat_id = update.effective_chat.id
+    loc = _locale(chat_id)
+    args = [a.strip() for a in (context.args or []) if a.strip()]
+    sub = args[0].lower() if args else ""
+
+    if sub in ("on", "off"):
+        enabled = sub == "on"
+        _memory_prefs[chat_id] = enabled
+        await prefs_repo.set_memory(chat_id, enabled)
+        await update.message.reply_text(t(loc, "memory_on" if enabled else "memory_off"))
+        return
+
+    if sub in ("list", "del"):
+        profile_id = await _linked_profile_id(user.id)
+        if not profile_id:
+            await update.message.reply_text(t(loc, "memory_not_linked"))
+            return
+        from app.db import memory_repository
+        async with aiosqlite.connect(settings.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            if sub == "list":
+                memories = await memory_repository.list_memories(db, profile_id)
+                if not memories:
+                    await update.message.reply_text(t(loc, "memory_empty"))
+                    return
+                lines = [
+                    f"<code>{m.id[:8]}</code> [{m.category}] {m.content}"
+                    + ("" if m.enabled else " (off)")
+                    for m in memories[:30]
+                ]
+                await update.message.reply_text(
+                    t(loc, "memory_header") + "\n".join(lines), parse_mode=ParseMode.HTML
+                )
+                return
+            # del <id>
+            if len(args) < 2:
+                await update.message.reply_text(t(loc, "memory_usage"), parse_mode=ParseMode.HTML)
+                return
+            prefix = args[1]
+            memories = await memory_repository.list_memories(db, profile_id)
+            match = next((m for m in memories if m.id.startswith(prefix)), None)
+            if not match:
+                await update.message.reply_text(t(loc, "memory_not_found"))
+                return
+            await memory_repository.delete_memory(db, match.id)
+        await update.message.reply_text(t(loc, "memory_deleted"))
+        return
+
+    await update.message.reply_text(t(loc, "memory_usage"), parse_mode=ParseMode.HTML)
+
+
 async def cmd_unlink(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not _is_allowed(user.id):
@@ -797,6 +869,27 @@ async def _stream_reply(
 
     provider = get_provider(model)
     messages = [ChatMessage(role=m["role"], content=m["content"]) for m in session]
+
+    # Phase 19: inject the linked profile's memory block (per-chat /memory toggle)
+    linked_profile: str | None = None
+    if _memory_prefs.get(chat_id, True) and settings.memory_enabled:
+        try:
+            linked_profile = await _linked_profile_id(chat_id)
+            if linked_profile:
+                from app.services import memory_service
+                async with aiosqlite.connect(settings.db_path) as db:
+                    db.row_factory = aiosqlite.Row
+                    block = await memory_service.load_memory_block(db, linked_profile)
+                if block:
+                    if messages and messages[0].role == "system":
+                        messages[0] = messages[0].model_copy(
+                            update={"content": f"{messages[0].content}\n\n{block}"}
+                        )
+                    else:
+                        messages.insert(0, ChatMessage(role="system", content=block))
+        except Exception:
+            logger.exception("stream_reply: iniezione memoria fallita chat_id=%s", chat_id)
+
     request = ChatCompletionRequest(model=model, messages=messages, max_tokens=2048)
 
     full_content = ""
@@ -861,6 +954,22 @@ async def _stream_reply(
             session.append({"role": "assistant", "content": full_content})
             _tg_messages_sent += 1
             logger.info("stream_reply: completata chat_id=%s model=%s len=%d", chat_id, model, len(full_content))
+
+            # Phase 19: async memory extraction on the linked profile
+            if linked_profile and _memory_prefs.get(chat_id, True):
+                try:
+                    from app.services import memory_service
+                    last_user = next(
+                        (m["content"] for m in reversed(session[:-1])
+                         if m["role"] == "user" and isinstance(m["content"], str)), "")
+                    if last_user:
+                        memory_service.schedule_extraction(
+                            linked_profile,
+                            [ChatMessage(role="user", content=last_user),
+                             ChatMessage(role="assistant", content=full_content)],
+                        )
+                except Exception:
+                    logger.exception("stream_reply: estrazione memoria fallita chat_id=%s", chat_id)
         else:
             logger.warning("stream_reply: risposta vuota chat_id=%s model=%s", chat_id, model)
 
@@ -1225,6 +1334,18 @@ async def _fire_reminder(context: ContextTypes.DEFAULT_TYPE) -> None:
             await reminder_repo.mark_fired(reminder_id)
 
 
+def schedule_external_reminder(reminder_id: str, chat_id: int, text: str, fire_at: int) -> bool:
+    """Schedule a reminder created outside the bot (Phase 19 create_reminder tool).
+
+    Returns False when the bot isn't running or has no JobQueue — the persisted
+    row is then picked up by _reload_reminders at the next startup.
+    """
+    if _application is None or _application.job_queue is None:
+        return False
+    _schedule_reminder(_application.job_queue, reminder_id, chat_id, text, fire_at)
+    return True
+
+
 def _schedule_reminder(job_queue, reminder_id: str, chat_id: int, text: str, fire_at: int) -> None:
     """Register a JobQueue job that fires at fire_at (or immediately if past)."""
     delay = max(fire_at - int(time.time()), 0)
@@ -1358,6 +1479,16 @@ async def _set_locale(chat_id: int, code: str) -> None:
     await prefs_repo.set_locale(chat_id, code)
 
 
+async def _load_memory_prefs() -> None:
+    """Warm-start the per-chat memory toggle cache from telegram_prefs at boot."""
+    try:
+        _memory_prefs.update(await prefs_repo.load_all_memory())
+        if _memory_prefs:
+            logger.info("_load_memory_prefs: %d preferenze memoria caricate", len(_memory_prefs))
+    except Exception:
+        logger.exception("_load_memory_prefs: caricamento preferenze memoria fallito")
+
+
 async def _load_locales() -> None:
     """Warm-start the locale cache from telegram_prefs at boot."""
     try:
@@ -1394,6 +1525,7 @@ _BOT_COMMANDS = [
     BotCommand("remind", "Imposta un promemoria (/remind 15:50 testo)"),
     BotCommand("reminders", "Mostra i promemoria in programma"),
     BotCommand("unremind", "Annulla un promemoria (/unremind <id>)"),
+    BotCommand("memory", "Memoria personale (/memory on|off|list|del)"),
     BotCommand("lang", "Cambia lingua del bot / change bot language"),
     BotCommand("link", "Collega al profilo web"),
     BotCommand("unlink", "Scollega dal profilo web"),
@@ -1407,10 +1539,12 @@ async def _post_init(app: Application) -> None:
     logger.info("Bot avviato: @%s (id=%s) — %d comandi registrati", bot_info.username, bot_info.id, len(_BOT_COMMANDS))
     await app.bot.set_my_commands(_BOT_COMMANDS)
     await _load_locales()
+    await _load_memory_prefs()
     await _reload_reminders(app)
 
 
 def build_application() -> Application:
+    global _application
     logger.info("build_application: costruzione bot con default_model=%s", _default_model())
     allowed = _allowed_users()
     if allowed:
@@ -1438,6 +1572,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("remind", cmd_remind))
     app.add_handler(CommandHandler("reminders", cmd_reminders))
     app.add_handler(CommandHandler("unremind", cmd_unremind))
+    app.add_handler(CommandHandler("memory", cmd_memory))
     app.add_handler(CommandHandler("lang", cmd_lang))
     app.add_handler(CommandHandler("link", cmd_link))
     app.add_handler(CommandHandler("unlink", cmd_unlink))
@@ -1454,4 +1589,5 @@ def build_application() -> Application:
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    _application = app
     return app

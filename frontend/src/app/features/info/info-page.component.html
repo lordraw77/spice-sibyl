@@ -1,0 +1,89 @@
+<div class="info-shell">
+
+  <header class="page-header">
+    <div>
+      <h1>Informazioni</h1>
+      <p class="subtitle">Versioni, endpoint e stato del sistema.</p>
+    </div>
+    <button class="btn-ghost" (click)="refresh()">Aggiorna</button>
+  </header>
+
+  <div class="info-grid">
+
+    <!-- Web UI -->
+    <section class="info-card">
+      <div class="card-head"><h2>🖥️ Web UI</h2></div>
+      <dl class="kv-list">
+        <div class="kv"><dt>Versione</dt><dd><span class="version-chip">v{{ uiVersion }}</span></dd></div>
+        <div class="kv"><dt>Origin</dt><dd class="mono">{{ endpointUrl.split('/api')[0] }}</dd></div>
+        <div class="kv"><dt>Framework</dt><dd>Angular (standalone, PWA)</dd></div>
+      </dl>
+    </section>
+
+    <!-- Backend -->
+    <section class="info-card">
+      <div class="card-head">
+        <h2>⚙️ Backend</h2>
+        <span class="badge" *ngIf="healthOk() !== null" [class.ok]="healthOk()" [class.bad]="!healthOk()">
+          {{ healthOk() ? 'ONLINE' : 'OFFLINE' }}
+        </span>
+      </div>
+      <ng-container *ngIf="info() as i; else backendUnavailable">
+        <dl class="kv-list">
+          <div class="kv"><dt>Nome</dt><dd>{{ i.name }}</dd></div>
+          <div class="kv"><dt>Versione</dt><dd><span class="version-chip">v{{ i.version }}</span></dd></div>
+          <div class="kv"><dt>Ambiente</dt><dd>{{ i.environment }}</dd></div>
+          <div class="kv"><dt>Python</dt><dd>{{ i.python_version }}</dd></div>
+          <div class="kv"><dt>Piattaforma</dt><dd class="mono small">{{ i.platform }}</dd></div>
+          <div class="kv"><dt>Uptime</dt><dd>{{ formatUptime(i.uptime_seconds) }} (avvio {{ (i.started_at * 1000) | date:'dd/MM/yyyy HH:mm' }})</dd></div>
+          <div class="kv"><dt>Modello default</dt><dd class="mono">{{ i.default_model }}</dd></div>
+          <div class="kv"><dt>Timezone</dt><dd>{{ i.timezone }}</dd></div>
+          <div class="kv"><dt>Database</dt><dd class="mono small">{{ i.db.path }} ({{ formatBytes(i.db.size_bytes) }})</dd></div>
+        </dl>
+      </ng-container>
+      <ng-template #backendUnavailable>
+        <p class="muted" *ngIf="infoError()">⚠️ Impossibile raggiungere il backend.</p>
+        <p class="muted" *ngIf="!infoError()">Caricamento…</p>
+      </ng-template>
+    </section>
+
+    <!-- Endpoints -->
+    <section class="info-card">
+      <div class="card-head"><h2>🔌 Endpoint API</h2></div>
+      <dl class="kv-list">
+        <div class="kv"><dt>Base URL</dt><dd class="mono">{{ endpointUrl }}</dd></div>
+        <div class="kv"><dt>Health</dt><dd class="mono">{{ apiUrl }}/health</dd></div>
+        <div class="kv"><dt>Readiness</dt><dd class="mono">{{ apiUrl }}/ready</dd></div>
+        <div class="kv"><dt>Metriche</dt><dd class="mono">{{ apiUrl }}/metrics</dd></div>
+        <div class="kv"><dt>OpenAPI docs</dt><dd><a class="mono" [href]="docsUrl" target="_blank" rel="noopener">{{ docsUrl }}</a></dd></div>
+      </dl>
+      <div class="status-row" *ngIf="ready() as r">
+        <span class="badge" [class.ok]="r.status === 'ready'" [class.bad]="r.status !== 'ready'">
+          {{ r.status === 'ready' ? 'READY' : 'DEGRADED' }}
+        </span>
+        <span class="muted small-inline">
+          DB {{ r.checks.db ? '✓' : '✗' }} · provider configurati: {{ r.checks.providers }}
+        </span>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section class="info-card">
+      <div class="card-head"><h2>🧩 Funzionalità</h2></div>
+      <ng-container *ngIf="info() as i; else backendUnavailable2">
+        <ul class="feature-list">
+          <li *ngFor="let f of featureEntries(i.features)">
+            <span class="dot" [class.ok]="f.enabled" [class.off]="!f.enabled"></span>
+            {{ f.label }}
+            <span class="feature-state">{{ f.enabled ? 'attiva' : 'disattivata' }}</span>
+          </li>
+        </ul>
+        <p class="muted cache-line" *ngIf="i.features['response_cache']">
+          Cache risposte: {{ i.response_cache.entries }} voci · {{ i.response_cache.hits }} hit / {{ i.response_cache.misses }} miss
+        </p>
+      </ng-container>
+      <ng-template #backendUnavailable2><p class="muted">—</p></ng-template>
+    </section>
+
+  </div>
+</div>

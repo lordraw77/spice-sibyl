@@ -42,6 +42,7 @@ MESSAGES: dict[str, dict[str, str]] = {
             "  /remind &lt;quando&gt; &lt;testo&gt; — promemoria (es. 15:50 o +30m)\n"
             "  /reminders — promemoria in programma\n"
             "  /unremind &lt;id&gt; — annulla un promemoria\n"
+            "  /memory — memoria personale (on|off|list|del)\n"
             "  /lang — cambia lingua del bot\n\n"
             "📸 Invia una foto per usare la vision\n"
             "🎙️ Invia un vocale per trascriverlo e rispondere\n"
@@ -73,6 +74,22 @@ MESSAGES: dict[str, dict[str, str]] = {
         "unremind_usage": "Uso: <code>/unremind &lt;id&gt;</code>",
         "unremind_not_found": "⚠️ Nessun promemoria corrisponde a quell'id.",
         "unremind_done": "✅ Promemoria annullato.",
+        "memory_usage": (
+            "Uso: <code>/memory on|off|list|del &lt;id&gt;</code>\n"
+            "  on/off — attiva/disattiva la memoria in questa chat\n"
+            "  list — mostra i ricordi del profilo collegato\n"
+            "  del &lt;id&gt; — dimentica un ricordo"
+        ),
+        "memory_on": "🧠 Memoria attivata per questa chat.",
+        "memory_off": "🧠 Memoria disattivata per questa chat.",
+        "memory_not_linked": (
+            "⚠️ Nessun profilo web collegato. Usa /link e incolla il codice "
+            "nella sidebar web per gestire i ricordi."
+        ),
+        "memory_empty": "🧠 Nessun ricordo salvato per il profilo collegato.",
+        "memory_header": "🧠 <b>Ricordi del profilo:</b>\n",
+        "memory_deleted": "✅ Ricordo dimenticato.",
+        "memory_not_found": "⚠️ Nessun ricordo corrisponde a quell'id.",
     },
     "en": {
         "access_denied": "⛔ Access not authorized.",
@@ -95,6 +112,7 @@ MESSAGES: dict[str, dict[str, str]] = {
             "  /remind &lt;when&gt; &lt;text&gt; — set a reminder (e.g. 15:50 or +30m)\n"
             "  /reminders — scheduled reminders\n"
             "  /unremind &lt;id&gt; — cancel a reminder\n"
+            "  /memory — personal memory (on|off|list|del)\n"
             "  /lang — change the bot language\n\n"
             "📸 Send a photo to use vision\n"
             "🎙️ Send a voice message to transcribe and answer\n"
@@ -126,6 +144,22 @@ MESSAGES: dict[str, dict[str, str]] = {
         "unremind_usage": "Usage: <code>/unremind &lt;id&gt;</code>",
         "unremind_not_found": "⚠️ No reminder matches that id.",
         "unremind_done": "✅ Reminder cancelled.",
+        "memory_usage": (
+            "Usage: <code>/memory on|off|list|del &lt;id&gt;</code>\n"
+            "  on/off — enable/disable memory in this chat\n"
+            "  list — show the linked profile's memories\n"
+            "  del &lt;id&gt; — forget a memory"
+        ),
+        "memory_on": "🧠 Memory enabled for this chat.",
+        "memory_off": "🧠 Memory disabled for this chat.",
+        "memory_not_linked": (
+            "⚠️ No web profile linked. Use /link and paste the code in the "
+            "web sidebar to manage memories."
+        ),
+        "memory_empty": "🧠 No memories saved for the linked profile.",
+        "memory_header": "🧠 <b>Profile memories:</b>\n",
+        "memory_deleted": "✅ Memory forgotten.",
+        "memory_not_found": "⚠️ No memory matches that id.",
     },
 }
 

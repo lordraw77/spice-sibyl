@@ -363,6 +363,60 @@
         </ng-container>
       </div>
 
+      <!-- Memory (Phase 19) -->
+      <div class="sidebar-section">
+        <div class="section-header">
+          <button class="section-collapse-btn" (click)="toggleMemorySection()" [attr.aria-expanded]="memoryOpen()">
+            <span class="section-label">Memoria 🧠</span>
+            <svg class="section-chevron" [class.open]="memoryOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <button class="tools-toggle" [class.enabled]="memoryEnabled()" (click)="toggleMemory()" title="ON = ricordi usati nelle risposte; OFF = chat in incognito">
+            {{ memoryEnabled() ? 'ON' : 'OFF' }}
+          </button>
+        </div>
+        <ng-container *ngIf="memoryOpen()">
+          <p class="kb-hint">I fatti su di te vengono ricordati tra le conversazioni e usati per personalizzare le risposte.</p>
+
+          <label class="memory-profile-toggle">
+            <input type="checkbox" [checked]="memoryProfileEnabled()" (change)="toggleMemoryProfile()" />
+            Estrazione automatica dei ricordi (profilo)
+          </label>
+
+          <!-- Manual add -->
+          <div class="kb-url-row">
+            <input
+              type="text"
+              class="kb-url-input"
+              placeholder="Aggiungi un ricordo…"
+              [(ngModel)]="memoryFormContent"
+              (keyup.enter)="addMemory()" />
+            <button class="kb-url-btn" (click)="addMemory()" [disabled]="!memoryFormContent.trim()" title="Salva ricordo">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
+
+          <!-- Memory list -->
+          <ul class="kb-list" *ngIf="memories().length">
+            <li *ngFor="let mem of memories()" class="kb-item memory-item" [class.memory-disabled]="!mem.enabled">
+              <span class="memory-category" [title]="mem.category">{{ {preference: '⭐', fact: '💡', project: '📁', instruction: '📌'}[mem.category] || '💡' }}</span>
+              <span class="kb-name" [title]="mem.content">{{ mem.content }}</span>
+              <button class="conv-action-btn" (click)="toggleMemoryItem(mem)" [title]="mem.enabled ? 'Disattiva' : 'Attiva'">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" *ngIf="mem.enabled"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" *ngIf="!mem.enabled"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              </button>
+              <button class="conv-delete" (click)="deleteMemory(mem.id, $event)" title="Dimentica">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </li>
+          </ul>
+          <p class="no-convs" *ngIf="!memories().length">Nessun ricordo salvato.</p>
+
+          <button class="btn-system-clear memory-forget-all" *ngIf="memories().length" (click)="forgetAllMemories()">
+            Dimentica tutto
+          </button>
+        </ng-container>
+      </div>
+
       <!-- Tag Manager -->
       <div class="sidebar-section">
         <div class="section-header">
@@ -560,6 +614,12 @@
           ⚠️ {{ message.provider_switch.from }} non disponibile — passato a {{ message.provider_switch.to }}
         </div>
 
+        <!-- Phase 19: memory-grounded / cached reply chips -->
+        <div class="rag-sources" *ngIf="message.memory_used || message.cached">
+          <span class="rag-chip memory-chip" *ngIf="message.memory_used" title="Risposta personalizzata con la memoria del profilo">🧠 memoria</span>
+          <span class="rag-chip cache-chip" *ngIf="message.cached" title="Risposta servita dalla cache (nessuna chiamata al modello)">⚡ cache</span>
+        </div>
+
         <!-- RAG citations: knowledge-base chunks used to ground this reply -->
         <div class="rag-sources" *ngIf="message.rag_sources?.length">
           <span class="rag-sources-label">Fonti:</span>
@@ -605,6 +665,13 @@
           </button>
           <button class="msg-action-btn" *ngIf="message.role === 'user' && i === lastUserMessageIdx" (click)="editLastUserMessage()" title="Modifica messaggio">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <!-- Phase 19: feedback 👍/👎 on persisted assistant messages -->
+          <button class="msg-action-btn feedback-btn" *ngIf="message.role === 'assistant' && message.id" [class.active-up]="message.rating === 1" (click)="rateMessage(message, i, 1)" title="Risposta utile">
+            <svg width="13" height="13" viewBox="0 0 24 24" [attr.fill]="message.rating === 1 ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+          </button>
+          <button class="msg-action-btn feedback-btn" *ngIf="message.role === 'assistant' && message.id" [class.active-down]="message.rating === -1" (click)="rateMessage(message, i, -1)" title="Risposta non utile">
+            <svg width="13" height="13" viewBox="0 0 24 24" [attr.fill]="message.rating === -1 ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg>
           </button>
         </div>
 

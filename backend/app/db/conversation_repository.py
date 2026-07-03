@@ -25,6 +25,8 @@ def _row_to_message(row: aiosqlite.Row) -> ChatMessage:
     pinned_val = row["pinned"] if "pinned" in keys else None
     parent_id = row["parent_id"] if "parent_id" in keys else None
     branch_index = row["branch_index"] if "branch_index" in keys else None
+    rating = row["rating"] if "rating" in keys else None
+    feedback_note = row["feedback_note"] if "feedback_note" in keys else None
     return ChatMessage(
         id=row["id"],
         role=row["role"],
@@ -45,6 +47,8 @@ def _row_to_message(row: aiosqlite.Row) -> ChatMessage:
         pinned=bool(pinned_val) if pinned_val is not None else None,
         parent_id=parent_id,
         branch_index=branch_index,
+        rating=rating,
+        feedback_note=feedback_note,
     )
 
 

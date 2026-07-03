@@ -71,6 +71,10 @@ class ChatMessage(BaseModel):
     parent_id: str | None = None
     branch_index: int | None = None
 
+    # Phase 19: feedback (👍/👎 + optional note) on assistant messages
+    rating: int | None = None
+    feedback_note: str | None = None
+
 
 class ChatCompletionRequest(BaseModel):
     """Incoming request body for POST /chat/completions."""
@@ -91,6 +95,9 @@ class ChatCompletionRequest(BaseModel):
     # ids. None/empty means search the whole profile knowledge base.
     rag_document_ids: list[str] | None = None
     profile_id: str | None = None
+    # Phase 19: per-conversation memory flag — false disables injection for this
+    # request (incognito chat) even when the profile has memory enabled.
+    memory: bool = True
 
 
 class ChatCompletionChoice(BaseModel):

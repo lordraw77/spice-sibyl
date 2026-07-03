@@ -36,8 +36,8 @@ export class ConversationService {
     return this.http.delete<void>(`${this.baseUrl}/${id}`);
   }
 
-  appendMessages(id: string, messages: ChatMessage[]): Observable<void> {
-    return this.http.post<void>(`${this.baseUrl}/${id}/messages`, { messages });
+  appendMessages(id: string, messages: ChatMessage[], memory = true): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/${id}/messages`, { messages, memory });
   }
 
   togglePin(conversationId: string, messageId: string): Observable<{ pinned: boolean }> {

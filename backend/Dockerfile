@@ -26,6 +26,11 @@ RUN chown -R app:app /app
 ENV PYTHONPATH=/app
 ENV DB_PATH=/data/spice_sibyl.db
 
+# Release version stamped by the Makefile (--build-arg APP_VERSION=x.y.z, from
+# the git tag). Empty = fall back to the default in app/core/config.py.
+ARG APP_VERSION=
+ENV APP_VERSION=${APP_VERSION}
+
 USER app
 #ENV DB_PATH=/app/spice_sibyl.db
 

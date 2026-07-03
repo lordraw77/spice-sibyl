@@ -15,6 +15,16 @@
 | `web_search` | ricerca web via DuckDuckGo (scraping HTML per snippet ricchi, fallback sull'API instant-answer) |
 | `read_url` | scarica una pagina web e restituisce il testo (HTML rimosso, max 4 000 caratteri) |
 | `python_exec` | code interpreter sandbox (vedi sotto) |
+| `kb_search` | RAG agentico: interroga la knowledge base del profilo su richiesta del modello |
+| `search_conversations` | memoria episodica: ricerca full-text (FTS5) nelle conversazioni passate |
+| `generate_image` | genera un'immagine con la catena di provider configurata; l'immagine viene mostrata all'utente |
+| `get_weather` | meteo corrente + previsioni via Open-Meteo (gratuito, senza chiave) |
+| `fetch_rss` | ultime N voci di un feed RSS 2.0 / Atom |
+| `create_reminder` | crea un promemoria Telegram per l'account collegato («ricordami domani alle 9…») |
+| `extract_document` | scarica un PDF/DOCX/TXT/MD da URL e ne restituisce il testo, senza ingestione nella KB |
+| `http_request` | chiamata HTTP generica GET/POST verso API pubbliche (allowlist opzionale `HTTP_REQUEST_ALLOWED_DOMAINS`) |
+
+**Hardening SSRF.** `read_url`, `fetch_rss`, `extract_document` e `http_request` rifiutano URL il cui host risolve a indirizzi privati/loopback/link-local. `kb_search`, `search_conversations` e `create_reminder` operano automaticamente sul profilo del chiamante.
 
 ## Tool custom (HTTP)
 

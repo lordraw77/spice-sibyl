@@ -300,6 +300,23 @@ CREATE TABLE IF NOT EXISTS agent_run_steps (
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_run_steps_run ON agent_run_steps(run_id, step_index);
+
+-- Phase 19: per-profile persistent memory. One row per remembered fact;
+-- auto-extracted after each exchange (MEMORY_EXTRACTION_MODEL) or added
+-- manually from the UI / Telegram. Injected into the system prompt when the
+-- profile has memory enabled.
+CREATE TABLE IF NOT EXISTS profile_memories (
+    id                     TEXT    PRIMARY KEY,
+    profile_id             TEXT    NOT NULL DEFAULT 'default',
+    content                TEXT    NOT NULL,
+    category               TEXT    NOT NULL DEFAULT 'fact',  -- preference|fact|project|instruction
+    source_conversation_id TEXT,
+    enabled                INTEGER NOT NULL DEFAULT 1,
+    created_at             INTEGER NOT NULL,
+    updated_at             INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_profile_memories_profile ON profile_memories(profile_id, updated_at DESC);
 """
 
 _MIGRATIONS = [
@@ -331,6 +348,13 @@ _MIGRATIONS = [
     "INSERT INTO kb_chunks_fts(id, document_id, profile_id, content) "
     "SELECT id, document_id, profile_id, content FROM kb_chunks c "
     "WHERE NOT EXISTS (SELECT 1 FROM kb_chunks_fts f WHERE f.id = c.id)",
+    # Phase 19: per-profile memory toggle (OFF = no extraction, no injection)
+    "ALTER TABLE profiles ADD COLUMN memory_enabled INTEGER NOT NULL DEFAULT 1",
+    # Phase 19: message feedback (👍/👎 + optional note) on assistant messages
+    "ALTER TABLE messages ADD COLUMN rating INTEGER DEFAULT NULL",
+    "ALTER TABLE messages ADD COLUMN feedback_note TEXT DEFAULT NULL",
+    # Phase 19: per-chat Telegram memory toggle (/memory on|off)
+    "ALTER TABLE telegram_prefs ADD COLUMN memory INTEGER NOT NULL DEFAULT 1",
 ]
 
 

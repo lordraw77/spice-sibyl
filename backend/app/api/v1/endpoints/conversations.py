@@ -201,8 +201,31 @@ async def append_messages(
     db: aiosqlite.Connection = Depends(get_db),
     user: UserOut = Depends(get_current_user),
 ):
-    await _assert_owns_conversation(db, conversation_id, user)
+    profile_id = await _assert_owns_conversation(db, conversation_id, user)
+    async with db.execute(
+        "SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?",
+        (conversation_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    prior_count = row["n"] if row else 0
+
     await repo.append_messages(db, conversation_id, body.messages)
+
+    # Phase 19: fire-and-forget memory extraction after each persisted exchange
+    # (skipped for incognito batches) and LLM auto-titling on the first exchange.
+    from app.services import memory_service, title_service
+
+    if body.memory and any(m.role == "assistant" for m in body.messages):
+        memory_service.schedule_extraction(profile_id, body.messages, conversation_id)
+
+    if prior_count == 0:
+        user_text = next(
+            (m.content for m in body.messages
+             if m.role == "user" and isinstance(m.content, str)), "")
+        assistant_text = next(
+            (m.content for m in body.messages
+             if m.role == "assistant" and isinstance(m.content, str)), "")
+        title_service.schedule_titling(conversation_id, user_text, assistant_text)
 
 
 @router.patch("/{conversation_id}/messages/{message_id}/pin")

@@ -86,6 +86,12 @@ def _strip_html(text: str) -> str:
 
 async def read_url(url: str, max_chars: int = 4000) -> str:
     """Fetch a web page and return its plain-text content, stripped of HTML."""
+    # Phase 19: SSRF hardening — refuse URLs resolving to private/internal hosts.
+    from app.tools.extras import assert_public_url
+    blocked = assert_public_url(url)
+    if blocked:
+        return blocked
+
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "

@@ -4,6 +4,9 @@ FRONTEND_IMAGE = $(DOCKER_USER)/spice-sibyl-frontend
 NGINX_IMAGE    = $(DOCKER_USER)/spice-sibyl-nginx
 GIT_TAG       := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "latest")
 VERSION       ?= $(GIT_TAG)
+# Bare semver stamped into the images (backend APP_VERSION env + frontend
+# package.json) so GET /v1/info and the UI Info page match the build tag.
+APP_VERSION   := $(patsubst v%,%,$(VERSION))
 
 .PHONY: up down logs backend frontend test-backend install-backend install-frontend \
         build push release prod-up prod-down \
@@ -18,10 +21,10 @@ VERSION       ?= $(GIT_TAG)
 dev-build: dev-build-frontend dev-build-backend
 
 dev-build-backend:
-	docker compose build backend
+	docker compose build --build-arg APP_VERSION=$(APP_VERSION) backend
 
 dev-build-frontend:
-	docker build -f ./nginx/Dockerfile -t $(NGINX_IMAGE):latest .
+	docker build --build-arg APP_VERSION=$(APP_VERSION) -f ./nginx/Dockerfile -t $(NGINX_IMAGE):latest .
 
 # One-shot dev workflow: rebuild all images, (re)start the stack detached, tail logs.
 dev: dev-build
@@ -67,9 +70,9 @@ prod-down:
 
 # ── Docker Hub ────────────────────────────────────────────────────────────────
 build:
-	docker build -t $(BACKEND_IMAGE):$(VERSION) ./backend
-	docker build -f ./frontend/Dockerfile.prod -t $(FRONTEND_IMAGE):$(VERSION) ./frontend
-	docker build -f ./nginx/Dockerfile -t $(NGINX_IMAGE):$(VERSION) .
+	docker build --build-arg APP_VERSION=$(APP_VERSION) -t $(BACKEND_IMAGE):$(VERSION) ./backend
+	docker build --build-arg APP_VERSION=$(APP_VERSION) -f ./frontend/Dockerfile.prod -t $(FRONTEND_IMAGE):$(VERSION) ./frontend
+	docker build --build-arg APP_VERSION=$(APP_VERSION) -f ./nginx/Dockerfile -t $(NGINX_IMAGE):$(VERSION) .
 
 push:
 	docker push $(BACKEND_IMAGE):$(VERSION)

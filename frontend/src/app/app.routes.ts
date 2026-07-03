@@ -70,6 +70,12 @@ export const routes: Routes = [
       import('./features/mcp/mcp-page.component').then((m) => m.McpPageComponent),
   },
   {
+    path: 'info',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/info/info-page.component').then((m) => m.InfoPageComponent),
+  },
+  {
     // Public read-only shared conversation view — no auth required.
     path: 'shared/:token',
     loadComponent: () =>

@@ -16,7 +16,7 @@ from app.core import metrics
 from app.core.config import settings
 from app.data.model_catalog import get_model_metadata
 from app.schemas.chat import ChatCompletionRequest, ChatMessage, ToolCall, ToolCallFunction
-from app.services import key_resolver
+from app.services import cache_service, key_resolver
 from app.services.provider_factory import ProviderFactory
 from app.tools.registry import execute_tool
 
@@ -137,6 +137,75 @@ class ChatService:
         new_request = request.model_copy(update={"messages": messages})
         return new_request, sources
 
+    async def _apply_memory(self, request: ChatCompletionRequest):
+        """Phase 19: inject the profile's <user_memory> block into the system prompt.
+
+        Returns (request, injected: bool). Skipped when the request carries
+        memory:false (incognito), the profile switch is off, or there are no
+        enabled memories. Failures are logged and swallowed.
+        """
+        if not request.memory or not settings.memory_enabled:
+            return request, False
+
+        import aiosqlite
+        from app.services import memory_service
+
+        profile_id = request.profile_id or "default"
+        try:
+            db = await aiosqlite.connect(settings.db_path)
+            db.row_factory = aiosqlite.Row
+            try:
+                block = await memory_service.load_memory_block(db, profile_id)
+            finally:
+                await db.close()
+        except Exception:
+            logger.exception("Memory injection failed; continuing without it")
+            return request, False
+
+        if not block:
+            return request, False
+        logger.info("Memory: injecting %d chars for profile=%s model=%s",
+                    len(block), profile_id, request.model)
+        return memory_service.apply_memory_block(request, block), True
+
+    @staticmethod
+    def _memory_frame() -> dict:
+        """SSE control frame telling the UI this reply is memory-grounded (🧠 chip)."""
+        return {"event": "memory_context", "data": json.dumps({"used": True})}
+
+    @staticmethod
+    def _cached_reply_frames(request: ChatCompletionRequest, cached: dict) -> list[dict]:
+        """Replay a cached completion as a single chunk + meta + done."""
+        meta = dict(cached.get("meta") or {})
+        meta_msg = dict((meta.get("choices") or [{}])[0].get("message") or {}) if meta else {}
+        meta_msg.update({"content": cached["content"], "cached": True})
+        now = int(time.time())
+        frames = [
+            {
+                "event": "message",
+                "data": json.dumps({
+                    "object": "chat.completion.chunk",
+                    "choices": [{"index": 0, "delta": {"content": cached["content"]},
+                                 "finish_reason": None}],
+                }),
+            },
+            {
+                "event": "message",
+                "data": json.dumps({
+                    "id": f"meta-cached-{now}",
+                    "object": "chat.completion.meta",
+                    "created": now,
+                    "model": request.model,
+                    "cached": True,
+                    "choices": [{"index": 0, "finish_reason": "stop", "message": meta_msg}],
+                    "usage": meta.get("usage") or {},
+                    "metrics": {"latency_ms": 0, "cached": True},
+                }),
+            },
+            {"event": "done", "data": "[DONE]"},
+        ]
+        return frames
+
     @staticmethod
     def _rag_frame(sources) -> dict:
         """Build an SSE control frame carrying the RAG sources for the UI."""
@@ -176,12 +245,42 @@ class ChatService:
 
     async def complete(self, request: ChatCompletionRequest):
         """Return a single non-streaming completion."""
+        request, _ = await self._apply_memory(request)
         request, _ = await self._apply_rag(request)
+
+        cache_key = cache_service.cache_key(request)
+        cached = cache_service.get(cache_key)
+        if cached is not None:
+            logger.info("Response cache hit (complete) for model=%s", request.model)
+            now = int(time.time())
+            return {
+                "id": f"cached-{now}",
+                "object": "chat.completion",
+                "created": now,
+                "model": request.model,
+                "cached": True,
+                "choices": [{
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": cached["content"], "cached": True},
+                }],
+                "usage": (cached.get("meta") or {}).get("usage") or {},
+                "metrics": {"latency_ms": 0, "cached": True},
+            }
+
         provider = ProviderFactory.get_provider(request.model)
-        return await provider.complete(request)
+        response = await provider.complete(request)
+        try:
+            choices = response.get("choices") or []
+            content = ((choices[0].get("message") or {}).get("content") or "") if choices else ""
+            cache_service.put(cache_key, content, {"usage": response.get("usage") or {}})
+        except (AttributeError, TypeError, KeyError, IndexError):
+            pass  # non-dict/odd provider response — skip caching
+        return response
 
     async def stream(self, request: ChatCompletionRequest):
         """Return an SSE EventSourceResponse for a streaming completion."""
+        request, memory_used = await self._apply_memory(request)
         request, rag_sources = await self._apply_rag(request)
         provider = ProviderFactory.get_provider(request.model)
 
@@ -189,7 +288,9 @@ class ChatService:
         # server-side tool loop — they stream their own tool_call/tool_result frames.
         is_agent = bool(request.model and request.model.startswith("agent/"))
         if request.tools and not is_agent:
-            return EventSourceResponse(self._stream_with_tools(provider, request, rag_sources))
+            return EventSourceResponse(
+                self._stream_with_tools(provider, request, rag_sources, memory_used)
+            )
 
         # agent/* models manage their own provider rotation; don't apply our
         # gateway-level fallback chain to them.
@@ -198,12 +299,25 @@ class ChatService:
             else self._fallback_candidates(request.model)
         )
 
+        cache_key = None if is_agent else cache_service.cache_key(request)
+
         async def _plain():
             metrics.active_sse_streams.inc()
             try:
+                if memory_used:
+                    yield self._memory_frame()
                 if rag_sources:
                     yield self._rag_frame(rag_sources)
 
+                cached = cache_service.get(cache_key)
+                if cached is not None:
+                    logger.info("Response cache hit (stream) for model=%s", request.model)
+                    for frame in self._cached_reply_frames(request, cached):
+                        yield frame
+                    return
+
+                full_content = ""
+                meta_chunk: dict = {}
                 produced = False
                 for idx, (prov_hint, model) in enumerate(candidates):
                     req = request if model == request.model else request.model_copy(update={"model": model})
@@ -221,9 +335,17 @@ class ChatService:
                                 event = chunk.pop("_sse_event")
                             produced = True
                             if isinstance(chunk, dict) and chunk.get("object") == "chat.completion.meta":
+                                meta_chunk = chunk
                                 self._record_chat_metrics(provider_label, model, chunk, start)
+                            elif isinstance(chunk, dict) and event == "message":
+                                delta_choices = chunk.get("choices") or []
+                                if delta_choices:
+                                    full_content += (delta_choices[0].get("delta") or {}).get("content") or ""
                             yield {"event": event, "data": json.dumps(chunk)}
                         metrics.provider_requests_total.labels(provider_label, model, "success").inc()
+                        cache_service.put(
+                            cache_key, full_content, {"usage": meta_chunk.get("usage") or {}}
+                        )
                         yield {"event": "done", "data": "[DONE]"}
                         return
                     except Exception as exc:  # noqa: BLE001 — fallback must catch any provider failure
@@ -244,12 +366,16 @@ class ChatService:
 
         return EventSourceResponse(_plain())
 
-    async def _stream_with_tools(self, provider, request: ChatCompletionRequest, rag_sources=None):
+    async def _stream_with_tools(
+        self, provider, request: ChatCompletionRequest, rag_sources=None, memory_used=False
+    ):
         """Run the server-side tool-execution loop, yielding SSE-compatible dicts."""
         messages: list[ChatMessage] = list(request.messages)
 
         metrics.active_sse_streams.inc()
         try:
+            if memory_used:
+                yield self._memory_frame()
             if rag_sources:
                 yield self._rag_frame(rag_sources)
             for _ in range(_MAX_TOOL_ITERATIONS):
@@ -371,10 +497,17 @@ class ChatService:
                         ),
                     }
 
+                    # generate_image returns a huge base64 data-URI for the UI;
+                    # feed the model a short placeholder instead of blowing the
+                    # context window with encoded pixels.
+                    model_result = result
+                    if func_name == "generate_image" and result.startswith("!["):
+                        model_result = "[Image generated successfully and shown to the user.]"
+
                     messages.append(ChatMessage(
                         role="tool",
                         tool_call_id=tc.id,
-                        content=result,
+                        content=model_result,
                     ))
             else:
                 # for-loop exhausted without a break — max iterations reached
