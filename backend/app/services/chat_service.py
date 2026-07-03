@@ -10,6 +10,7 @@ import json
 import logging
 import time
 
+import httpx
 from sse_starlette.sse import EventSourceResponse
 
 from app.core import metrics
@@ -529,8 +530,30 @@ class ChatService:
 
             yield {"event": "done", "data": "[DONE]"}
 
-        except (RuntimeError, OSError, ValueError) as exc:
+        except httpx.HTTPStatusError as exc:
+            # Provider returned an HTTP error (e.g. 429 rate limit): surface a
+            # readable message to the UI instead of crashing the SSE stream.
+            status = exc.response.status_code
+            reason = exc.response.reason_phrase or ""
+            detail = ""
+            try:
+                body = exc.response.json()
+                detail = body.get("title") or body.get("detail") or body.get("message") or ""
+            except (json.JSONDecodeError, ValueError, AttributeError):
+                pass
+            message = f"Provider error {status} {reason}".strip()
+            if detail and detail.lower() != reason.lower():
+                message += f": {detail}"
+            logger.warning(
+                "Tool loop provider HTTP error %s for model=%s: %s",
+                status, request.model, message,
+            )
+            yield {"event": "error", "data": json.dumps({"message": message, "status": status})}
+            yield {"event": "done", "data": "[DONE]"}
+        except (RuntimeError, OSError, ValueError, httpx.HTTPError) as exc:
+            logger.warning("Tool loop failed for model=%s: %s", request.model, exc)
             yield {"event": "error", "data": json.dumps({"message": str(exc)})}
+            yield {"event": "done", "data": "[DONE]"}
         finally:
             metrics.active_sse_streams.dec()
 
