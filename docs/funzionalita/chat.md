@@ -1,0 +1,77 @@
+# Chat web
+
+La pagina principale della console. A sinistra la sidebar (profilo, conversazioni, modello, pannelli di configurazione), al centro la conversazione con composer in basso.
+
+![Conversazione con telemetria](../screenshots/chat-conversazione.png)
+
+## Conversazioni e streaming
+
+**Cosa fa.** Ogni scambio è salvato in SQLite (per profilo) con telemetria completa: provider, latenza, tempo al primo token, token prompt/completion, velocità (tok/s) — visibile nel piè di pagina di ogni risposta. Le risposte arrivano in streaming via SSE.
+
+**Come si usa.**
+- **Nuova conversazione**: pulsante **+ Nuova** nella sidebar (o `Alt+N`).
+- **Selezione modello**: sezione **Modello** della sidebar — filtro per capacità (chat, vision, tools, free…), ricerca testuale, poi scelta dal menu. I badge sotto il selettore indicano provider, stato di configurazione e capacità.
+- **Invio**: scrivi nel composer e premi invio; durante la generazione il pulsante di invio diventa **Stop** e interrompe lo stream.
+- **Eliminazione**: icona cestino sulla voce di conversazione nella sidebar.
+
+**Indicatori di caricamento.** Una barra animata sotto la topbar mostra lo stato: ambra durante l'attesa del modello («In attesa del modello…»), blu durante l'esecuzione dei tool («Esecuzione tool…»), standard durante lo streaming («Generazione in corso…»).
+
+## Azioni sui messaggi
+
+Pulsanti a comparsa (hover) su ogni messaggio:
+
+| Azione | Dove | Effetto |
+|--------|------|---------|
+| 📋 Copia | tutti | copia il testo negli appunti |
+| 🔊 TTS | risposte | legge il messaggio ad alta voce (Web Speech API, default italiano); ripremere ferma |
+| 🔁 Rigenera | ultima risposta | richiede una nuova risposta **creando un ramo** (vedi sotto) |
+| ✏️ Modifica | ultimo messaggio utente | modifica e reinvia |
+| 📌 Pin | tutti | aggiunge/rimuove il messaggio dalla barra dei preferiti sopra la chat (click per saltare al messaggio) |
+
+## Branching delle risposte
+
+**Cosa fa.** Rigenerare non sovrascrive: entrambe le risposte restano come rami paralleli (persistiti in SQLite con `parent_id` + `branch_index`).
+
+**Come si usa.** Sulle risposte con alternative compaiono le frecce `< 1/3 >`: navigano tra i rami; la conversazione prosegue dal ramo selezionato.
+
+## System prompt, template e parametri
+
+- **Sistema** (sidebar): istruzioni di sistema persistenti (localStorage), con azioni salva/pulisci.
+- **Template** (sidebar): libreria di prompt di sistema riusabili («Code review», «ELI5»…). Applica con un click, salva il system prompt corrente come nuovo template, modifica/elimina i template esistenti.
+- **Parametri** (sidebar): slider **temperature** (0–2) e campo **max tokens**, inviati con ogni richiesta. Qui c'è anche l'opt-in alle notifiche di completamento (vedi [Interfaccia](interfaccia.md)).
+
+## Tool calling in chat
+
+Interruttore **Tool calling ON/OFF** in sidebar. Quando è attivo il modello può invocare i tool registrati (integrati, custom, MCP); le chiamate e i risultati compaiono come bolle dedicate nella conversazione — con spinner sulle chiamate in attesa di risultato. Dettagli in [Tool calling](tool-calling.md).
+
+## Immagini e generazione immagini
+
+- **Vision (immagine → testo)**: allega immagini col pulsante 🖼 del composer, con drag & drop sull'area chat (overlay visivo, solo `image/*`, max 20 MB) o incollando dagli appunti. L'immagine è inviata in base64 ai modelli con capacità vision (Gemini, Llama-4-Scout su Groq, …).
+- **Generazione (testo → immagine)**: comando `/imagine <prompt>` nel composer. Usa la catena di fallback `IMAGE_GENERATION_CHAIN` (formato `provider:model,...`; provider supportati: Gemini/Imagen, HuggingFace FLUX.1-schnell, Cloudflare SDXL, Together FLUX.1-schnell-Free). Endpoint diretto: `POST /api/v1/images/generations`.
+
+## Input vocale
+
+Pulsante 🎤 nel composer (Web Speech API): il pulsante pulsa durante l'ascolto e il testo trascritto finisce nel composer.
+
+## RAG in chat
+
+Interruttore **RAG ON/OFF** nel pannello Knowledge base: quando attivo, i chunk più pertinenti vengono iniettati nel messaggio e le fonti compaiono come chip di citazione sotto la risposta. Dettagli in [Knowledge base e RAG](knowledge-rag.md).
+
+## Ricerca nelle conversazioni
+
+**Cosa fa.** Ricerca full-text (SQLite FTS5, indice sincronizzato via trigger) su tutte le conversazioni del profilo.
+
+**Come si usa.** Barra «Cerca nelle conversazioni…» in sidebar (scorciatoia `Ctrl+K`); i risultati compaiono inline con snippet evidenziati; `Escape` chiude. Endpoint: `GET /api/v1/conversations/search?q=...`.
+
+## Organizzazione: tag
+
+Tag colorati assegnabili alle conversazioni tramite popover; barra filtri per tag in sidebar; sezione di gestione per creare/modificare/eliminare i tag.
+
+## Export e condivisione
+
+- **Export**: pulsanti **MD** e **JSON** nella topbar scaricano la conversazione corrente (`GET /conversations/{id}/export?format=md|json`).
+- **Condivisione**: pulsante **Condividi** genera un link pubblico in sola lettura (`POST /conversations/{id}/share` → token univoco; pagina `/shared/{token}` con rendering markdown e syntax highlighting, accessibile senza login). Il link viene copiato negli appunti.
+
+## Rendering
+
+Markdown via `marked` con sanitizzazione DOMPurify; blocchi di codice con syntax highlighting `highlight.js` consapevole del linguaggio.
