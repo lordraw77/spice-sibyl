@@ -343,6 +343,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   systemPrompt = '';
   temperature = this.savedPrefs.temperature;
   maxTokens = this.savedPrefs.maxTokens;
+  maxToolIterations = this.savedPrefs.maxToolIterations;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   voiceRecognition: any = null;
   isListening = false;
@@ -418,6 +419,11 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   onMaxTokensChange(value: number): void {
     this.maxTokens = value;
     this.userPrefs.set('maxTokens', value);
+  }
+
+  onMaxToolIterationsChange(value: number): void {
+    this.maxToolIterations = value;
+    this.userPrefs.set('maxToolIterations', value);
   }
 
   toolArgsSummary(args: Record<string, unknown> | undefined): string {
@@ -688,6 +694,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
       temperature,
       max_tokens: maxTokens,
       tools,
+      max_tool_iterations: tools && this.maxToolIterations > 0 ? this.maxToolIterations : undefined,
       rag: this.ragEnabled() || undefined,
       memory: this.memoryEnabled() ? undefined : false,
       profile_id: this.profileService.currentId,

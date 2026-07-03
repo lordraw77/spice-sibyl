@@ -273,6 +273,10 @@
             <label class="param-label">Max tokens <span class="param-value">{{ maxTokens === 0 ? '∞' : maxTokens }}</span></label>
             <input type="number" min="0" step="256" [ngModel]="maxTokens" (ngModelChange)="onMaxTokensChange($event)" class="param-input" placeholder="0 = illimitato" />
           </div>
+          <div class="param-row">
+            <label class="param-label" title="Numero massimo di chiamate tool consecutive in un singolo turno di chat">Max iterazioni tool <span class="param-value">{{ maxToolIterations }}</span></label>
+            <input type="number" min="1" max="50" step="1" [ngModel]="maxToolIterations" (ngModelChange)="onMaxToolIterationsChange($event)" class="param-input" />
+          </div>
           <div class="param-row" *ngIf="pushNotify.supported">
             <button class="tools-toggle notify-toggle" [class.enabled]="pushNotify.enabled()" (click)="pushNotify.toggle()" title="Notifica di sistema quando una generazione lunga termina con la scheda in background">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>

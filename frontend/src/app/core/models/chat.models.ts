@@ -130,6 +130,8 @@ export interface ChatCompletionRequest {
   temperature?: number;
   max_tokens?: number;
   tools?: ToolDefinition[];
+  /** Max server-side tool-loop iterations for this request (default from backend config) */
+  max_tool_iterations?: number;
   /** Enable retrieval-augmented generation against the profile's knowledge base */
   rag?: boolean;
   /** Number of chunks to retrieve when rag is enabled */

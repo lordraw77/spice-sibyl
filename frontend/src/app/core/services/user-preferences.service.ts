@@ -9,6 +9,7 @@ export interface UserPreferences {
   availabilityFilter: 'all' | 'free';
   temperature: number;
   maxTokens: number;
+  maxToolIterations: number;
   toolsEnabled: boolean;
   ragEnabled: boolean;
   /** Phase 19: false = incognito chat (no memory injection/extraction) */
@@ -32,6 +33,7 @@ const DEFAULTS: UserPreferences = {
   availabilityFilter: 'all',
   temperature: 0.7,
   maxTokens: 0,
+  maxToolIterations: 5,
   toolsEnabled: false,
   ragEnabled: false,
   memoryEnabled: true,

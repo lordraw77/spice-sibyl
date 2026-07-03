@@ -86,6 +86,9 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int | None = Field(default=1024, alias="max_tokens")
     tools: list[ToolDefinition] | None = None
     tool_choice: str | None = None
+    # Max server-side tool-loop iterations for this request; None falls back
+    # to CHAT_MAX_TOOL_ITERATIONS.
+    max_tool_iterations: int | None = Field(default=None, ge=1, le=50)
     # RAG — when true, retrieve context from the profile's knowledge base and
     # inject it before the model call. profile_id scopes the retrieval (sent by
     # the frontend since the streaming fetch bypasses the X-Profile-ID interceptor).

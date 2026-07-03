@@ -2,7 +2,7 @@
 
 ## Loop di esecuzione server-side
 
-**Cosa fa.** Con l'interruttore **Tool calling ON** in sidebar, il backend espone al modello i tool registrati ed esegue lato server le chiamate richieste, reinviando i risultati al modello in un loop (max 5 iterazioni in chat; per loop più lunghi vedi i [workflow](mcp-e-agenti.md#workflow-persistenti)). Chiamate e risultati sono trasmessi come eventi SSE `tool_call` / `tool_result` e resi come bolle dedicate nella conversazione; le chiamate in attesa mostrano uno spinner.
+**Cosa fa.** Con l'interruttore **Tool calling ON** in sidebar, il backend espone al modello i tool registrati ed esegue lato server le chiamate richieste, reinviando i risultati al modello in un loop (max 5 iterazioni in chat, configurabile con `CHAT_MAX_TOOL_ITERATIONS`; per loop più lunghi vedi i [workflow](mcp-e-agenti.md#workflow-persistenti)). Chiamate e risultati sono trasmessi come eventi SSE `tool_call` / `tool_result` e resi come bolle dedicate nella conversazione; le chiamate in attesa mostrano uno spinner.
 
 **Elenco tool disponibili:** `GET /api/v1/tools` (unione di integrati + custom del profilo + MCP).
 

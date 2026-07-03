@@ -92,6 +92,10 @@ class Settings(BaseSettings):
     # Truncate captured stdout/stderr to this many chars each.
     code_interpreter_max_output_chars: int = 8000
 
+    # Max agent-loop iterations for tool calls within a single chat turn
+    # (CHAT_MAX_TOOL_ITERATIONS). For longer loops use workflows.
+    chat_max_tool_iterations: int = 5
+
     # --- Phase 18: persistent multi-step workflows (agent runs) ---
     # Default / hard cap on agent-loop iterations for a workflow run.
     workflow_default_max_steps: int = 20

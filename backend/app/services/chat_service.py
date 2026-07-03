@@ -22,8 +22,6 @@ from app.tools.registry import execute_tool
 
 logger = logging.getLogger(__name__)
 
-_MAX_TOOL_ITERATIONS = 5
-
 
 def _parse_fallback_chain() -> list[tuple[str, str]]:
     """Parse CHAT_FALLBACK_CHAIN into (provider, model) pairs."""
@@ -378,7 +376,10 @@ class ChatService:
                 yield self._memory_frame()
             if rag_sources:
                 yield self._rag_frame(rag_sources)
-            for _ in range(_MAX_TOOL_ITERATIONS):
+            max_tool_iterations = (
+                request.max_tool_iterations or settings.chat_max_tool_iterations
+            )
+            for _ in range(max_tool_iterations):
                 call_req = request.model_copy(
                     update={"messages": messages, "stream": False}
                 )
@@ -513,14 +514,14 @@ class ChatService:
                 # for-loop exhausted without a break — max iterations reached
                 logger.warning(
                     "Tool loop hit max iterations (%d) for model=%s",
-                    _MAX_TOOL_ITERATIONS,
+                    max_tool_iterations,
                     request.model,
                 )
                 yield {
                     "event": "error",
                     "data": json.dumps({
                         "message": (
-                            f"Tool call limit reached ({_MAX_TOOL_ITERATIONS} iterations). "
+                            f"Tool call limit reached ({max_tool_iterations} iterations). "
                             "The model kept requesting tools without producing a final answer."
                         )
                     }),

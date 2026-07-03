@@ -2,7 +2,7 @@
 
 ## Server-side execution loop
 
-**What it does.** With the **Tool calling ON** switch in the sidebar, the backend exposes the registered tools to the model and executes requested calls server-side, feeding results back to the model in a loop (max 5 iterations in chat; for longer loops see [workflows](mcp-and-agents.md#persistent-workflows)). Calls and results are streamed as SSE `tool_call` / `tool_result` events and rendered as dedicated bubbles in the conversation; pending calls show a spinner.
+**What it does.** With the **Tool calling ON** switch in the sidebar, the backend exposes the registered tools to the model and executes requested calls server-side, feeding results back to the model in a loop (max 5 iterations in chat, configurable via `CHAT_MAX_TOOL_ITERATIONS`; for longer loops see [workflows](mcp-and-agents.md#persistent-workflows)). Calls and results are streamed as SSE `tool_call` / `tool_result` events and rendered as dedicated bubbles in the conversation; pending calls show a spinner.
 
 **List of available tools:** `GET /api/v1/tools` (union of built-ins + the profile's custom tools + MCP).
 
