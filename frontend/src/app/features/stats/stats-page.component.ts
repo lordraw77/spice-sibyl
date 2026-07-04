@@ -3,6 +3,7 @@ import { CommonModule, DecimalPipe } from '@angular/common';
 import { Chart, registerables } from 'chart.js';
 
 import { StatsService } from '../../core/services/stats.service';
+import { I18nService } from '../../core/i18n/i18n.service';
 import { UsageStats, ProviderStats, ModelStats, DailyStats } from '../../core/models/chat.models';
 
 Chart.register(...registerables);
@@ -16,6 +17,7 @@ Chart.register(...registerables);
 })
 export class StatsPageComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly statsService = inject(StatsService);
+  private readonly i18n = inject(I18nService);
 
   stats = signal<UsageStats | null>(null);
   loading = signal(true);
@@ -155,8 +157,8 @@ export class StatsPageComponent implements OnInit, AfterViewInit, OnDestroy {
 
   formatCost(value: number): string {
     if (value === 0) return '—';
-    if (value < 0.0001) return '< $0.0001';
-    return '$' + value.toFixed(4);
+    if (value < 0.0001) return '< ' + this.i18n.formatCost(0.0001);
+    return this.i18n.formatCost(value);
   }
 
   formatLatency(ms: number | null): string {

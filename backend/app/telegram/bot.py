@@ -1481,8 +1481,12 @@ def _tz() -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
-def _fmt_when(fire_at: int) -> str:
-    return datetime.fromtimestamp(fire_at, _tz()).strftime("%d/%m %H:%M")
+def _fmt_when(fire_at: int, locale: str | None = None) -> str:
+    """Format a reminder time in the chat's timezone, with locale-aware date
+    order (Phase 22.c): en uses month/day, the others day/month."""
+    dt = datetime.fromtimestamp(fire_at, _tz())
+    fmt = "%m/%d %H:%M" if locale == "en" else "%d/%m %H:%M"
+    return dt.strftime(fmt)
 
 
 def _parse_when(token: str) -> int | None:
@@ -1579,7 +1583,7 @@ async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     reminder_id = await reminder_repo.create(chat_id, user.id, text, fire_at)
     _schedule_reminder(context.job_queue, reminder_id, chat_id, text, fire_at)
-    when_str = _fmt_when(fire_at)
+    when_str = _fmt_when(fire_at, loc)
     logger.info("cmd_remind: scheduled chat_id=%s fire_at=%s (in %ds) id=%s", chat_id, when_str, max(fire_at - int(time.time()), 0), reminder_id)
     await update.message.reply_text(
         t(loc, "remind_set", when=when_str, text=text, short_id=reminder_id[:8]),
@@ -1599,7 +1603,7 @@ async def cmd_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     lines = [t(loc, "reminders_header")]
     for row in rows:
-        lines.append(f"<code>{row['id'][:8]}</code> — {_fmt_when(row['fire_at'])} — {row['text']}")
+        lines.append(f"<code>{row['id'][:8]}</code> — {_fmt_when(row['fire_at'], loc)} — {row['text']}")
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
 

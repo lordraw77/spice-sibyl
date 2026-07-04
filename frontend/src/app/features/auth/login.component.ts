@@ -4,35 +4,37 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 
 import { AuthService } from '../../core/services/auth.service';
+import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TranslatePipe],
   template: `
     <div class="login-backdrop">
       <form class="login-box" (ngSubmit)="submit()">
         <div class="login-header">
           <div class="login-logo">S</div>
           <h2>SpiceSibyl</h2>
-          <p class="login-sub">Accedi per continuare.</p>
+          <p class="login-sub">{{ 'auth.subtitle' | t }}</p>
         </div>
 
         <label class="field">
-          <span>Email</span>
+          <span>{{ 'auth.email' | t }}</span>
           <input
             class="login-input"
             type="email"
             name="email"
             [(ngModel)]="email"
             autocomplete="username"
-            placeholder="nome@esempio.com"
+            [placeholder]="'auth.emailPlaceholder' | t"
             required
           />
         </label>
 
         <label class="field">
-          <span>Password</span>
+          <span>{{ 'auth.password' | t }}</span>
           <input
             class="login-input"
             type="password"
@@ -47,7 +49,7 @@ import { AuthService } from '../../core/services/auth.service';
         <p class="login-error" *ngIf="error()">{{ error() }}</p>
 
         <button class="btn-login" type="submit" [disabled]="loading() || !email.trim() || !password">
-          {{ loading() ? 'Accesso…' : 'Accedi' }}
+          {{ (loading() ? 'auth.signingIn' : 'auth.signIn') | t }}
         </button>
       </form>
     </div>
@@ -106,6 +108,7 @@ import { AuthService } from '../../core/services/auth.service';
 export class LoginComponent {
   private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
+  private readonly i18n = inject(I18nService);
 
   email = '';
   password = '';
@@ -126,7 +129,8 @@ export class LoginComponent {
       error: (err) => {
         this.loading.set(false);
         this.error.set(
-          err?.error?.detail || (err?.status === 401 ? 'Email o password non validi.' : 'Accesso fallito.')
+          err?.error?.detail ||
+            this.i18n.translate(err?.status === 401 ? 'auth.invalidCredentials' : 'auth.failed')
         );
       },
     });

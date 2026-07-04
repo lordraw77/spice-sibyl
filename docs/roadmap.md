@@ -160,11 +160,15 @@
 - **21.d — cross notifications** — *folded into Phase 23.c* (Cross-channel notifications UI ↔ Telegram): a single event bridge covering web→Telegram (and Telegram→web) for linked users, rather than a separate one-directional path here
 
 
-## Phase 22 — Internationalization (i18n)
-*Full UI localization across both channels: English, French, German, Italian, Spanish.*
-- **22.a — Web UI multi-language** — localize the Angular interface (sidebar, navbar, settings panels, stats/compare/tools/workflows pages, toasts, onboarding tour, empty states) in `en`, `fr`, `de`, `it`, `es`; runtime language switcher in the navbar with browser-language auto-detection on first visit; preference persisted per profile (localStorage + backend); replaces currently hardcoded Italian strings (e.g. loading indicators, TTS default locale)
-- **22.b — Telegram bot: extend i18n to fr/de/es** — extend the Phase 14 `app/telegram/i18n.py` catalog (currently `it`/`en`) with French, German and Spanish translations for all commands, inline keyboards, quick actions, reminders and error messages; `/lang` inline keyboard updated with the 5 locales; per-chat locale continues to persist in `telegram_prefs`
-- **22.c — Locale-aware formatting** — dates, times, numbers and cost figures rendered per active locale in stats, telemetry footers and reminder confirmations
+## Phase 22 — Internationalization (i18n) ✓
+*Full UI localization across both channels: English, French, German, Italian, Spanish. Usage guide: [internationalization.md](en/internationalization.md).*
+- **22.a — Web UI multi-language** ✓ — dependency-free runtime i18n layer (`core/i18n/`): `Locale` metadata, per-locale flat catalogs (`en`/`fr`/`de`/`it`/`es`), an `I18nService` (active-locale signal, browser-language auto-detection on first visit, `translate()` with `{placeholder}` interpolation and `active → default(it) → key` fallback), and an impure `TranslatePipe` (`| t`) so switching language re-renders instantly with no reload. A 🌐 language switcher in the navbar; preference persisted in localStorage **and** per profile via `PATCH /v1/profiles/{id}` (`locale`), adopted on profile select/restore. Localized: navbar/menus + tooltips, chat loading indicators, onboarding tour; TTS + voice input now follow the active locale's BCP-47 tag (was hardcoded `it-IT`)
+- **22.b — Telegram bot: extend i18n to fr/de/es** ✓ — `app/telegram/i18n.py` `MESSAGES` + `SUPPORTED_LOCALES` extended with French, German and Spanish for all commands, inline keyboards, reminders and error messages; the `/lang` inline keyboard auto-renders all 5 locales; per-chat locale persists in `telegram_prefs`
+- **22.c — Locale-aware formatting** ✓ — web `localeNumber`/`localeCost`/`localeDate` pipes + `I18nService` formatters over the `Intl` API keyed on the active locale's BCP-47 tag (wired into stats costs + chat telemetry footer); Telegram reminder confirmations use a locale-aware date order (en month/day, others day/month)
+- **22.d — documentation** ✓ — new [internationalization.md](en/internationalization.md) / [internazionalizzazione.md](it/internazionalizzazione.md) feature docs, added to both README indexes
+- **22.e — i18n testing** ✓ — `backend/tests/test_i18n.py` (Telegram 5-locale key parity, formattability, fallback chain, profile-locale endpoint) + a runnable web catalog-parity/placeholder check (`frontend/scripts/check-i18n.mjs`, `npm run i18n:check`); both wired into a new `.github/workflows/ci.yml`
+
+
 
 ## Phase 23 — Telegram ↔ web convergence
 *Deepens the Phase 11 profile linking: linked users get one seamless experience across both channels.*

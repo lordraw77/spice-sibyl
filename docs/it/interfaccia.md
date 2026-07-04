@@ -33,7 +33,7 @@ A destra restano il **picker del colore d'accento**, il **toggle tema** e il **c
 
 **Cosa fa.** Al primo accesso parte un tour guidato con overlay a "spotlight" sugli elementi chiave (selezione modello, tool, system prompt, comandi slash); su viewport stretti la card è centrata.
 
-![Tour di onboarding](../screenshots/onboarding.png)
+![Tour di onboarding](screenshots/onboarding.png)
 
 **Come si usa.** Segui i passi con **Avanti** o esci con **Salta**; il completamento è ricordato in localStorage (`spicesibyl_onboarded`). Il pulsante di replay nella topbar della chat lo riavvia in ogni momento.
 

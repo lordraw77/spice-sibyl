@@ -18,6 +18,9 @@ DEFAULT_LOCALE = "it"
 SUPPORTED_LOCALES = {
     "it": "🇮🇹 Italiano",
     "en": "🇬🇧 English",
+    "fr": "🇫🇷 Français",
+    "de": "🇩🇪 Deutsch",
+    "es": "🇪🇸 Español",
 }
 
 MESSAGES: dict[str, dict[str, str]] = {
@@ -232,6 +235,324 @@ MESSAGES: dict[str, dict[str, str]] = {
             "web sidebar to use the knowledge base."
         ),
         "rag_sources_header": "\n\n📚 Sources: {sources}",
+    },
+    "fr": {
+        "access_denied": "⛔ Accès non autorisé.",
+        "start": (
+            "👋 Bonjour ! Je suis SpiceSibyl.\n\n"
+            "Modèle actif : <code>{model}</code>\n\n"
+            "Commandes :\n"
+            "  /agent — mode agent (orchestrateur Multi-MCP)\n"
+            "  /chat — revenir au chat normal\n"
+            "  /chat &lt;id&gt; — discuter avec un modèle précis\n"
+            "  /imagine &lt;prompt&gt; — générer une image\n"
+            "  /new — nouvelle conversation\n"
+            "  /model — choisir un modèle (clavier intégré)\n"
+            "  /model &lt;id&gt; — changer de modèle directement\n"
+            "  /models — liste des modèles disponibles\n"
+            "  /models &lt;requête&gt; — filtrer par fournisseur, capacité ou nom\n"
+            "  /history — afficher la conversation en cours\n"
+            "  /search &lt;texte&gt; — rechercher dans les conversations enregistrées\n"
+            "  /stats — statistiques d'utilisation\n"
+            "  /remind &lt;quand&gt; &lt;texte&gt; — rappel (ex. 15:50 ou +30m)\n"
+            "  /reminders — rappels programmés\n"
+            "  /unremind &lt;id&gt; — annuler un rappel\n"
+            "  /memory — mémoire personnelle (on|off|list|del)\n"
+            "  /kb — base de connaissances (list|del ; fichier avec la légende /kb)\n"
+            "  /rag — activer/désactiver la base de connaissances (on|off)\n"
+            "  /lang — changer la langue du bot\n"
+            "  /link — associer au profil web\n"
+            "  /unlink — dissocier du profil web\n"
+            "  /help — afficher la liste des commandes\n\n"
+            "📸 Envoyez une photo pour utiliser la vision\n"
+            "🎙️ Envoyez un message vocal pour le transcrire et répondre\n"
+            "📄 Envoyez un fichier PDF, TXT, DOCX ou MD pour l'analyser\n"
+            "📚 Envoyez un fichier avec la légende <code>/kb</code> pour l'ajouter à la base de connaissances\n"
+            "✨ Utilisez <code>@botname requête</code> dans n'importe quel chat pour des réponses en ligne"
+        ),
+        "new_cleared": "✅ Conversation réinitialisée.",
+        "lang_choose": "🌐 Choisissez la langue du bot :",
+        "lang_set": "✅ Langue définie : {label}",
+        "remind_usage": (
+            "Usage : <code>/remind &lt;quand&gt; &lt;texte&gt;</code>\n"
+            "Exemples :\n"
+            "  <code>/remind 15:50 Appeler Marie</code>\n"
+            "  <code>/remind +30m Vérifier les sauvegardes</code>\n"
+            "  <code>/remind 2h Réunion</code>"
+        ),
+        "remind_invalid_time": (
+            "⚠️ Heure invalide. Utilisez <code>HH:MM</code> (ex. 15:50) "
+            "ou une valeur relative (ex. <code>+30m</code>, <code>2h</code>, <code>1d</code>)."
+        ),
+        "remind_unavailable": "⚠️ Les rappels sont indisponibles : le planificateur n'est pas actif sur le serveur.",
+        "remind_set": (
+            "⏰ Rappel programmé pour <b>{when}</b> :\n{text}\n\n"
+            "<code>/reminders</code> pour les voir, <code>/unremind {short_id}</code> pour annuler."
+        ),
+        "remind_fired": "⏰ Rappel : {text}",
+        "reminders_none": "Aucun rappel programmé.",
+        "reminders_header": "⏰ <b>Rappels programmés :</b>\n",
+        "unremind_usage": "Usage : <code>/unremind &lt;id&gt;</code>",
+        "unremind_not_found": "⚠️ Aucun rappel ne correspond à cet id.",
+        "unremind_done": "✅ Rappel annulé.",
+        "memory_usage": (
+            "Usage : <code>/memory on|off|list|del &lt;id&gt;</code>\n"
+            "  on/off — activer/désactiver la mémoire dans ce chat\n"
+            "  list — afficher les souvenirs du profil associé\n"
+            "  del &lt;id&gt; — oublier un souvenir"
+        ),
+        "memory_on": "🧠 Mémoire activée pour ce chat.",
+        "memory_off": "🧠 Mémoire désactivée pour ce chat.",
+        "memory_not_linked": (
+            "⚠️ Aucun profil web associé. Utilisez /link et collez le code "
+            "dans la barre latérale web pour gérer les souvenirs."
+        ),
+        "memory_empty": "🧠 Aucun souvenir enregistré pour le profil associé.",
+        "memory_header": "🧠 <b>Souvenirs du profil :</b>\n",
+        "memory_deleted": "✅ Souvenir oublié.",
+        "memory_not_found": "⚠️ Aucun souvenir ne correspond à cet id.",
+        "kb_usage": (
+            "Usage : <code>/kb list|del &lt;id&gt;</code>\n"
+            "  list — afficher les documents de la base de connaissances\n"
+            "  del &lt;id&gt; — supprimer un document\n"
+            "Envoyez un fichier PDF/TXT/DOCX/MD avec la légende <code>/kb</code> pour l'ajouter."
+        ),
+        "kb_not_linked": (
+            "⚠️ Aucun profil web associé. Utilisez /link et collez le code "
+            "dans la barre latérale web pour gérer la base de connaissances."
+        ),
+        "kb_empty": "📚 Aucun document dans la base de connaissances du profil associé.",
+        "kb_header": "📚 <b>Base de connaissances du profil :</b>\n",
+        "kb_deleted": "✅ Document supprimé.",
+        "kb_not_found": "⚠️ Aucun document ne correspond à cet id.",
+        "kb_ingesting": "📚 Ajout à la base de connaissances…",
+        "kb_ingested": "✅ <b>{filename}</b> ajouté à la base de connaissances ({chunks} fragments).",
+        "kb_duplicate": "ℹ️ Document déjà présent sous le nom <b>{filename}</b>.",
+        "kb_ingest_failed": "⚠️ Échec de l'ingestion : {error}",
+        "kb_del_usage": "Usage : <code>/kb del &lt;id&gt;</code>",
+        "rag_usage": (
+            "Usage : <code>/rag on|off</code>\n"
+            "  on/off — activer/désactiver la base de connaissances dans ce chat"
+        ),
+        "rag_on": "📚 Base de connaissances activée pour ce chat.",
+        "rag_off": "📚 Base de connaissances désactivée pour ce chat.",
+        "rag_not_linked": (
+            "⚠️ Aucun profil web associé. Utilisez /link et collez le code "
+            "dans la barre latérale web pour utiliser la base de connaissances."
+        ),
+        "rag_sources_header": "\n\n📚 Sources : {sources}",
+    },
+    "de": {
+        "access_denied": "⛔ Zugriff nicht autorisiert.",
+        "start": (
+            "👋 Hallo! Ich bin SpiceSibyl.\n\n"
+            "Aktives Modell: <code>{model}</code>\n\n"
+            "Befehle:\n"
+            "  /agent — Agentenmodus (Multi-MCP-Orchestrator)\n"
+            "  /chat — zurück zum normalen Chat\n"
+            "  /chat &lt;id&gt; — mit einem bestimmten Modell chatten\n"
+            "  /imagine &lt;prompt&gt; — ein Bild erzeugen\n"
+            "  /new — neue Unterhaltung\n"
+            "  /model — Modell wählen (Inline-Tastatur)\n"
+            "  /model &lt;id&gt; — Modell direkt wechseln\n"
+            "  /models — verfügbare Modelle auflisten\n"
+            "  /models &lt;suche&gt; — nach Anbieter, Fähigkeit oder Name filtern\n"
+            "  /history — aktuelle Unterhaltung anzeigen\n"
+            "  /search &lt;text&gt; — gespeicherte Unterhaltungen durchsuchen\n"
+            "  /stats — Nutzungsstatistiken\n"
+            "  /remind &lt;wann&gt; &lt;text&gt; — Erinnerung (z. B. 15:50 oder +30m)\n"
+            "  /reminders — geplante Erinnerungen\n"
+            "  /unremind &lt;id&gt; — eine Erinnerung abbrechen\n"
+            "  /memory — persönliches Gedächtnis (on|off|list|del)\n"
+            "  /kb — Wissensdatenbank (list|del; Datei mit Bildunterschrift /kb)\n"
+            "  /rag — Wissensdatenbank ein-/ausschalten (on|off)\n"
+            "  /lang — Bot-Sprache ändern\n"
+            "  /link — mit Web-Profil verknüpfen\n"
+            "  /unlink — vom Web-Profil trennen\n"
+            "  /help — die Befehlsliste anzeigen\n\n"
+            "📸 Sende ein Foto, um die Bilderkennung zu nutzen\n"
+            "🎙️ Sende eine Sprachnachricht zum Transkribieren und Antworten\n"
+            "📄 Sende eine PDF-, TXT-, DOCX- oder MD-Datei zur Analyse\n"
+            "📚 Sende eine Datei mit der Bildunterschrift <code>/kb</code>, um sie zur Wissensdatenbank hinzuzufügen\n"
+            "✨ Nutze <code>@botname Anfrage</code> in jedem Chat für Inline-Antworten"
+        ),
+        "new_cleared": "✅ Unterhaltung zurückgesetzt.",
+        "lang_choose": "🌐 Wähle die Bot-Sprache:",
+        "lang_set": "✅ Sprache eingestellt: {label}",
+        "remind_usage": (
+            "Verwendung: <code>/remind &lt;wann&gt; &lt;text&gt;</code>\n"
+            "Beispiele:\n"
+            "  <code>/remind 15:50 Maria anrufen</code>\n"
+            "  <code>/remind +30m Backups prüfen</code>\n"
+            "  <code>/remind 2h Besprechung</code>"
+        ),
+        "remind_invalid_time": (
+            "⚠️ Ungültige Uhrzeit. Nutze <code>HH:MM</code> (z. B. 15:50) "
+            "oder einen relativen Wert (z. B. <code>+30m</code>, <code>2h</code>, <code>1d</code>)."
+        ),
+        "remind_unavailable": "⚠️ Erinnerungen sind nicht verfügbar: Der Planer läuft nicht auf dem Server.",
+        "remind_set": (
+            "⏰ Erinnerung gesetzt für <b>{when}</b>:\n{text}\n\n"
+            "<code>/reminders</code> zum Anzeigen, <code>/unremind {short_id}</code> zum Abbrechen."
+        ),
+        "remind_fired": "⏰ Erinnerung: {text}",
+        "reminders_none": "Keine geplanten Erinnerungen.",
+        "reminders_header": "⏰ <b>Geplante Erinnerungen:</b>\n",
+        "unremind_usage": "Verwendung: <code>/unremind &lt;id&gt;</code>",
+        "unremind_not_found": "⚠️ Keine Erinnerung entspricht dieser id.",
+        "unremind_done": "✅ Erinnerung abgebrochen.",
+        "memory_usage": (
+            "Verwendung: <code>/memory on|off|list|del &lt;id&gt;</code>\n"
+            "  on/off — Gedächtnis in diesem Chat ein-/ausschalten\n"
+            "  list — die Erinnerungen des verknüpften Profils anzeigen\n"
+            "  del &lt;id&gt; — eine Erinnerung vergessen"
+        ),
+        "memory_on": "🧠 Gedächtnis für diesen Chat aktiviert.",
+        "memory_off": "🧠 Gedächtnis für diesen Chat deaktiviert.",
+        "memory_not_linked": (
+            "⚠️ Kein Web-Profil verknüpft. Nutze /link und füge den Code in der "
+            "Web-Seitenleiste ein, um Erinnerungen zu verwalten."
+        ),
+        "memory_empty": "🧠 Keine Erinnerungen für das verknüpfte Profil gespeichert.",
+        "memory_header": "🧠 <b>Profil-Erinnerungen:</b>\n",
+        "memory_deleted": "✅ Erinnerung vergessen.",
+        "memory_not_found": "⚠️ Keine Erinnerung entspricht dieser id.",
+        "kb_usage": (
+            "Verwendung: <code>/kb list|del &lt;id&gt;</code>\n"
+            "  list — die Dokumente der Wissensdatenbank anzeigen\n"
+            "  del &lt;id&gt; — ein Dokument entfernen\n"
+            "Sende eine PDF-/TXT-/DOCX-/MD-Datei mit der Bildunterschrift <code>/kb</code>, um sie hinzuzufügen."
+        ),
+        "kb_not_linked": (
+            "⚠️ Kein Web-Profil verknüpft. Nutze /link und füge den Code in der "
+            "Web-Seitenleiste ein, um die Wissensdatenbank zu verwalten."
+        ),
+        "kb_empty": "📚 Keine Dokumente in der Wissensdatenbank des verknüpften Profils.",
+        "kb_header": "📚 <b>Wissensdatenbank des Profils:</b>\n",
+        "kb_deleted": "✅ Dokument entfernt.",
+        "kb_not_found": "⚠️ Kein Dokument entspricht dieser id.",
+        "kb_ingesting": "📚 Wird zur Wissensdatenbank hinzugefügt…",
+        "kb_ingested": "✅ <b>{filename}</b> zur Wissensdatenbank hinzugefügt ({chunks} Fragmente).",
+        "kb_duplicate": "ℹ️ Dokument bereits vorhanden als <b>{filename}</b>.",
+        "kb_ingest_failed": "⚠️ Aufnahme fehlgeschlagen: {error}",
+        "kb_del_usage": "Verwendung: <code>/kb del &lt;id&gt;</code>",
+        "rag_usage": (
+            "Verwendung: <code>/rag on|off</code>\n"
+            "  on/off — die Wissensdatenbank in diesem Chat ein-/ausschalten"
+        ),
+        "rag_on": "📚 Wissensdatenbank für diesen Chat aktiviert.",
+        "rag_off": "📚 Wissensdatenbank für diesen Chat deaktiviert.",
+        "rag_not_linked": (
+            "⚠️ Kein Web-Profil verknüpft. Nutze /link und füge den Code in der "
+            "Web-Seitenleiste ein, um die Wissensdatenbank zu nutzen."
+        ),
+        "rag_sources_header": "\n\n📚 Quellen: {sources}",
+    },
+    "es": {
+        "access_denied": "⛔ Acceso no autorizado.",
+        "start": (
+            "👋 ¡Hola! Soy SpiceSibyl.\n\n"
+            "Modelo activo: <code>{model}</code>\n\n"
+            "Comandos:\n"
+            "  /agent — modo agente (orquestador Multi-MCP)\n"
+            "  /chat — volver al chat normal\n"
+            "  /chat &lt;id&gt; — chatear con un modelo específico\n"
+            "  /imagine &lt;prompt&gt; — generar una imagen\n"
+            "  /new — nueva conversación\n"
+            "  /model — elegir modelo (teclado en línea)\n"
+            "  /model &lt;id&gt; — cambiar de modelo directamente\n"
+            "  /models — lista de modelos disponibles\n"
+            "  /models &lt;consulta&gt; — filtrar por proveedor, capacidad o nombre\n"
+            "  /history — mostrar la conversación actual\n"
+            "  /search &lt;texto&gt; — buscar en las conversaciones guardadas\n"
+            "  /stats — estadísticas de uso\n"
+            "  /remind &lt;cuándo&gt; &lt;texto&gt; — recordatorio (p. ej. 15:50 o +30m)\n"
+            "  /reminders — recordatorios programados\n"
+            "  /unremind &lt;id&gt; — cancelar un recordatorio\n"
+            "  /memory — memoria personal (on|off|list|del)\n"
+            "  /kb — base de conocimiento (list|del; archivo con el pie /kb)\n"
+            "  /rag — activar/desactivar la base de conocimiento (on|off)\n"
+            "  /lang — cambiar el idioma del bot\n"
+            "  /link — vincular al perfil web\n"
+            "  /unlink — desvincular del perfil web\n"
+            "  /help — mostrar la lista de comandos\n\n"
+            "📸 Envía una foto para usar la visión\n"
+            "🎙️ Envía un mensaje de voz para transcribirlo y responder\n"
+            "📄 Envía un archivo PDF, TXT, DOCX o MD para analizarlo\n"
+            "📚 Envía un archivo con el pie <code>/kb</code> para añadirlo a la base de conocimiento\n"
+            "✨ Usa <code>@botname consulta</code> en cualquier chat para respuestas en línea"
+        ),
+        "new_cleared": "✅ Conversación reiniciada.",
+        "lang_choose": "🌐 Elige el idioma del bot:",
+        "lang_set": "✅ Idioma establecido: {label}",
+        "remind_usage": (
+            "Uso: <code>/remind &lt;cuándo&gt; &lt;texto&gt;</code>\n"
+            "Ejemplos:\n"
+            "  <code>/remind 15:50 Llamar a María</code>\n"
+            "  <code>/remind +30m Revisar las copias de seguridad</code>\n"
+            "  <code>/remind 2h Reunión</code>"
+        ),
+        "remind_invalid_time": (
+            "⚠️ Hora no válida. Usa <code>HH:MM</code> (p. ej. 15:50) "
+            "o un valor relativo (p. ej. <code>+30m</code>, <code>2h</code>, <code>1d</code>)."
+        ),
+        "remind_unavailable": "⚠️ Los recordatorios no están disponibles: el planificador no está activo en el servidor.",
+        "remind_set": (
+            "⏰ Recordatorio programado para <b>{when}</b>:\n{text}\n\n"
+            "<code>/reminders</code> para verlos, <code>/unremind {short_id}</code> para cancelar."
+        ),
+        "remind_fired": "⏰ Recordatorio: {text}",
+        "reminders_none": "No hay recordatorios programados.",
+        "reminders_header": "⏰ <b>Recordatorios programados:</b>\n",
+        "unremind_usage": "Uso: <code>/unremind &lt;id&gt;</code>",
+        "unremind_not_found": "⚠️ Ningún recordatorio coincide con ese id.",
+        "unremind_done": "✅ Recordatorio cancelado.",
+        "memory_usage": (
+            "Uso: <code>/memory on|off|list|del &lt;id&gt;</code>\n"
+            "  on/off — activar/desactivar la memoria en este chat\n"
+            "  list — mostrar los recuerdos del perfil vinculado\n"
+            "  del &lt;id&gt; — olvidar un recuerdo"
+        ),
+        "memory_on": "🧠 Memoria activada para este chat.",
+        "memory_off": "🧠 Memoria desactivada para este chat.",
+        "memory_not_linked": (
+            "⚠️ Ningún perfil web vinculado. Usa /link y pega el código en la "
+            "barra lateral web para gestionar los recuerdos."
+        ),
+        "memory_empty": "🧠 No hay recuerdos guardados para el perfil vinculado.",
+        "memory_header": "🧠 <b>Recuerdos del perfil:</b>\n",
+        "memory_deleted": "✅ Recuerdo olvidado.",
+        "memory_not_found": "⚠️ Ningún recuerdo coincide con ese id.",
+        "kb_usage": (
+            "Uso: <code>/kb list|del &lt;id&gt;</code>\n"
+            "  list — mostrar los documentos de la base de conocimiento\n"
+            "  del &lt;id&gt; — eliminar un documento\n"
+            "Envía un archivo PDF/TXT/DOCX/MD con el pie <code>/kb</code> para añadirlo."
+        ),
+        "kb_not_linked": (
+            "⚠️ Ningún perfil web vinculado. Usa /link y pega el código en la "
+            "barra lateral web para gestionar la base de conocimiento."
+        ),
+        "kb_empty": "📚 No hay documentos en la base de conocimiento del perfil vinculado.",
+        "kb_header": "📚 <b>Base de conocimiento del perfil:</b>\n",
+        "kb_deleted": "✅ Documento eliminado.",
+        "kb_not_found": "⚠️ Ningún documento coincide con ese id.",
+        "kb_ingesting": "📚 Añadiendo a la base de conocimiento…",
+        "kb_ingested": "✅ <b>{filename}</b> añadido a la base de conocimiento ({chunks} fragmentos).",
+        "kb_duplicate": "ℹ️ Documento ya presente como <b>{filename}</b>.",
+        "kb_ingest_failed": "⚠️ Error de ingesta: {error}",
+        "kb_del_usage": "Uso: <code>/kb del &lt;id&gt;</code>",
+        "rag_usage": (
+            "Uso: <code>/rag on|off</code>\n"
+            "  on/off — activar/desactivar la base de conocimiento en este chat"
+        ),
+        "rag_on": "📚 Base de conocimiento activada para este chat.",
+        "rag_off": "📚 Base de conocimiento desactivada para este chat.",
+        "rag_not_linked": (
+            "⚠️ Ningún perfil web vinculado. Usa /link y pega el código en la "
+            "barra lateral web para usar la base de conocimiento."
+        ),
+        "rag_sources_header": "\n\n📚 Fuentes: {sources}",
     },
 }
 

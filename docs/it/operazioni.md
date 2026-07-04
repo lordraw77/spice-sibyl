@@ -4,7 +4,7 @@
 
 **Cosa fa.** Cruscotto operativo riservato agli admin (voce navbar protetta da `adminGuard`): readiness live (DB, provider configurati, stream SSE attivi letti da `/metrics`), link alle metriche raw, gestione backup e export/import per profilo.
 
-![Pagina Observability & Ops](../screenshots/ops.png)
+![Pagina Observability & Ops](screenshots/ops.png)
 
 ## Health e readiness
 

@@ -1,8 +1,8 @@
 # SpiceSibyl — Feature documentation
 
-A feature-by-feature guide to SpiceSibyl: what each feature does, how to use it, and how to configure it. Screenshots live in [`docs/screenshots/`](../screenshots/).
+A feature-by-feature guide to SpiceSibyl: what each feature does, how to use it, and how to configure it. Screenshots live in [`docs/en/screenshots/`](screenshots/).
 
-> 🇮🇹 Versione italiana: [docs/funzionalita/](../funzionalita/README.md)
+> 🇮🇹 Versione italiana: [docs/it/](../it/README.md)
 
 ## Index
 
@@ -21,6 +21,7 @@ A feature-by-feature guide to SpiceSibyl: what each feature does, how to use it,
 | 👥 Collaboration | [Workspaces and collaboration](workspaces-and-collaboration.md) | Shared workspaces, role-based access, shared conversations/documents, threaded comments |
 | 🖥 UI | [Interface and UX](interface.md) | Themes, PWA, mobile, onboarding, keyboard shortcuts |
 | ⚙️ Ops | [Observability and operations](operations.md) | Health/readiness, Prometheus metrics, structured logging, backups |
+| 🌐 i18n | [Internationalization](internationalization.md) | 5-language web + Telegram UI, runtime switcher, locale-aware formatting |
 
 ## Overview
 
@@ -28,7 +29,7 @@ SpiceSibyl is an OpenAI-compatible multi-provider AI gateway with a built-in Ang
 
 Supported providers: Ollama (local), Groq, OpenRouter, Cloudflare Workers AI, Google Gemini, Mistral, Cerebras, Together AI, Fireworks AI, HuggingFace, NVIDIA, plus the Multi-MCP orchestrator (`agent/*`).
 
-![Main chat](../screenshots/chat-conversazione.png)
+![Main chat](screenshots/chat-conversazione.png)
 
 ## Quick start
 

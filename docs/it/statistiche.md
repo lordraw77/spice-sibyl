@@ -2,7 +2,7 @@
 
 **Cosa fa.** Ogni messaggio salvato porta con sé la telemetria (token prompt/completion, latenza, costo stimato riportato dal provider). La pagina **Stats** aggrega questi dati per profilo o globalmente.
 
-![Pagina Usage Statistics](../screenshots/stats.png)
+![Pagina Usage Statistics](screenshots/stats.png)
 
 ## Contenuto della pagina
 

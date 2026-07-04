@@ -14,6 +14,7 @@ def _row_to_profile(row: aiosqlite.Row) -> Profile:
         name=row["name"],
         created_at=row["created_at"],
         user_id=row["user_id"] if "user_id" in keys else None,
+        locale=row["locale"] if "locale" in keys else None,
     )
 
 
@@ -49,6 +50,16 @@ async def create_profile(
     )
     await db.commit()
     return Profile(id=profile_id, name=name.strip(), created_at=now, user_id=user_id)
+
+
+async def set_locale(
+    db: aiosqlite.Connection, profile_id: str, locale: str | None
+) -> None:
+    """Persist the profile's UI language (Phase 22). None unsets it."""
+    await db.execute(
+        "UPDATE profiles SET locale = ? WHERE id = ?", (locale, profile_id)
+    )
+    await db.commit()
 
 
 async def delete_profile(db: aiosqlite.Connection, profile_id: str) -> None:

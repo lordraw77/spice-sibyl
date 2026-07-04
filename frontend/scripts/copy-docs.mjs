@@ -4,10 +4,14 @@
  * frontend/public/docs/ so the Angular build ships them as static assets for
  * the in-app Help page (/help).
  *
- * Layout produced (multi-language-ready; only "it" exists today):
- *   public/docs/it/manifest.json   ordered [{slug, file, title}]
- *   public/docs/it/*.md            verbatim copies of docs/funzionalita/
- *   public/docs/screenshots/*.png  shared across languages
+ * Layout produced (one folder per UI language, mirroring docs/<lang>/):
+ *   public/docs/<lang>/manifest.json   ordered [{slug, file, title}]
+ *   public/docs/<lang>/*.md            verbatim copies of docs/<lang>/*.md
+ *   public/docs/<lang>/screenshots/    per-language screenshots (docs/<lang>/screenshots/)
+ *
+ * Languages: it, en, fr, de, es (fr/de/es ship as English scaffolds until
+ * translated — see the 🚧 banner in their README). Screenshots are captured
+ * per language by frontend/scripts/screenshots.mjs.
  *
  * Inside the Docker builds the repo-root docs/ is NOT in the build context:
  * the Makefile runs this script on the host first, so here we just detect the
@@ -22,29 +26,30 @@ const FRONTEND_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const REPO_ROOT = path.resolve(FRONTEND_DIR, '..');
 const DEST = path.join(FRONTEND_DIR, 'public', 'docs');
 
-// language → source dir of its markdown set (add 'en': docs/features to publish English)
+// UI language → source dir of its markdown + screenshots set.
 const LANGUAGES = {
-  it: path.join(REPO_ROOT, 'docs', 'funzionalita'),
+  it: path.join(REPO_ROOT, 'docs', 'it'),
+  en: path.join(REPO_ROOT, 'docs', 'en'),
+  fr: path.join(REPO_ROOT, 'docs', 'fr'),
+  de: path.join(REPO_ROOT, 'docs', 'de'),
+  es: path.join(REPO_ROOT, 'docs', 'es'),
 };
-const SRC_SCREENSHOTS = path.join(REPO_ROOT, 'docs', 'screenshots');
 
-// Display order (mirrors the README index); unknown files are appended alphabetically.
-const ORDER = [
-  'README',
-  'autenticazione-e-profili',
-  'chat',
-  'provider-e-modelli',
-  'tool-calling',
-  'mcp-e-agenti',
-  'knowledge-rag',
-  'confronto-modelli',
-  'statistiche',
-  'telegram',
-  'memoria-e-personalizzazione',
-  'workspace-e-collaborazione',
-  'interfaccia',
-  'operazioni',
+// Display order per slug set. Italian uses translated slugs; the other four
+// share the English slug set (fr/de/es are English scaffolds).
+const ORDER_IT = [
+  'README', 'autenticazione-e-profili', 'chat', 'provider-e-modelli', 'tool-calling',
+  'mcp-e-agenti', 'knowledge-rag', 'confronto-modelli', 'statistiche', 'telegram',
+  'memoria-e-personalizzazione', 'workspace-e-collaborazione', 'interfaccia',
+  'internazionalizzazione', 'operazioni',
 ];
+const ORDER_EN = [
+  'README', 'authentication-and-profiles', 'chat', 'providers-and-models', 'tool-calling',
+  'mcp-and-agents', 'knowledge-rag', 'model-comparison', 'statistics', 'telegram',
+  'memory-and-personalization', 'workspaces-and-collaboration', 'interface',
+  'internationalization', 'operations',
+];
+const ORDER_BY_LANG = { it: ORDER_IT, en: ORDER_EN, fr: ORDER_EN, de: ORDER_EN, es: ORDER_EN };
 
 function extractTitle(markdown, fallback) {
   const m = markdown.match(/^#\s+(.+)$/m);
@@ -60,10 +65,11 @@ function copyLanguage(lang, srcDir) {
   const destDir = path.join(DEST, lang);
   fs.mkdirSync(destDir, { recursive: true });
 
+  const order = ORDER_BY_LANG[lang] ?? ORDER_EN;
   const files = fs.readdirSync(srcDir).filter((f) => f.endsWith('.md')).sort();
   const rank = (name) => {
-    const i = ORDER.indexOf(path.basename(name, '.md'));
-    return i === -1 ? ORDER.length : i;
+    const i = order.indexOf(path.basename(name, '.md'));
+    return i === -1 ? order.length : i;
   };
   files.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
 
@@ -74,6 +80,12 @@ function copyLanguage(lang, srcDir) {
     const slug = base === 'README' ? 'index' : base;
     return { slug, file, title: extractTitle(md, base) };
   });
+
+  // Per-language screenshots (shared assets removed; each language ships its own).
+  const shots = path.join(srcDir, 'screenshots');
+  if (fs.existsSync(shots)) {
+    fs.cpSync(shots, path.join(destDir, 'screenshots'), { recursive: true });
+  }
 
   fs.writeFileSync(
     path.join(destDir, 'manifest.json'),
@@ -107,12 +119,4 @@ for (const [lang, srcDir] of Object.entries(LANGUAGES)) {
   total += n;
 }
 
-if (fs.existsSync(SRC_SCREENSHOTS)) {
-  fs.cpSync(SRC_SCREENSHOTS, path.join(DEST, 'screenshots'), { recursive: true });
-  const n = fs.readdirSync(path.join(DEST, 'screenshots')).length;
-  console.log(`[copy-docs] screenshots: ${n} files`);
-} else {
-  console.warn('[copy-docs] WARN: docs/screenshots not found, images will be missing');
-}
-
-console.log(`[copy-docs] done → ${path.relative(REPO_ROOT, DEST)}`);
+console.log(`[copy-docs] done → ${path.relative(REPO_ROOT, DEST)} (${total} docs across ${Object.keys(LANGUAGES).length} languages)`);

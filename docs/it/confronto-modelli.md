@@ -2,7 +2,7 @@
 
 **Cosa fa.** Invia lo stesso prompt a 2–4 modelli contemporaneamente e mostra le risposte in streaming in colonne affiancate, ciascuna con la propria telemetria (latenza, token, costo). Utile per scegliere il modello giusto per un caso d'uso o per confrontare qualità/velocità/costo.
 
-![Pagina Confronta modelli](../screenshots/compare.png)
+![Pagina Confronta modelli](screenshots/compare.png)
 
 **Come si usa.**
 1. Vai alla pagina **Compare**.

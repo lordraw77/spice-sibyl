@@ -15,6 +15,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { I18nService } from '../../core/i18n/i18n.service';
 
 interface HelpDoc {
   slug: string;
@@ -27,8 +28,9 @@ interface HelpManifest {
   docs: HelpDoc[];
 }
 
-/** Single extension point when more languages land in public/docs/. */
-const LANG = 'it';
+/** Doc sets published by copy-docs.mjs; the rest fall back to English. */
+const PUBLISHED_LANGS = ['it', 'en', 'fr', 'de', 'es'];
+const FALLBACK_LANG = 'en';
 
 @Component({
   selector: 'app-help-page',
@@ -42,6 +44,12 @@ export class HelpPageComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly sanitizer = inject(DomSanitizer);
+  private readonly i18n = inject(I18nService);
+
+  /** Doc language for this session: the active UI locale, or English fallback. */
+  private readonly lang = PUBLISHED_LANGS.includes(this.i18n.locale())
+    ? this.i18n.locale()
+    : FALLBACK_LANG;
 
   readonly docs = signal<HelpDoc[]>([]);
   readonly activeSlug = signal<string | null>(null);
@@ -50,7 +58,7 @@ export class HelpPageComponent implements OnInit {
   readonly error = signal(false);
 
   ngOnInit(): void {
-    this.http.get<HelpManifest>(`docs/${LANG}/manifest.json`).subscribe({
+    this.http.get<HelpManifest>(`docs/${this.lang}/manifest.json`).subscribe({
       next: (manifest) => {
         this.docs.set(manifest.docs);
         this.route.paramMap.subscribe((params) => {
@@ -72,7 +80,7 @@ export class HelpPageComponent implements OnInit {
     this.loading.set(true);
     this.error.set(false);
     this.http
-      .get(`docs/${LANG}/${doc.file}`, { responseType: 'text' })
+      .get(`docs/${this.lang}/${doc.file}`, { responseType: 'text' })
       .subscribe({
         next: (md) => {
           this.content.set(this.render(md));
@@ -95,11 +103,12 @@ export class HelpPageComponent implements OnInit {
     const el = document.createElement('div');
     el.innerHTML = clean;
 
-    // Images: ../screenshots/x.png → docs/screenshots/x.png (shipped assets).
+    // Images: screenshots/x.png (or legacy ../screenshots/x.png) → the shipped
+    // per-language asset docs/<lang>/screenshots/x.png.
     el.querySelectorAll('img').forEach((img) => {
       const src = img.getAttribute('src') ?? '';
       const m = src.match(/(?:\.\.\/)?screenshots\/(.+)$/);
-      if (m) img.setAttribute('src', `docs/screenshots/${m[1]}`);
+      if (m) img.setAttribute('src', `docs/${this.lang}/screenshots/${m[1]}`);
       img.setAttribute('loading', 'lazy');
     });
 
@@ -121,7 +130,7 @@ export class HelpPageComponent implements OnInit {
           return;
         }
       }
-      // Anything else (../deploy.md, ../features/…, directories): unwrap to text.
+      // Anything else (../deploy.md, ../en/…, directories): unwrap to text.
       a.replaceWith(...Array.from(a.childNodes));
     });
 

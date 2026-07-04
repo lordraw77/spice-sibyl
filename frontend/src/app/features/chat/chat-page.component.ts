@@ -51,11 +51,14 @@ import { NotificationService } from '../../core/services/notification.service';
 import { AppConfigService } from '../../core/config/app-config.service';
 import { UserPreferencesService } from '../../core/services/user-preferences.service';
 import { PushNotifyService } from '../../core/services/push-notify.service';
+import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
+import { LocaleCostPipe } from '../../core/i18n/format.pipes';
 
 @Component({
   selector: 'app-chat-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, RouterLink, ProfileModalComponent, OnboardingComponent],
+  imports: [CommonModule, FormsModule, DatePipe, RouterLink, ProfileModalComponent, OnboardingComponent, TranslatePipe, LocaleCostPipe],
   templateUrl: './chat-page.component.html',
   styleUrl: './chat-page.component.css',
 })
@@ -72,6 +75,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly tagService = inject(TagService);
   private readonly feedbackService = inject(FeedbackService);
   private readonly auth = inject(AuthService);
+  readonly i18n = inject(I18nService);
   readonly pushNotify = inject(PushNotifyService);
   readonly onboarding = inject(OnboardingService);
 
@@ -957,7 +961,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     const text = this.stripMarkdown(typeof message.content === 'string' ? message.content : '');
     if (!text) return;
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'it-IT';
+    utterance.lang = this.i18n.bcp47();
     utterance.onend = () => { this.speakingMessageIdx = null; };
     utterance.onerror = () => { this.speakingMessageIdx = null; };
     this.speakingMessageIdx = idx;
@@ -1194,7 +1198,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     }
 
     const recognition = new SpeechRecognitionAPI();
-    recognition.lang = 'it-IT';
+    recognition.lang = this.i18n.bcp47();
     recognition.interimResults = true;
     recognition.continuous = false;
     this.voiceRecognition = recognition;

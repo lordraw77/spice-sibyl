@@ -2,7 +2,7 @@
 
 La pagina principale della console. A sinistra una **sidebar leggera** con i soli controlli della chat corrente (profilo, **Modello**, **Sistema**, **Parametri**) e gli interruttori **ON/OFF** delle funzioni; al centro la conversazione con composer in basso. L'elenco delle conversazioni si apre come **pannello** dedicato (pulsante *Conversazioni* o `Ctrl+K`).
 
-![Conversazione con telemetria](../screenshots/chat-conversazione.png)
+![Conversazione con telemetria](screenshots/chat-conversazione.png)
 
 ## Conversazioni e streaming
 

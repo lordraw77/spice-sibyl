@@ -2,7 +2,7 @@
 
 SpiceSibyl is an OpenAI-compatible multi-provider AI gateway with a built-in Angular web console.  A single API endpoint routes chat completion requests to any supported backend — local Ollama models, Groq, OpenRouter, Cloudflare Workers AI, Google Gemini, Mistral, Cerebras, Together AI, Fireworks AI, and HuggingFace — without changing the client code.
 
-> 📖 **Feature documentation** — detailed per-feature guide with screenshots: [English](docs/features/README.md) · [Italiano](docs/funzionalita/README.md)
+> 📖 **Feature documentation** — detailed per-feature guide with screenshots: [English](docs/en/README.md) · [Italiano](docs/it/README.md)
 
 ---
 

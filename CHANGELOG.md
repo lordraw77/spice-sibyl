@@ -5,6 +5,23 @@ correspond to the project's git tags.
 
 ---
 
+## [Unreleased]
+
+### Added — Phase 22: Internationalization (i18n)
+- **Web UI multi-language (22.a)** — dependency-free runtime i18n layer under `frontend/src/app/core/i18n/`: `Locale` metadata (en/fr/de/it/es with native labels + BCP-47 tags), one flat catalog per locale, an `I18nService` (active-locale signal, first-visit browser-language auto-detection, `translate()` with `{placeholder}` interpolation and `active → default(it) → key` fallback), and an impure `TranslatePipe` (`| t`) so switching language re-renders instantly without a reload. A 🌐 language switcher in the navbar; the choice is persisted in `localStorage` **and** per profile via the new `PATCH /api/v1/profiles/{id}` (`locale`), adopted on profile select/restore. Localized navbar/menus + tooltips, chat loading indicators and the onboarding tour; TTS and voice input now follow the active locale's BCP-47 tag (previously hardcoded `it-IT`)
+- **Telegram fr/de/es (22.b)** — `app/telegram/i18n.py` `MESSAGES` + `SUPPORTED_LOCALES` extended with French, German and Spanish for all commands, inline keyboards, reminders and error messages; the `/lang` keyboard auto-renders all 5 locales
+- **Locale-aware formatting (22.c)** — `localeNumber` / `localeCost` / `localeDate` pipes + `I18nService` formatters over the `Intl` API (wired into stats costs and the chat telemetry footer); Telegram reminder confirmations use a locale-aware date order
+- **Docs (22.d)** — new `docs/en/internationalization.md` + `docs/it/internazionalizzazione.md`, linked from both README indexes
+- **Tests / CI (22.e)** — `backend/tests/test_i18n.py` (Telegram 5-locale key parity, formattability, fallback chain, profile-locale endpoint) + a runnable web catalog check (`frontend/scripts/check-i18n.mjs`, `npm run i18n:check`); both wired into a new `.github/workflows/ci.yml`
+- **Login page localized** — the login card (subtitle, field labels, placeholder, button, error messages) now uses the i18n catalog (`auth.*` keys, all 5 locales)
+- **Per-language documentation & screenshots** — docs restructured to `docs/en/` + `docs/it/` (renamed from `features/`/`funzionalita/`) plus new `docs/fr/`, `docs/de/`, `docs/es/` (English scaffolds pending translation); each language ships its own `screenshots/`. `copy-docs.mjs` now publishes all 5 languages with per-language screenshots; the `/help` page loads the doc set for the active UI language (English fallback). New `frontend/scripts/screenshots.mjs` (Playwright) captures each page per language against a running instance
+
+### Changed
+- `profiles` gains a nullable `locale` column (migration + `Profile` schema); `PATCH /api/v1/profiles/{id}` validates against the 5 supported locales
+- The shared `docs/screenshots/` folder was removed in favour of per-language `docs/<lang>/screenshots/`; doc image references updated accordingly
+
+---
+
 ## [2.0.0] — 2026-07-04
 
 ### Changed — Web UI 2.0: navigation & sidebar overhaul
@@ -34,7 +51,7 @@ correspond to the project's git tags.
 - **Info page** — new `/info` page in the web UI (navbar entry) showing the web UI version (from `package.json` at build time), backend metadata from the new `GET /v1/info` endpoint (name, version, environment, Python/platform, uptime, default model, timezone, DB path/size, configured providers, response-cache stats, feature flags), the API endpoints in use (base URL, health/ready/metrics, OpenAPI docs link) and live health/readiness status
 - **Version stamping** — release version is now a single source of truth: the Makefile passes the git tag as `--build-arg APP_VERSION` to every image build; the backend exposes it via the `APP_VERSION` setting (FastAPI docs + `GET /v1/info`, fallback `1.9.0`) and the frontend's `package.json` is stamped before `ng build` so the Info page always matches the build tag
 - **Unified provider model discovery** — the eight per-provider discovery endpoints (`*_discovery.py`) were replaced by a single `model_discovery` service + `discovery_refresh` background loop (`DISCOVERY_REFRESH_ENABLED`, every `DISCOVERY_REFRESH_HOURS`); the static `provider_models.yaml` catalogs were removed in favour of the live discovered catalog; the Discovery page was reworked accordingly
-- **Feature documentation** — new "Memoria e personalizzazione" / "Memory & personalization" pages in `docs/funzionalita/` and `docs/features/` (memory, auto-titling, cache, feedback, Info page) and the built-in tools tables updated with the 8 new Phase 19 tools
+- **Feature documentation** — new "Memoria e personalizzazione" / "Memory & personalization" pages in `docs/it/` and `docs/en/` (memory, auto-titling, cache, feedback, Info page) and the built-in tools tables updated with the 8 new Phase 19 tools
 
 ### Security
 - **SSRF hardening** — `read_url`, `fetch_rss`, `extract_document` and `http_request` now refuse URLs whose host resolves to private/loopback/link-local/reserved addresses (`assert_public_url`)

@@ -427,6 +427,8 @@ _MIGRATIONS = [
     "ALTER TABLE telegram_prefs ADD COLUMN memory INTEGER NOT NULL DEFAULT 1",
     # Phase 21: per-chat Telegram RAG toggle (/rag on|off) — OFF by default
     "ALTER TABLE telegram_prefs ADD COLUMN rag INTEGER NOT NULL DEFAULT 0",
+    # Phase 22: per-profile UI locale (NULL = follow the browser language)
+    "ALTER TABLE profiles ADD COLUMN locale TEXT DEFAULT NULL",
 ]
 
 

@@ -236,6 +236,8 @@ export interface Profile {
   id: string;
   name: string;
   created_at: number;
+  /** Phase 22: persisted UI language; null = follow the browser language. */
+  locale?: string | null;
 }
 
 /** Conversation metadata returned by GET /api/v1/conversations */

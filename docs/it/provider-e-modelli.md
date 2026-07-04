@@ -4,7 +4,7 @@
 
 **Cosa fa.** Cruscotto di tutti i provider supportati: stato di configurazione, numero di modelli a catalogo, capacità aggregate (chat, vision, tools, json…), abilitazione on/off, test di connettività e gestione della chiave API.
 
-![Provider Management](../screenshots/providers.png)
+![Provider Management](screenshots/providers.png)
 
 **Come si usa.**
 - **Add key / Update key**: inserisce o aggiorna la chiave API del provider. La chiave finisce nel **vault cifrato** (vedi sotto), non in un file di configurazione.
@@ -36,7 +36,7 @@ In cima alla lista: un contatore **«N visibili · M nascosti»** e i pulsanti *
 
 **Cosa fa.** Recupera in tempo reale il catalogo modelli direttamente dall'API di ciascun provider (Cloudflare, OpenRouter, Gemini, Groq, Cerebras, Mistral, NVIDIA, Ollama, Agent) e lo salva nel catalogo interno — così l'elenco dei modelli selezionabili in chat resta aggiornato senza modifiche manuali.
 
-![Model Discovery](../screenshots/discovery.png)
+![Model Discovery](screenshots/discovery.png)
 
 **Come si usa.** Pagina **Discovery** → scegli il provider dalla barra dei tab → **Esegui Discovery**. I modelli trovati vengono elencati e salvati nel catalogo.
 

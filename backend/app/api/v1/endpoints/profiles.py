@@ -12,9 +12,12 @@ from app.db.database import get_db
 from app.db import profile_repository as repo
 from app.dependencies.auth import block_read_only, get_current_user
 from app.schemas.auth import UserOut
-from app.schemas.profiles import Profile, ProfileCreate
+from app.schemas.profiles import Profile, ProfileCreate, ProfileUpdate
 
 router = APIRouter()
+
+# Phase 22: UI languages the backend accepts for a profile's persisted locale.
+SUPPORTED_LOCALES = {"en", "it", "fr", "de", "es"}
 
 
 @router.get("", response_model=list[Profile])
@@ -35,6 +38,25 @@ async def create_profile(
     if not name:
         raise HTTPException(status_code=422, detail="name must not be empty")
     return await repo.create_profile(db, name, user_id=user.id)
+
+
+@router.patch("/{profile_id}", response_model=Profile)
+async def update_profile(
+    profile_id: str,
+    body: ProfileUpdate,
+    db: aiosqlite.Connection = Depends(get_db),
+    user: UserOut = Depends(get_current_user),
+):
+    """Update a profile's preferences. Currently the UI locale (Phase 22)."""
+    profile = await repo.get_profile(db, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    if profile.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Profile does not belong to you")
+    if body.locale is not None and body.locale not in SUPPORTED_LOCALES:
+        raise HTTPException(status_code=422, detail="Unsupported locale")
+    await repo.set_locale(db, profile_id, body.locale)
+    return await repo.get_profile(db, profile_id)
 
 
 @router.delete("/{profile_id}", status_code=204)

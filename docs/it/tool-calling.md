@@ -30,7 +30,7 @@
 
 **Cosa fa.** Registra tool basati su endpoint HTTP dalla UI, senza toccare il codice: nome, descrizione, parametri (JSON Schema), URL/metodo/header, autenticazione (nessuna / bearer / header custom), timeout. Sono salvati per profilo nella tabella `custom_tools` e iniettati nel loop di chat col namespace `custom__<nome>`.
 
-![Pagina Tools](../screenshots/tools.png)
+![Pagina Tools](screenshots/tools.png)
 
 **Come si usa.**
 1. Pagina **Tools** → **Nuovo tool**.

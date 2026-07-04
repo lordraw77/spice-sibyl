@@ -13,7 +13,7 @@ APP_VERSION   := $(patsubst v%,%,$(VERSION))
         dev dev-build dev-build-backend dev-build-frontend rebuild publish \
         tag push-tags
 
-# Copy docs/funzionalita + screenshots into frontend/public/docs (in-app Help
+# Copy docs/it + screenshots into frontend/public/docs (in-app Help
 # page). Must run before the frontend/nginx image builds: their contexts only
 # include frontend/, so the repo-root docs/ tree is not visible to Docker.
 frontend-docs:

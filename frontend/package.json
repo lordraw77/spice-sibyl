@@ -8,7 +8,8 @@
     "start": "ng serve",
     "prebuild": "npm run docs",
     "build": "ng build",
-    "test": "ng test"
+    "test": "ng test",
+    "i18n:check": "node scripts/check-i18n.mjs"
   },
   "dependencies": {
     "@angular/animations": "^18.2.0",

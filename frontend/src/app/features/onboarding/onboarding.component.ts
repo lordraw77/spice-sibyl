@@ -1,12 +1,14 @@
 import { Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { OnboardingService } from '../../core/services/onboarding.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 interface TourStep {
   /** CSS selector of the element to spotlight (via [data-tour]). */
   selector: string;
-  title: string;
-  body: string;
+  /** i18n keys (translated in the template). */
+  titleKey: string;
+  bodyKey: string;
 }
 
 interface SpotlightRect {
@@ -26,7 +28,7 @@ interface SpotlightRect {
 @Component({
   selector: 'app-onboarding',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, TranslatePipe],
   template: `
     <div class="tour-backdrop" (click)="skip()">
       <!-- Spotlight cut-out (desktop, when target located) -->
@@ -48,14 +50,14 @@ interface SpotlightRect {
         (click)="$event.stopPropagation()"
       >
         <div class="tour-progress">{{ index() + 1 }} / {{ steps.length }}</div>
-        <h3 class="tour-title">{{ current().title }}</h3>
-        <p class="tour-body">{{ current().body }}</p>
+        <h3 class="tour-title">{{ current().titleKey | t }}</h3>
+        <p class="tour-body">{{ current().bodyKey | t }}</p>
         <div class="tour-actions">
-          <button class="tour-skip" (click)="skip()">Salta</button>
+          <button class="tour-skip" (click)="skip()">{{ 'onboarding.skip' | t }}</button>
           <div class="tour-nav">
-            <button class="tour-btn" *ngIf="index() > 0" (click)="prev()">Indietro</button>
+            <button class="tour-btn" *ngIf="index() > 0" (click)="prev()">{{ 'onboarding.back' | t }}</button>
             <button class="tour-btn primary" (click)="next()">
-              {{ index() === steps.length - 1 ? 'Fine' : 'Avanti' }}
+              {{ (index() === steps.length - 1 ? 'onboarding.done' : 'onboarding.next') | t }}
             </button>
           </div>
         </div>
@@ -144,23 +146,23 @@ export class OnboardingComponent implements OnInit {
   readonly steps: TourStep[] = [
     {
       selector: '[data-tour="model"]',
-      title: 'Scegli il modello',
-      body: 'Seleziona qui il provider e il modello LLM con cui vuoi chattare. Puoi filtrare per capacità (es. vision) e vedere quali sono gratuiti.',
+      titleKey: 'onboarding.step.model.title',
+      bodyKey: 'onboarding.step.model.body',
     },
     {
       selector: '[data-tour="tools"]',
-      title: 'Strumenti (tool calling)',
-      body: 'Attiva i tool — calcolatrice, ricerca web, data/ora e altro — per dare super-poteri al modello durante la conversazione.',
+      titleKey: 'onboarding.step.tools.title',
+      bodyKey: 'onboarding.step.tools.body',
     },
     {
       selector: '[data-tour="system-prompt"]',
-      title: 'Istruzioni di sistema',
-      body: 'Imposta un prompt di sistema persistente per guidare tono, ruolo e comportamento dell’assistente.',
+      titleKey: 'onboarding.step.system.title',
+      bodyKey: 'onboarding.step.system.body',
     },
     {
       selector: '[data-tour="composer"]',
-      title: 'Comandi rapidi',
-      body: 'Scrivi qui il tuo messaggio. Digita "/" per i comandi rapidi (/imagine, /new, /model…) e usa 📎 per allegare immagini.',
+      titleKey: 'onboarding.step.commands.title',
+      bodyKey: 'onboarding.step.commands.body',
     },
   ];
 

@@ -4,7 +4,7 @@
 
 **Cosa fa.** Registra server [MCP](https://modelcontextprotocol.io) (Model Context Protocol) nel formato standard `mcpServers` (`command`/`args`/`env`/`cwd`), li avvia via stdio con un client JSON-RPC minimale integrato (nessuna dipendenza dall'SDK), ne verifica la salute e inietta i tool scoperti nel loop di chat col namespace `mcp__<server>__<tool>`. Gestione **solo admin**, configurazione globale (tabella `mcp_servers`).
 
-![Pagina Server MCP](../screenshots/mcp.png)
+![Pagina Server MCP](screenshots/mcp.png)
 
 **Come si usa.**
 1. Pagina **MCP** → riquadro **Aggiungi / Importa**: incolla un bundle JSON `{ "mcpServers": { … } }` (uno o più server; i server omonimi vengono sostituiti) e premi **Importa**. La spunta «Abilita all'import» li attiva subito.
@@ -36,7 +36,7 @@
 
 **Cosa fa.** Run agentici durevoli e ispezionabili: un loop server-side in background lavora su un obiettivo con **tutto** il registro tool (integrati, custom, MCP) per molte iterazioni (`WORKFLOW_DEFAULT_MAX_STEPS`, limite `WORKFLOW_MAX_STEPS_LIMIT`), ben oltre le 5 del loop di chat. Ogni turno assistant / chiamata tool / risultato è persistito come step (`agent_runs` + `agent_run_steps`) e la cronologia è checkpointata a ogni iterazione: i run si mettono in pausa e riprendono senza perdite, **anche dopo un riavvio** (i run rimasti `running` vengono riconciliati a `paused`).
 
-![Pagina Workflow](../screenshots/workflows.png)
+![Pagina Workflow](screenshots/workflows.png)
 
 **Come si usa.**
 1. Pagina **Workflow** → form **Nuovo run**: obiettivo, modello, max step, istruzioni aggiuntive opzionali → **Avvia run**.

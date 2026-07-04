@@ -24,7 +24,7 @@ Qualsiasi membro (anche un viewer) può **abbandonare** un workspace da solo; so
 - **Membri** — invita per email (l'account deve già esistere), cambia il ruolo di un membro inline oppure rimuovilo. I controlli di gestione compaiono solo per admin+; la riga del proprietario non è modificabile.
 - **Conversazioni / Documenti condivisi** — scegli una tua conversazione o un tuo documento KB dal menu a tendina e condividilo; da quel momento ogni membro lo vede nell'elenco. La **✕** annulla la condivisione (editor+).
 
-![Gestione workspace](../screenshots/workspace.png)
+![Gestione workspace](screenshots/workspace.png)
 
 **API.**
 
@@ -49,7 +49,7 @@ Qualsiasi membro (anche un viewer) può **abbandonare** un workspace da solo; so
 
 **Come si usa.** Nella pagina Workspace, ogni conversazione condivisa ha un pulsante **Commenti** che apre un pannello in thread sotto di essa. Scrivi un commento di primo livello nella casella, usa **Rispondi** per annidare una risposta e **Modifica / Elimina** sui tuoi commenti. I thread si annidano visivamente tramite l'indentazione.
 
-![Commenti in thread su una conversazione condivisa](../screenshots/workspace-commenti.png)
+![Commenti in thread su una conversazione condivisa](screenshots/workspace-commenti.png)
 
 **API** (sotto `/v1/conversations/{id}/comments`):
 

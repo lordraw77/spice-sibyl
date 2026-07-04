@@ -9,7 +9,7 @@
 2. Inserisci email e password e premi **Accedi**.
 3. Il frontend gestisce da solo il rinnovo silenzioso del token alla scadenza (interceptor su 401); il logout si fa dal chip utente nella navbar.
 
-![Pagina di login](../screenshots/login.png)
+![Pagina di login](screenshots/login.png)
 
 **Bootstrap admin.** Al primo avvio il backend crea un amministratore da `ADMIN_EMAIL` / `ADMIN_PASSWORD` (in `backend/.env`) e "adotta" gli eventuali profili orfani creati prima dell'introduzione dell'autenticazione.
 
@@ -21,7 +21,7 @@
 - Alla prima visita (o quando nessun profilo è selezionato) compare il modal **«Chi sei?»**: scegli un profilo esistente o creane uno con **+ Nuovo profilo**.
 - Puoi cambiare profilo in ogni momento dal selettore in cima alla sidebar della chat.
 
-![Selettore profili](../screenshots/profilo-selezione.png)
+![Selettore profili](screenshots/profilo-selezione.png)
 
 **Isolamento dati.** Ogni endpoint legato a un profilo valida la proprietà tramite la dependency `resolve_profile`: un utente non può leggere conversazioni o documenti dei profili altrui.
 

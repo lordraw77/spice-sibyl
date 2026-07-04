@@ -345,9 +345,9 @@
         <div class="loading-bar-fill" [class.tool-phase]="streaming && (messages()[messages().length - 1]?.tool_events?.length ?? 0) > 0"></div>
       </div>
       <span class="loading-bar-label">
-        <ng-container *ngIf="!streaming">In attesa del modello…</ng-container>
-        <ng-container *ngIf="streaming && (messages()[messages().length - 1]?.tool_events?.length ?? 0) > 0">Esecuzione tool…</ng-container>
-        <ng-container *ngIf="streaming && !(messages()[messages().length - 1]?.tool_events?.length ?? 0)">Generazione in corso…</ng-container>
+        <ng-container *ngIf="!streaming">{{ 'chat.loading.model' | t }}</ng-container>
+        <ng-container *ngIf="streaming && (messages()[messages().length - 1]?.tool_events?.length ?? 0) > 0">{{ 'chat.loading.tools' | t }}</ng-container>
+        <ng-container *ngIf="streaming && !(messages()[messages().length - 1]?.tool_events?.length ?? 0)">{{ 'chat.loading.streaming' | t }}</ng-container>
       </span>
     </div>
 
@@ -437,7 +437,7 @@
           <span *ngIf="message.total_tokens !== undefined"> · tot {{ message.total_tokens }} tok</span>
           <span *ngIf="message.tokens_per_second != null"> · {{ message.tokens_per_second.toFixed(1) }} tok/s</span>
           <span *ngIf="message.finish_reason"> · {{ message.finish_reason }}</span>
-          <span *ngIf="message.estimated_cost != null"> · ${{ message.estimated_cost.toFixed(6) }}</span>
+          <span *ngIf="message.estimated_cost != null"> · {{ message.estimated_cost | localeCost:6 }}</span>
         </div>
 
         <div class="badges" *ngIf="message.role === 'assistant' && ((message.capabilities?.length || 0) > 0 || message.free !== undefined)">

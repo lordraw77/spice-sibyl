@@ -4,6 +4,10 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { ThemeService } from '../core/services/theme.service';
 import { AuthService } from '../core/services/auth.service';
+import { I18nService } from '../core/i18n/i18n.service';
+import { TranslatePipe } from '../core/i18n/translate.pipe';
+import { Locale } from '../core/i18n/locale';
+import { ProfileService } from '../core/services/profile.service';
 
 interface NavItem {
   label: string;
@@ -47,7 +51,7 @@ const ICONS = {
 @Component({
   selector: 'app-navbar',
   standalone: true,
-  imports: [CommonModule, RouterLink, RouterLinkActive],
+  imports: [CommonModule, RouterLink, RouterLinkActive, TranslatePipe],
   template: `
     <nav class="navbar">
       <div class="brand">
@@ -57,7 +61,7 @@ const ICONS = {
           <span class="brand-tag">One gateway, many minds.</span>
         </div>
       </div>
-      <button class="nav-toggle" (click)="toggleMobileMenu()" [attr.aria-expanded]="mobileMenuOpen()" aria-label="Apri menu di navigazione">
+      <button class="nav-toggle" (click)="toggleMobileMenu()" [attr.aria-expanded]="mobileMenuOpen()" [attr.aria-label]="'navbar.menu' | t">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
       <ul class="nav-links" [class.open]="mobileMenuOpen()">
@@ -72,7 +76,7 @@ const ICONS = {
               (click)="onLeafClick()"
             >
               <span class="nav-icon" [innerHTML]="iconHtml(item.icon)"></span>
-              {{ item.label }}
+              {{ item.label | t }}
             </a>
 
             <!-- Macro-voce with submenu -->
@@ -85,7 +89,7 @@ const ICONS = {
                 (click)="toggleMenu(item.label, $event)"
               >
                 <span class="nav-icon" [innerHTML]="iconHtml(item.icon)"></span>
-                {{ item.label }}
+                {{ item.label | t }}
                 <svg class="nav-caret" [class.open]="openMenu() === item.label" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
               <ul class="nav-submenu" [class.open]="openMenu() === item.label">
@@ -98,7 +102,7 @@ const ICONS = {
                       (click)="onLeafClick()"
                     >
                       <span class="nav-icon" [innerHTML]="iconHtml(child.icon)"></span>
-                      {{ child.label }}
+                      {{ child.label | t }}
                     </a>
                   </li>
                 </ng-container>
@@ -108,8 +112,22 @@ const ICONS = {
         </ng-container>
       </ul>
       <div class="navbar-actions">
+        <div class="lang-picker-wrapper">
+          <button class="lang-toggle" (click)="toggleLangPicker($event)" [title]="'navbar.language' | t" [attr.aria-label]="'navbar.language' | t">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            <span class="lang-code">{{ i18n.locale() }}</span>
+          </button>
+          <div class="lang-popover" *ngIf="langPickerOpen()" (click)="$event.stopPropagation()">
+            <button
+              *ngFor="let l of i18n.supported"
+              class="lang-option"
+              [class.active]="i18n.locale() === l.code"
+              (click)="setLocale(l.code)"
+            >{{ l.label }}</button>
+          </div>
+        </div>
         <div class="accent-picker-wrapper">
-          <button class="accent-toggle" (click)="toggleAccentPicker($event)" [title]="'Colore accento'" [style.background]="themeService.accentColor()">
+          <button class="accent-toggle" (click)="toggleAccentPicker($event)" [title]="'navbar.accent' | t" [style.background]="themeService.accentColor()">
           </button>
           <div class="accent-popover" *ngIf="accentPickerOpen()" (click)="$event.stopPropagation()">
             <div class="accent-swatches">
@@ -123,18 +141,18 @@ const ICONS = {
               ></button>
             </div>
             <div class="accent-custom-row">
-              <input type="color" class="accent-color-input" [value]="themeService.accentColor()" (input)="setAccent($any($event.target).value)" title="Colore personalizzato" />
-              <button class="accent-reset" *ngIf="!themeService.isDefaultAccent" (click)="themeService.resetAccent()">Reset</button>
+              <input type="color" class="accent-color-input" [value]="themeService.accentColor()" (input)="setAccent($any($event.target).value)" [title]="'navbar.accentCustom' | t" />
+              <button class="accent-reset" *ngIf="!themeService.isDefaultAccent" (click)="themeService.resetAccent()">{{ 'common.reset' | t }}</button>
             </div>
           </div>
         </div>
-        <button class="theme-toggle" (click)="themeService.cycle()" [title]="'Tema: ' + themeService.mode()">
+        <button class="theme-toggle" (click)="themeService.cycle()" [title]="('navbar.theme' | t) + ': ' + themeService.mode()">
           <svg *ngIf="themeService.resolvedTheme === 'dark'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
           <svg *ngIf="themeService.resolvedTheme === 'light'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         </button>
         <div class="user-chip" *ngIf="auth.currentUser() as user">
           <span class="user-email" [title]="user.role">{{ user.email }}</span>
-          <button class="logout-btn" (click)="logout()" title="Esci">
+          <button class="logout-btn" (click)="logout()" [title]="'navbar.logout' | t">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
         </div>
@@ -291,6 +309,55 @@ const ICONS = {
     }
     .logout-btn:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
 
+    /* Language picker */
+    .lang-picker-wrapper { position: relative; }
+    .lang-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: .3rem;
+      height: 2rem;
+      padding: 0 .5rem;
+      border-radius: .5rem;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    .lang-toggle:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+    .lang-code { font-size: .72rem; font-weight: 600; text-transform: uppercase; }
+    .lang-popover {
+      position: absolute;
+      top: 2.4rem;
+      right: 0;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-light);
+      border-radius: .65rem;
+      padding: .35rem;
+      z-index: 200;
+      min-width: 150px;
+      box-shadow: 0 4px 16px var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: .1rem;
+    }
+    .lang-option {
+      display: flex;
+      align-items: center;
+      padding: .45rem .6rem;
+      border-radius: .45rem;
+      border: none;
+      background: transparent;
+      color: var(--text-tertiary);
+      font-family: inherit;
+      font-size: .85rem;
+      text-align: left;
+      cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    .lang-option:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+    .lang-option.active { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+
     /* Accent picker */
     .accent-picker-wrapper { position: relative; }
     .accent-toggle {
@@ -403,54 +470,59 @@ const ICONS = {
 export class NavbarComponent {
   readonly themeService = inject(ThemeService);
   readonly auth = inject(AuthService);
+  readonly i18n = inject(I18nService);
+  private readonly profile = inject(ProfileService);
   private readonly router = inject(Router);
   private readonly sanitizer = inject(DomSanitizer);
 
   readonly accentPickerOpen = signal(false);
+  readonly langPickerOpen = signal(false);
   readonly mobileMenuOpen = signal(false);
   readonly openMenu = signal<string | null>(null);
 
   private readonly iconCache = new Map<string, SafeHtml>();
 
+  // `label` holds a stable i18n key (used both as menu identity and, via the
+  // `t` pipe in the template, as the displayed text — see translations/*.ts).
   readonly menu: NavItem[] = [
-    { label: 'Chat', route: '/chat', icon: ICONS.chat },
+    { label: 'nav.chat', route: '/chat', icon: ICONS.chat },
     {
-      label: 'Modelli',
+      label: 'nav.group.models',
       icon: ICONS.models,
       children: [
-        { label: 'Providers', route: '/providers', icon: ICONS.providers },
-        { label: 'Discovery', route: '/discovery', icon: ICONS.discovery },
-        { label: 'Compare', route: '/compare', icon: ICONS.compare },
-        { label: 'Stats', route: '/stats', icon: ICONS.stats },
+        { label: 'nav.providers', route: '/providers', icon: ICONS.providers },
+        { label: 'nav.discovery', route: '/discovery', icon: ICONS.discovery },
+        { label: 'nav.compare', route: '/compare', icon: ICONS.compare },
+        { label: 'nav.stats', route: '/stats', icon: ICONS.stats },
       ],
     },
     {
-      label: 'Tools',
+      label: 'nav.group.tools',
       icon: ICONS.tools,
       children: [
-        { label: 'Tools', route: '/tools', icon: ICONS.tools },
-        { label: 'Workflow', route: '/workflows', icon: ICONS.workflow },
-        { label: 'MCP', route: '/mcp', icon: ICONS.mcp, adminOnly: true },
-        { label: 'Workspace', route: '/workspaces', icon: ICONS.workspace },
+        { label: 'nav.tools', route: '/tools', icon: ICONS.tools },
+        { label: 'nav.workflows', route: '/workflows', icon: ICONS.workflow },
+        { label: 'nav.mcp', route: '/mcp', icon: ICONS.mcp, adminOnly: true },
+        { label: 'nav.workspaces', route: '/workspaces', icon: ICONS.workspace },
       ],
     },
     {
-      label: 'Risorse',
+      label: 'nav.group.resources',
       icon: ICONS.resources,
       children: [
-        { label: 'Template', route: '/templates', icon: ICONS.template },
-        { label: 'Tag', route: '/tags', icon: ICONS.tag },
-        { label: 'Knowledge', route: '/knowledge', icon: ICONS.knowledge },
-        { label: 'Memoria', route: '/memory', icon: ICONS.memory },
+        { label: 'nav.templates', route: '/templates', icon: ICONS.template },
+        { label: 'nav.tags', route: '/tags', icon: ICONS.tag },
+        { label: 'nav.knowledge', route: '/knowledge', icon: ICONS.knowledge },
+        { label: 'nav.memory', route: '/memory', icon: ICONS.memory },
       ],
     },
     {
-      label: 'Info',
+      label: 'nav.group.info',
       icon: ICONS.info,
       children: [
-        { label: 'Guida', route: '/help', icon: ICONS.help },
-        { label: 'Info', route: '/info', icon: ICONS.info },
-        { label: 'Ops', route: '/ops', icon: ICONS.ops, adminOnly: true },
+        { label: 'nav.help', route: '/help', icon: ICONS.help },
+        { label: 'nav.info', route: '/info', icon: ICONS.info },
+        { label: 'nav.ops', route: '/ops', icon: ICONS.ops, adminOnly: true },
       ],
     },
   ];
@@ -492,6 +564,19 @@ export class NavbarComponent {
   onDocumentClick(): void {
     this.openMenu.set(null);
     this.accentPickerOpen.set(false);
+    this.langPickerOpen.set(false);
+  }
+
+  toggleLangPicker(event: Event): void {
+    event.stopPropagation();
+    this.langPickerOpen.update((v) => !v);
+  }
+
+  setLocale(locale: Locale): void {
+    this.i18n.setLocale(locale);
+    this.langPickerOpen.set(false);
+    // Persist on the active profile (best-effort; localStorage already holds it).
+    this.profile.updateLocale(locale)?.subscribe({ error: () => {} });
   }
 
   toggleMobileMenu(): void {
