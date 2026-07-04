@@ -425,6 +425,8 @@ _MIGRATIONS = [
     "ALTER TABLE messages ADD COLUMN feedback_note TEXT DEFAULT NULL",
     # Phase 19: per-chat Telegram memory toggle (/memory on|off)
     "ALTER TABLE telegram_prefs ADD COLUMN memory INTEGER NOT NULL DEFAULT 1",
+    # Phase 21: per-chat Telegram RAG toggle (/rag on|off) — OFF by default
+    "ALTER TABLE telegram_prefs ADD COLUMN rag INTEGER NOT NULL DEFAULT 0",
 ]
 
 

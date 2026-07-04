@@ -20,6 +20,8 @@
 
 **Scoping per conversazione.** È possibile limitare il retrieval a documenti specifici: `document_ids` su `/knowledge/search` e `rag_document_ids` sulle chat completions.
 
+**Anche da Telegram.** Gli utenti con profilo collegato (`/link`) possono ingerire documenti (`/kb`), gestirli (`/kb list|del`) e attivare il retrieval (`/rag on`) direttamente dal bot — vedi [Bot Telegram](telegram.md#knowledge-base-rag).
+
 ## Ricerca ibrida e reranking
 
 **Cosa fa.** Il retrieval fonde due "braccia":

@@ -91,6 +91,9 @@ _locales: dict[int, str] = {}
 # Phase 19: chat_id → memory injection toggle (/memory on|off), warm-cached like _locales
 _memory_prefs: dict[int, bool] = {}
 
+# Phase 21: chat_id → RAG injection toggle (/rag on|off), warm-cached; OFF by default
+_rag_prefs: dict[int, bool] = {}
+
 # The running Application, set by build_application — lets the create_reminder
 # tool schedule jobs on the live JobQueue from outside the bot.
 _application: "Application | None" = None
@@ -527,6 +530,87 @@ async def cmd_memory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.message.reply_text(t(loc, "memory_usage"), parse_mode=ParseMode.HTML)
 
 
+async def cmd_rag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Phase 21: /rag on|off — toggle knowledge-base injection for this chat."""
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        return
+    chat_id = update.effective_chat.id
+    loc = _locale(chat_id)
+    args = [a.strip() for a in (context.args or []) if a.strip()]
+    sub = args[0].lower() if args else ""
+
+    if sub in ("on", "off"):
+        enabled = sub == "on"
+        if enabled and not await _linked_profile_id(user.id):
+            await update.message.reply_text(t(loc, "rag_not_linked"))
+            return
+        _rag_prefs[chat_id] = enabled
+        await prefs_repo.set_rag(chat_id, enabled)
+        await update.message.reply_text(t(loc, "rag_on" if enabled else "rag_off"))
+        return
+
+    await update.message.reply_text(t(loc, "rag_usage"), parse_mode=ParseMode.HTML)
+
+
+async def cmd_kb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Phase 21: /kb list|del <id> — manage the linked profile's knowledge base.
+
+    Document ingestion (send a file with a /kb caption) is handled in
+    handle_document; this command only lists and removes documents.
+    """
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        return
+    chat_id = update.effective_chat.id
+    loc = _locale(chat_id)
+    args = [a.strip() for a in (context.args or []) if a.strip()]
+    sub = args[0].lower() if args else ""
+
+    if sub not in ("list", "del"):
+        await update.message.reply_text(t(loc, "kb_usage"), parse_mode=ParseMode.HTML)
+        return
+
+    profile_id = await _linked_profile_id(user.id)
+    if not profile_id:
+        await update.message.reply_text(t(loc, "kb_not_linked"))
+        return
+
+    from app.db import kb_repository
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("PRAGMA foreign_keys=ON")
+        if sub == "list":
+            docs = await kb_repository.list_documents(db, profile_id)
+            if not docs:
+                await update.message.reply_text(t(loc, "kb_empty"))
+                return
+            icons = {"ready": "✅", "pending": "⏳", "error": "⚠️"}
+            lines = [
+                f"{icons.get(d.status, '•')} <code>{d.id[:8]}</code> "
+                f"{'🔗 ' if d.source_type == 'url' else ''}{d.filename} "
+                f"({d.chunk_count} chunk)"
+                for d in docs[:30]
+            ]
+            await update.message.reply_text(
+                t(loc, "kb_header") + "\n".join(lines), parse_mode=ParseMode.HTML
+            )
+            return
+
+        # del <id>
+        if len(args) < 2:
+            await update.message.reply_text(t(loc, "kb_del_usage"), parse_mode=ParseMode.HTML)
+            return
+        prefix = args[1]
+        docs = await kb_repository.list_documents(db, profile_id)
+        match = next((d for d in docs if d.id.startswith(prefix)), None)
+        if not match:
+            await update.message.reply_text(t(loc, "kb_not_found"))
+            return
+        await kb_repository.delete_document(db, match.id)
+    await update.message.reply_text(t(loc, "kb_deleted"))
+
+
 async def cmd_unlink(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not _is_allowed(user.id):
@@ -890,6 +974,37 @@ async def _stream_reply(
         except Exception:
             logger.exception("stream_reply: iniezione memoria fallita chat_id=%s", chat_id)
 
+    # Phase 21: retrieve and inject the linked profile's knowledge base (/rag toggle).
+    # Mirrors ChatService._apply_rag — context folded into the last user message.
+    rag_sources: list = []
+    if _rag_prefs.get(chat_id, False):
+        try:
+            rag_profile = linked_profile or await _linked_profile_id(chat_id)
+            if rag_profile:
+                last_idx = next(
+                    (i for i in range(len(messages) - 1, -1, -1)
+                     if messages[i].role == "user" and isinstance(messages[i].content, str)),
+                    None,
+                )
+                query = messages[last_idx].content if last_idx is not None else ""
+                if query.strip():
+                    from app.services import rag_service
+                    async with aiosqlite.connect(settings.db_path) as db:
+                        db.row_factory = aiosqlite.Row
+                        await db.execute("PRAGMA foreign_keys=ON")
+                        rag_sources = await rag_service.retrieve(db, rag_profile, query)
+                    if rag_sources:
+                        context = rag_service.build_context_block(rag_sources)
+                        messages[last_idx] = messages[last_idx].model_copy(
+                            update={"content": f"{context}\n\n---\n\nDomanda dell'utente:\n{query}"}
+                        )
+                        logger.info(
+                            "stream_reply: RAG iniettate %d fonti chat_id=%s profile=%s",
+                            len(rag_sources), chat_id, rag_profile,
+                        )
+        except Exception:
+            logger.exception("stream_reply: iniezione RAG fallita chat_id=%s", chat_id)
+
     request = ChatCompletionRequest(model=model, messages=messages, max_tokens=2048)
 
     full_content = ""
@@ -933,7 +1048,16 @@ async def _stream_reply(
                 except Exception:
                     pass
 
-        chunks = _split(full_content or "⚠ Nessuna risposta.")
+        # Phase 21: append a 📚 sources footer when RAG grounded the reply.
+        display_content = full_content
+        if full_content and rag_sources:
+            seen: list[str] = []
+            for s in rag_sources:
+                if s.filename not in seen:
+                    seen.append(s.filename)
+            display_content += t(_locale(chat_id), "rag_sources_header", sources=", ".join(seen))
+
+        chunks = _split(display_content or "⚠ Nessuna risposta.")
         if len(chunks) == 1:
             await sent.edit_text(chunks[0], reply_markup=_QUICK_ACTIONS)
             _action_messages[sent.message_id] = chat_id
@@ -1149,10 +1273,73 @@ async def handle_inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE
 _SUPPORTED_MIME = {
     "application/pdf",
     "text/plain",
+    "text/markdown",
+    "text/x-markdown",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
+_SUPPORTED_EXT = (".pdf", ".txt", ".md", ".markdown", ".docx")
+
 _MAX_DOC_CHARS = 8000
+
+
+async def _ingest_document_to_kb(update: Update, context: ContextTypes.DEFAULT_TYPE, doc, fname: str) -> None:
+    """Phase 21: ingest a /kb-captioned document into the linked profile's KB.
+
+    Reuses rag_service.ingest — the same extraction/chunking/embedding as web
+    uploads — with byte-hash duplicate detection. Prompts for /link when the
+    Telegram user has no linked web profile (21.c).
+    """
+    global _tg_errors
+    msg = update.message
+    chat_id = update.effective_chat.id
+    loc = _locale(chat_id)
+
+    profile_id = await _linked_profile_id(update.effective_user.id)
+    if not profile_id:
+        await msg.reply_text(t(loc, "kb_not_linked"))
+        return
+
+    sent = await msg.reply_text(t(loc, "kb_ingesting"), parse_mode=ParseMode.HTML)
+    try:
+        file = await context.bot.get_file(doc.file_id)
+        data = bytes(await file.download_as_bytearray())
+    except Exception as exc:
+        _tg_errors += 1
+        logger.error("kb_ingest: download fallito chat_id=%s: %s", chat_id, exc)
+        await sent.edit_text("⚠ Impossibile scaricare il file.")
+        return
+
+    import hashlib
+    from app.db import kb_repository
+    from app.services import rag_service
+
+    content_hash = hashlib.sha256(data).hexdigest()
+    try:
+        async with aiosqlite.connect(settings.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute("PRAGMA foreign_keys=ON")
+            existing = await kb_repository.find_by_hash(db, profile_id, content_hash)
+            if existing:
+                await sent.edit_text(
+                    t(loc, "kb_duplicate", filename=existing.filename), parse_mode=ParseMode.HTML
+                )
+                return
+            doc_id = await kb_repository.create_document(
+                db, profile_id, fname, doc.mime_type, doc.file_size, content_hash=content_hash
+            )
+            chunk_count = await rag_service.ingest(db, doc_id, profile_id, fname, data)
+        logger.info(
+            "kb_ingest: OK chat_id=%s profile=%s file=%r doc_id=%s chunks=%d",
+            chat_id, profile_id, fname, doc_id, chunk_count,
+        )
+        await sent.edit_text(
+            t(loc, "kb_ingested", filename=fname, chunks=chunk_count), parse_mode=ParseMode.HTML
+        )
+    except Exception as exc:
+        _tg_errors += 1
+        logger.warning("kb_ingest: FAILED chat_id=%s file=%r — %s", chat_id, fname, exc)
+        await sent.edit_text(t(loc, "kb_ingest_failed", error=str(exc)), parse_mode=ParseMode.HTML)
 
 
 def _extract_text_from_pdf(data: bytes) -> str:
@@ -1193,17 +1380,26 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     mime = doc.mime_type or ""
     fname = doc.file_name or "file"
 
-    if mime not in _SUPPORTED_MIME:
+    # Accept by MIME or by extension (Telegram tags .md/.markdown inconsistently).
+    if mime not in _SUPPORTED_MIME and not fname.lower().endswith(_SUPPORTED_EXT):
         await msg.reply_text(
             f"⚠ Formato non supportato: <code>{mime}</code>\n"
-            f"Formati accettati: PDF, TXT, DOCX",
+            f"Formati accettati: PDF, TXT, DOCX, MD",
             parse_mode=ParseMode.HTML,
         )
         return
 
     _tg_messages_received += 1
     chat_id = update.effective_chat.id
-    caption = (msg.caption or "").strip() or "Analizza il contenuto di questo documento."
+    raw_caption = (msg.caption or "").strip()
+
+    # Phase 21: a /kb caption ingests the file into the linked profile's KB
+    # instead of the one-shot context path.
+    if raw_caption.lower().split()[:1] == ["/kb"]:
+        await _ingest_document_to_kb(update, context, doc, fname)
+        return
+
+    caption = raw_caption or "Analizza il contenuto di questo documento."
     model = _models.get(chat_id, _default_model())
     logger.info("handle_document: chat_id=%s file=%s mime=%s model=%s", chat_id, fname, mime, model)
 
@@ -1489,6 +1685,16 @@ async def _load_memory_prefs() -> None:
         logger.exception("_load_memory_prefs: caricamento preferenze memoria fallito")
 
 
+async def _load_rag_prefs() -> None:
+    """Warm-start the per-chat RAG toggle cache from telegram_prefs at boot (Phase 21)."""
+    try:
+        _rag_prefs.update(await prefs_repo.load_all_rag())
+        if _rag_prefs:
+            logger.info("_load_rag_prefs: %d preferenze RAG caricate", len(_rag_prefs))
+    except Exception:
+        logger.exception("_load_rag_prefs: caricamento preferenze RAG fallito")
+
+
 async def _load_locales() -> None:
     """Warm-start the locale cache from telegram_prefs at boot."""
     try:
@@ -1526,6 +1732,8 @@ _BOT_COMMANDS = [
     BotCommand("reminders", "Mostra i promemoria in programma"),
     BotCommand("unremind", "Annulla un promemoria (/unremind <id>)"),
     BotCommand("memory", "Memoria personale (/memory on|off|list|del)"),
+    BotCommand("kb", "Knowledge base (/kb list|del; invia un file con didascalia /kb)"),
+    BotCommand("rag", "Attiva/disattiva la knowledge base (/rag on|off)"),
     BotCommand("lang", "Cambia lingua del bot / change bot language"),
     BotCommand("link", "Collega al profilo web"),
     BotCommand("unlink", "Scollega dal profilo web"),
@@ -1540,6 +1748,7 @@ async def _post_init(app: Application) -> None:
     await app.bot.set_my_commands(_BOT_COMMANDS)
     await _load_locales()
     await _load_memory_prefs()
+    await _load_rag_prefs()
     await _reload_reminders(app)
 
 
@@ -1573,6 +1782,8 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("reminders", cmd_reminders))
     app.add_handler(CommandHandler("unremind", cmd_unremind))
     app.add_handler(CommandHandler("memory", cmd_memory))
+    app.add_handler(CommandHandler("kb", cmd_kb))
+    app.add_handler(CommandHandler("rag", cmd_rag))
     app.add_handler(CommandHandler("lang", cmd_lang))
     app.add_handler(CommandHandler("link", cmd_link))
     app.add_handler(CommandHandler("unlink", cmd_unlink))

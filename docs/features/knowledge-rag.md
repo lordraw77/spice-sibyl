@@ -20,6 +20,8 @@
 
 **Per-conversation scoping.** Retrieval can be restricted to specific documents: `document_ids` on `/knowledge/search` and `rag_document_ids` on chat completions.
 
+**Also from Telegram.** Users with a linked profile (`/link`) can ingest documents (`/kb`), manage them (`/kb list|del`) and enable retrieval (`/rag on`) straight from the bot — see [Telegram bot](telegram.md#knowledge-base-rag).
+
 ## Hybrid search and reranking
 
 **What it does.** Retrieval fuses two arms:

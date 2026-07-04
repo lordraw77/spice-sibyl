@@ -146,17 +146,19 @@
   - `extract_document` ✓ — read a PDF/DOCX/TXT/MD from a URL using the existing extractors, without KB ingestion
   - `http_request` ✓ — generic HTTP call (GET/POST, sanitized headers, `HTTP_REQUEST_ALLOWED_DOMAINS` allowlist) with SSRF hardening (private/loopback IPs blocked — now applied to `read_url` too)
 
-## Phase 20 — Collaboration
+## Phase 20 — Collaboration ✓ (no 20.c)
 *Priority 5 — highest-value but gated on Phase 13 auth/accounts; sequenced last.*
 - **20.a — Shared workspaces** ✓ — team-scoped workspaces (`workspaces` + `workspace_members`) owned by a user, with role-based access (`owner` > `admin` > `editor` > `viewer`). Members are invited by email; conversations and knowledge base documents (owned by an individual profile) are *shared into* a workspace via join tables (`workspace_conversations` / `workspace_documents`), making them visible to every member. `GET/POST/PATCH/DELETE /v1/workspaces` + `/{ws}/members`, `/{ws}/conversations`, `/{ws}/documents`; sharing requires editor+ and ownership of the resource, membership management requires admin+, deletion is owner-only, and any member may self-leave. Web UI: "Workspace" page with a workspace list/create sidebar and a detail pane for members (invite/role/remove) and shared conversations/documents (builds on Phase 13 accounts and Phase 17 KB scoping)
 - **20.b — Annotations & comments** ✓ — threaded comments on shared conversations (`comments` table, `parent_id` threading, `message_id` for per-message anchoring; soft-deleted so replies keep their anchor). Access mirrors conversation reach — the owner or any member of a workspace it is shared into can read/post, while editing/deleting is restricted to the comment's author. `GET/POST/PATCH/DELETE /v1/conversations/{id}/comments`. Web UI: a collapsible threaded comment panel under each shared conversation in the Workspace page (post / reply / edit / delete own)
 - **20.c — Real-time collaboration** — multiple users in one conversation over WebSocket, with presence indicators and live-streaming of in-flight responses to all participants
 
-## Phase 21 — Telegram knowledge base
+## Phase 21 — Telegram knowledge base ✓ (a–c; 21.d folded into Phase 23.c)
 *Extends Phase 14/17 RAG to the Telegram channel; requires a linked web profile (`/link`).*
-- **21.a — `/kb` document ingestion** — send a PDF/TXT/DOCX/MD document with a `/kb` caption to ingest it into the linked profile's knowledge base (reusing `rag_service.ingest` — same extraction/chunking/embedding as web uploads); `/kb list` shows documents with status and chunk count, `/kb del <id>` removes one
-- **21.b — `/rag on|off`** — per-chat toggle (persisted in `telegram_prefs`, warm-cached at boot like the locale); when ON, `_stream_reply` retrieves top-k chunks via `rag_service.retrieve` and injects the context block into the last user message (mirroring `ChatService._apply_rag`), appending a 📚 sources footer to the reply
-- **21.c — Unlinked fallback** — all `/kb`/`/rag` commands prompt for `/link` when no web profile is linked; documents sent without the `/kb` caption keep the existing one-shot context behaviour
+- **21.a — `/kb` document ingestion** ✓ — send a PDF/TXT/DOCX/MD document with a `/kb` caption to ingest it into the linked profile's knowledge base (`_ingest_document_to_kb` → `kb_repository.create_document` + `rag_service.ingest`, same extraction/chunking/embedding as web uploads, with sha256 byte-hash duplicate detection); `/kb list` shows documents with a status icon (✅/⏳/⚠️), 🔗 for URL-sourced docs, and chunk count, `/kb del <id>` removes one by id prefix
+- **21.b — `/rag on|off`** ✓ — per-chat toggle (persisted in `telegram_prefs.rag`, OFF by default, warm-cached at boot via `_load_rag_prefs` like the locale); when ON, `_stream_reply` retrieves top-k chunks via `rag_service.retrieve` and folds `build_context_block` into the last user message (mirroring `ChatService._apply_rag`), appending a 📚 sources footer (deduped filenames) to the reply
+- **21.c — Unlinked fallback** ✓ — `/kb list|del`, `/rag on`, and `/kb`-captioned uploads prompt for `/link` when no web profile is linked; documents sent without the `/kb` caption keep the existing one-shot context behaviour
+- **21.d — cross notifications** — *folded into Phase 23.c* (Cross-channel notifications UI ↔ Telegram): a single event bridge covering web→Telegram (and Telegram→web) for linked users, rather than a separate one-directional path here
+
 
 ## Phase 22 — Internationalization (i18n)
 *Full UI localization across both channels: English, French, German, Italian, Spanish.*

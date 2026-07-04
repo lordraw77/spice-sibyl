@@ -43,13 +43,16 @@ MESSAGES: dict[str, dict[str, str]] = {
             "  /reminders — promemoria in programma\n"
             "  /unremind &lt;id&gt; — annulla un promemoria\n"
             "  /memory — memoria personale (on|off|list|del)\n"
+            "  /kb — knowledge base (list|del; file con didascalia /kb)\n"
+            "  /rag — attiva/disattiva la knowledge base (on|off)\n"
             "  /lang — cambia lingua del bot\n"
             "  /link — collega al profilo web\n"
             "  /unlink — scollega dal profilo web\n"
             "  /help — mostra l'elenco dei comandi\n\n"
             "📸 Invia una foto per usare la vision\n"
             "🎙️ Invia un vocale per trascriverlo e rispondere\n"
-            "📄 Invia un file PDF, TXT o DOCX per analizzarlo\n"
+            "📄 Invia un file PDF, TXT, DOCX o MD per analizzarlo\n"
+            "📚 Invia un file con didascalia <code>/kb</code> per aggiungerlo alla knowledge base\n"
             "✨ Usa <code>@botname query</code> in qualsiasi chat per risposte inline"
         ),
         "new_cleared": "✅ Conversazione azzerata.",
@@ -93,6 +96,36 @@ MESSAGES: dict[str, dict[str, str]] = {
         "memory_header": "🧠 <b>Ricordi del profilo:</b>\n",
         "memory_deleted": "✅ Ricordo dimenticato.",
         "memory_not_found": "⚠️ Nessun ricordo corrisponde a quell'id.",
+        "kb_usage": (
+            "Uso: <code>/kb list|del &lt;id&gt;</code>\n"
+            "  list — mostra i documenti della knowledge base\n"
+            "  del &lt;id&gt; — rimuovi un documento\n"
+            "Invia un file PDF/TXT/DOCX/MD con didascalia <code>/kb</code> per aggiungerlo."
+        ),
+        "kb_not_linked": (
+            "⚠️ Nessun profilo web collegato. Usa /link e incolla il codice "
+            "nella sidebar web per gestire la knowledge base."
+        ),
+        "kb_empty": "📚 Nessun documento nella knowledge base del profilo collegato.",
+        "kb_header": "📚 <b>Knowledge base del profilo:</b>\n",
+        "kb_deleted": "✅ Documento rimosso.",
+        "kb_not_found": "⚠️ Nessun documento corrisponde a quell'id.",
+        "kb_ingesting": "📚 Aggiunta alla knowledge base…",
+        "kb_ingested": "✅ <b>{filename}</b> aggiunto alla knowledge base ({chunks} frammenti).",
+        "kb_duplicate": "ℹ️ Documento già presente come <b>{filename}</b>.",
+        "kb_ingest_failed": "⚠️ Ingestione fallita: {error}",
+        "kb_del_usage": "Uso: <code>/kb del &lt;id&gt;</code>",
+        "rag_usage": (
+            "Uso: <code>/rag on|off</code>\n"
+            "  on/off — attiva/disattiva la knowledge base in questa chat"
+        ),
+        "rag_on": "📚 Knowledge base attivata per questa chat.",
+        "rag_off": "📚 Knowledge base disattivata per questa chat.",
+        "rag_not_linked": (
+            "⚠️ Nessun profilo web collegato. Usa /link e incolla il codice "
+            "nella sidebar web per usare la knowledge base."
+        ),
+        "rag_sources_header": "\n\n📚 Fonti: {sources}",
     },
     "en": {
         "access_denied": "⛔ Access not authorized.",
@@ -116,13 +149,16 @@ MESSAGES: dict[str, dict[str, str]] = {
             "  /reminders — scheduled reminders\n"
             "  /unremind &lt;id&gt; — cancel a reminder\n"
             "  /memory — personal memory (on|off|list|del)\n"
+            "  /kb — knowledge base (list|del; file with a /kb caption)\n"
+            "  /rag — toggle the knowledge base (on|off)\n"
             "  /lang — change the bot language\n"
             "  /link — link to web profile\n"
             "  /unlink — unlink from web profile\n"
             "  /help — show the command list\n\n"
             "📸 Send a photo to use vision\n"
             "🎙️ Send a voice message to transcribe and answer\n"
-            "📄 Send a PDF, TXT or DOCX file to analyze it\n"
+            "📄 Send a PDF, TXT, DOCX or MD file to analyze it\n"
+            "📚 Send a file with a <code>/kb</code> caption to add it to the knowledge base\n"
             "✨ Use <code>@botname query</code> in any chat for inline answers"
         ),
         "new_cleared": "✅ Conversation cleared.",
@@ -166,6 +202,36 @@ MESSAGES: dict[str, dict[str, str]] = {
         "memory_header": "🧠 <b>Profile memories:</b>\n",
         "memory_deleted": "✅ Memory forgotten.",
         "memory_not_found": "⚠️ No memory matches that id.",
+        "kb_usage": (
+            "Usage: <code>/kb list|del &lt;id&gt;</code>\n"
+            "  list — show the knowledge base documents\n"
+            "  del &lt;id&gt; — remove a document\n"
+            "Send a PDF/TXT/DOCX/MD file with a <code>/kb</code> caption to add it."
+        ),
+        "kb_not_linked": (
+            "⚠️ No web profile linked. Use /link and paste the code in the "
+            "web sidebar to manage the knowledge base."
+        ),
+        "kb_empty": "📚 No documents in the linked profile's knowledge base.",
+        "kb_header": "📚 <b>Profile knowledge base:</b>\n",
+        "kb_deleted": "✅ Document removed.",
+        "kb_not_found": "⚠️ No document matches that id.",
+        "kb_ingesting": "📚 Adding to the knowledge base…",
+        "kb_ingested": "✅ <b>{filename}</b> added to the knowledge base ({chunks} chunks).",
+        "kb_duplicate": "ℹ️ Document already present as <b>{filename}</b>.",
+        "kb_ingest_failed": "⚠️ Ingestion failed: {error}",
+        "kb_del_usage": "Usage: <code>/kb del &lt;id&gt;</code>",
+        "rag_usage": (
+            "Usage: <code>/rag on|off</code>\n"
+            "  on/off — enable/disable the knowledge base in this chat"
+        ),
+        "rag_on": "📚 Knowledge base enabled for this chat.",
+        "rag_off": "📚 Knowledge base disabled for this chat.",
+        "rag_not_linked": (
+            "⚠️ No web profile linked. Use /link and paste the code in the "
+            "web sidebar to use the knowledge base."
+        ),
+        "rag_sources_header": "\n\n📚 Sources: {sources}",
     },
 }
 

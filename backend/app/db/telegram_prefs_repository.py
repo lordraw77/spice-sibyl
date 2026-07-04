@@ -45,6 +45,34 @@ async def load_all_memory() -> dict[int, bool]:
         await db.close()
 
 
+async def load_all_rag() -> dict[int, bool]:
+    """Return all persisted chat_id → RAG-toggle mappings (Phase 21)."""
+    db = await _connect()
+    try:
+        async with db.execute("SELECT chat_id, rag FROM telegram_prefs") as cursor:
+            rows = await cursor.fetchall()
+        return {row["chat_id"]: bool(row["rag"]) for row in rows}
+    finally:
+        await db.close()
+
+
+async def set_rag(chat_id: int, enabled: bool) -> None:
+    """Persist the per-chat RAG toggle (/rag on|off)."""
+    now = int(time.time())
+    db = await _connect()
+    try:
+        await db.execute(
+            "INSERT INTO telegram_prefs (chat_id, locale, rag, updated_at) "
+            "VALUES (?, 'it', ?, ?) "
+            "ON CONFLICT(chat_id) DO UPDATE SET rag = excluded.rag, updated_at = excluded.updated_at",
+            (chat_id, int(enabled), now),
+        )
+        await db.commit()
+        logger.info("telegram_prefs: chat_id=%s rag=%s", chat_id, enabled)
+    finally:
+        await db.close()
+
+
 async def set_memory(chat_id: int, enabled: bool) -> None:
     """Persist the per-chat memory toggle (/memory on|off)."""
     now = int(time.time())
