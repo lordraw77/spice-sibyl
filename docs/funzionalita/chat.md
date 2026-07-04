@@ -1,6 +1,6 @@
 # Chat web
 
-La pagina principale della console. A sinistra la sidebar (profilo, conversazioni, modello, pannelli di configurazione), al centro la conversazione con composer in basso.
+La pagina principale della console. A sinistra una **sidebar leggera** con i soli controlli della chat corrente (profilo, **Modello**, **Sistema**, **Parametri**) e gli interruttori **ON/OFF** delle funzioni; al centro la conversazione con composer in basso. L'elenco delle conversazioni si apre come **pannello** dedicato (pulsante *Conversazioni* o `Ctrl+K`).
 
 ![Conversazione con telemetria](../screenshots/chat-conversazione.png)
 
@@ -9,10 +9,13 @@ La pagina principale della console. A sinistra la sidebar (profilo, conversazion
 **Cosa fa.** Ogni scambio è salvato in SQLite (per profilo) con telemetria completa: provider, latenza, tempo al primo token, token prompt/completion, velocità (tok/s) — visibile nel piè di pagina di ogni risposta. Le risposte arrivano in streaming via SSE.
 
 **Come si usa.**
-- **Nuova conversazione**: pulsante **+ Nuova** nella sidebar (o `Alt+N`).
-- **Selezione modello**: sezione **Modello** della sidebar — filtro per capacità (chat, vision, tools, free…), ricerca testuale, poi scelta dal menu. I badge sotto il selettore indicano provider, stato di configurazione e capacità.
+- **Nuova conversazione**: pulsante **+ Nuova** nella sidebar o nel pannello Conversazioni (o `Alt+N`).
+- **Aprire/selezionare una conversazione**: pulsante **Conversazioni** nella sidebar (o `Ctrl+K`) → si apre il **pannello** con ricerca, filtro per tag, selezione e cancellazione; alla selezione la conversazione viene caricata e il pannello si chiude.
+- **Selezione modello**: sezione **Modello** della sidebar — filtro per capacità (chat, vision, tools, free…), ricerca testuale, filtro **Provider visibili** (vedi sotto), poi scelta dal menu. I badge sotto il selettore indicano provider, stato di configurazione e capacità.
 - **Invio**: scrivi nel composer e premi invio; durante la generazione il pulsante di invio diventa **Stop** e interrompe lo stream.
-- **Eliminazione**: icona cestino sulla voce di conversazione nella sidebar.
+- **Eliminazione**: icona cestino sulla voce di conversazione, nel pannello Conversazioni.
+
+**Filtro provider visibili.** Sotto il selettore del modello, una fila di chip (una per provider abilitato) permette di scegliere **quali provider** mostrare nella scelta del modello; la preferenza è persistente. Per curare invece **quali singoli modelli** di un provider compaiono nel menu, usa la pagina [Providers](provider-e-modelli.md).
 
 **Indicatori di caricamento.** Una barra animata sotto la topbar mostra lo stato: ambra durante l'attesa del modello («In attesa del modello…»), blu durante l'esecuzione dei tool («Esecuzione tool…»), standard durante lo streaming («Generazione in corso…»).
 
@@ -37,7 +40,7 @@ Pulsanti a comparsa (hover) su ogni messaggio:
 ## System prompt, template e parametri
 
 - **Sistema** (sidebar): istruzioni di sistema persistenti (localStorage), con azioni salva/pulisci.
-- **Template** (sidebar): libreria di prompt di sistema riusabili («Code review», «ELI5»…). Applica con un click, salva il system prompt corrente come nuovo template, modifica/elimina i template esistenti.
+- **Template** (pagina dedicata `/templates`, voce **Risorse → Template** nella navbar): libreria di prompt di sistema riusabili («Code review», «ELI5»…). Crea/modifica/elimina i template e con **Applica** imposti il template come system prompt e torni alla chat.
 - **Parametri** (sidebar): slider **temperature** (0–2) e campo **max tokens**, inviati con ogni richiesta. Qui c'è anche l'opt-in alle notifiche di completamento (vedi [Interfaccia](interfaccia.md)).
 
 ## Tool calling in chat
@@ -53,19 +56,23 @@ Interruttore **Tool calling ON/OFF** in sidebar. Quando è attivo il modello pu�
 
 Pulsante 🎤 nel composer (Web Speech API): il pulsante pulsa durante l'ascolto e il testo trascritto finisce nel composer.
 
-## RAG in chat
+## Funzioni ON/OFF in chat
 
-Interruttore **RAG ON/OFF** nel pannello Knowledge base: quando attivo, i chunk più pertinenti vengono iniettati nel messaggio e le fonti compaiono come chip di citazione sotto la risposta. Dettagli in [Knowledge base e RAG](knowledge-rag.md).
+Nella sezione **Funzioni** della sidebar ci sono tre interruttori, ognuno con un link **Gestisci →** alla pagina dedicata:
+
+- **Tool calling ON/OFF** — abilita l'uso dei tool nel turno di chat (gestione su `/tools`).
+- **Knowledge (RAG) ON/OFF** — quando attivo, i chunk più pertinenti vengono iniettati nel messaggio e le fonti compaiono come chip di citazione sotto la risposta (documenti su `/knowledge`). Dettagli in [Knowledge base e RAG](knowledge-rag.md).
+- **Memoria ON/OFF** — ON = i ricordi del profilo vengono usati; OFF = chat in incognito (ricordi su `/memory`). Dettagli in [Memoria e personalizzazione](memoria-e-personalizzazione.md).
 
 ## Ricerca nelle conversazioni
 
 **Cosa fa.** Ricerca full-text (SQLite FTS5, indice sincronizzato via trigger) su tutte le conversazioni del profilo.
 
-**Come si usa.** Barra «Cerca nelle conversazioni…» in sidebar (scorciatoia `Ctrl+K`); i risultati compaiono inline con snippet evidenziati; `Escape` chiude. Endpoint: `GET /api/v1/conversations/search?q=...`.
+**Come si usa.** Apri il pannello **Conversazioni** (pulsante in sidebar o `Ctrl+K`) e usa la barra «Cerca nelle conversazioni…»; i risultati compaiono inline con snippet evidenziati; `Escape` cancella la ricerca. Endpoint: `GET /api/v1/conversations/search?q=...`.
 
 ## Organizzazione: tag
 
-Tag colorati assegnabili alle conversazioni tramite popover; barra filtri per tag in sidebar; sezione di gestione per creare/modificare/eliminare i tag.
+Tag colorati assegnabili alle conversazioni tramite popover, con **barra filtri per tag** nel pannello Conversazioni. La **gestione dei tag** (crea/modifica/elimina con scelta del colore) è nella pagina dedicata `/tags` (voce **Risorse → Tag** nella navbar).
 
 ## Export e condivisione
 

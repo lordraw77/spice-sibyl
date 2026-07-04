@@ -1,6 +1,6 @@
 # Web chat
 
-The console's main page. The sidebar on the left holds profile, conversations, model and configuration panels; the conversation sits in the middle with the composer at the bottom.
+The console's main page. On the left a **lightweight sidebar** with only the current-chat controls (profile, **Modello**, **Sistema**, **Parametri**) and the feature **ON/OFF switches**; the conversation sits in the middle with the composer at the bottom. The conversation list opens as a dedicated **panel** (the *Conversazioni* button or `Ctrl+K`).
 
 ![Conversation with telemetry](../screenshots/chat-conversazione.png)
 
@@ -9,10 +9,13 @@ The console's main page. The sidebar on the left holds profile, conversations, m
 **What it does.** Every exchange is stored in SQLite (per profile) with full telemetry: provider, latency, time to first token, prompt/completion tokens, speed (tok/s) — shown in the footer of each response. Responses stream in via SSE.
 
 **How to use it.**
-- **New conversation**: **+ Nuova** button in the sidebar (or `Alt+N`).
-- **Model selection**: **Modello** section of the sidebar — filter by capability (chat, vision, tools, free…), text search, then pick from the menu. Badges under the selector show provider, configuration status and capabilities.
+- **New conversation**: **+ Nuova** button in the sidebar or in the Conversations panel (or `Alt+N`).
+- **Open/select a conversation**: **Conversazioni** button in the sidebar (or `Ctrl+K`) → opens the **panel** with search, tag filtering, selection and deletion; picking one loads the conversation and closes the panel.
+- **Model selection**: **Modello** section of the sidebar — filter by capability (chat, vision, tools, free…), text search, a **visible-providers** filter (see below), then pick from the menu. Badges under the selector show provider, configuration status and capabilities.
 - **Send**: type in the composer and hit enter; while generating, the send button turns into **Stop** and aborts the stream.
-- **Delete**: trash icon on the conversation entry in the sidebar.
+- **Delete**: trash icon on the conversation entry, in the Conversations panel.
+
+**Visible-providers filter.** Below the model selector, a row of chips (one per enabled provider) lets you choose **which providers** appear in the model picker; the choice is persisted. To instead curate **which individual models** of a provider show up in the menu, use the [Providers](providers-and-models.md) page.
 
 **Loading indicators.** An animated bar below the topbar shows the current phase: amber while waiting for the model ("In attesa del modello…"), blue during tool execution ("Esecuzione tool…"), standard pace while streaming ("Generazione in corso…").
 
@@ -37,7 +40,7 @@ Hover-to-reveal buttons on every message:
 ## System prompt, templates and parameters
 
 - **Sistema** (sidebar): persistent system instructions (localStorage), with save/clear actions.
-- **Template** (sidebar): library of reusable system prompts ("Code review", "ELI5"…). Apply with one click, save the current system prompt as a new template, edit/delete existing ones.
+- **Template** (dedicated `/templates` page, **Risorse → Template** in the navbar): library of reusable system prompts ("Code review", "ELI5"…). Create/edit/delete templates; **Applica** (Apply) sets the template as the system prompt and returns you to the chat.
 - **Parametri** (sidebar): **temperature** slider (0–2) and **max tokens** field, sent with every request. The completion-notification opt-in also lives here (see [Interface](interface.md)).
 
 ## Tool calling in chat
@@ -53,19 +56,23 @@ Hover-to-reveal buttons on every message:
 
 🎤 button in the composer (Web Speech API): the button pulses while listening and the transcribed text lands in the composer.
 
-## RAG in chat
+## Feature ON/OFF switches in chat
 
-**RAG ON/OFF** switch in the Knowledge base panel: when enabled, the most relevant chunks are injected into the message and the sources appear as citation chips under the response. Details in [Knowledge base and RAG](knowledge-rag.md).
+The sidebar **Funzioni** (Features) section has three switches, each with a **Gestisci →** (Manage) link to its page:
+
+- **Tool calling ON/OFF** — enables tool use for the chat turn (management on `/tools`).
+- **Knowledge (RAG) ON/OFF** — when enabled, the most relevant chunks are injected into the message and the sources appear as citation chips under the response (documents on `/knowledge`). Details in [Knowledge base and RAG](knowledge-rag.md).
+- **Memoria ON/OFF** — ON = the profile's memories are used; OFF = incognito chat (memories on `/memory`). Details in [Memory and personalization](memory-and-personalization.md).
 
 ## Conversation search
 
 **What it does.** Full-text search (SQLite FTS5, index kept in sync via triggers) across all the profile's conversations.
 
-**How to use it.** "Cerca nelle conversazioni…" bar in the sidebar (`Ctrl+K` shortcut); results appear inline with highlighted snippets; `Escape` closes. Endpoint: `GET /api/v1/conversations/search?q=...`.
+**How to use it.** Open the **Conversations** panel (sidebar button or `Ctrl+K`) and use the "Cerca nelle conversazioni…" bar; results appear inline with highlighted snippets; `Escape` clears the search. Endpoint: `GET /api/v1/conversations/search?q=...`.
 
 ## Organization: tags
 
-Color-coded tags assignable to conversations via popover; tag filter bar in the sidebar; a management section to create/edit/delete tags.
+Color-coded tags assignable to conversations via popover, with a **tag filter bar** in the Conversations panel. **Tag management** (create/edit/delete with color choice) lives on the dedicated `/tags` page (**Risorse → Tag** in the navbar).
 
 ## Export and sharing
 

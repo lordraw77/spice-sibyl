@@ -301,7 +301,7 @@ Every chat exchange is automatically saved to SQLite after the stream completes:
 
 1. On the **first message** of a new chat, a conversation record is created (title = first 60 chars of the user message).
 2. After each stream, the user + assistant message pair is appended to the conversation.
-3. The conversation list in the sidebar updates immediately.
+3. The conversation list (the **Conversations panel**, opened from the sidebar button or `Ctrl+K`) updates immediately.
 4. Clicking a conversation loads its full message history including all telemetry fields.
 
 Conversations are **scoped to a profile** — switching profiles shows only that profile's history.
@@ -392,7 +392,7 @@ Enable tools in the chat sidebar with the tools toggle. When enabled, tool defin
 
 ## Knowledge base (RAG)
 
-Ground answers on your own documents. Upload PDF, TXT, DOCX or Markdown files (per profile) from the **Knowledge base** sidebar panel; the backend extracts text, splits it into overlapping chunks (≈800 chars / 120 overlap), embeds each chunk and stores the float32 vectors in SQLite (`kb_documents`, `kb_chunks`).
+Ground answers on your own documents. Upload PDF, TXT, DOCX or Markdown files (per profile) from the **Knowledge page** (`/knowledge`; the RAG ON/OFF toggle stays in the chat sidebar); the backend extracts text, splits it into overlapping chunks (≈800 chars / 120 overlap), embeds each chunk and stores the float32 vectors in SQLite (`kb_documents`, `kb_chunks`).
 
 **Pipeline**
 

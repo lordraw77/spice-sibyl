@@ -4,7 +4,7 @@
 
 **What it does.** With the **Tool calling ON** switch in the sidebar, the backend exposes the registered tools to the model and executes requested calls server-side, feeding results back to the model in a loop (max 5 iterations in chat, configurable via `CHAT_MAX_TOOL_ITERATIONS`; for longer loops see [workflows](mcp-and-agents.md#persistent-workflows)). Calls and results are streamed as SSE `tool_call` / `tool_result` events and rendered as dedicated bubbles in the conversation; pending calls show a spinner.
 
-**List of available tools:** `GET /api/v1/tools` (union of built-ins + the profile's custom tools + MCP).
+**List of available tools:** `GET /api/v1/tools` (union of built-ins + the profile's custom tools + MCP). The **Tool calling ON/OFF** switch lives in the sidebar **Funzioni** (Features) section; tool management and overview are on the **Tools** page (*Gestisci →* link).
 
 ## Built-in tools
 
@@ -39,6 +39,12 @@
 4. The enable toggle activates/deactivates the tool without deleting it.
 
 **Call semantics.** Arguments produced by the model are sent as the JSON body (POST/PUT/PATCH) or query string (GET); the response body is the tool result. API: CRUD + test under `/api/v1/tools/custom` (audited operations).
+
+## Available tools grouped by MCP server
+
+**What it does.** Below the custom-tools management, the **Tools** page lists **every tool exposed to the model** for the current profile, **grouped into a card per MCP server** (plus a *Built-in* and a *Custom* card).
+
+**How to use it.** Each card shows the **MCP server name** as its title, a badge with the tool count, and below it the **list of tools** (name without the `mcp__<server>__` prefix, plus its description). Handy to see at a glance what each connected MCP server provides. The **Aggiorna** (Refresh) button reloads the list.
 
 ## Sandboxed code interpreter (`python_exec`)
 

@@ -149,4 +149,37 @@
     </ul>
   </section>
 
+  <!-- Available tools grouped by MCP server -->
+  <header class="page-header section-gap">
+    <div>
+      <h2 class="section-title">Tool disponibili</h2>
+      <p class="subtitle">
+        Tutti i tool esposti al modello per il profilo corrente, raggruppati per
+        server MCP. Includono i tool built-in e i custom tool qui sopra.
+      </p>
+    </div>
+    <div class="head-actions">
+      <button class="btn-ghost" (click)="loadAvailableTools()" [disabled]="availableLoading()">Aggiorna</button>
+    </div>
+  </header>
+
+  <p class="muted" *ngIf="availableLoading()">Caricamento tool…</p>
+  <p class="muted" *ngIf="!availableLoading() && !toolGroups().length">Nessun tool disponibile.</p>
+
+  <div class="mcp-grid" *ngIf="!availableLoading() && toolGroups().length">
+    <section class="mcp-card" *ngFor="let group of toolGroups()">
+      <div class="mcp-card-head">
+        <span class="mcp-icon" [class.builtin]="!group.isMcp">{{ group.isMcp ? '🔌' : '⚙' }}</span>
+        <h3 class="mcp-name">{{ group.label }}</h3>
+        <span class="mcp-badge">{{ group.tools.length }}</span>
+      </div>
+      <ul class="mcp-tool-list">
+        <li *ngFor="let tool of group.tools" class="mcp-tool">
+          <span class="mcp-tool-name mono">{{ tool.name }}</span>
+          <span class="mcp-tool-desc" *ngIf="tool.description">{{ tool.description }}</span>
+        </li>
+      </ul>
+    </section>
+  </div>
+
 </div>

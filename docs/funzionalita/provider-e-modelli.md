@@ -9,10 +9,22 @@
 **Come si usa.**
 - **Add key / Update key**: inserisce o aggiorna la chiave API del provider. La chiave finisce nel **vault cifrato** (vedi sotto), non in un file di configurazione.
 - **Test**: `POST /providers/{id}/test` esegue una vera richiesta di completamento minimale verso il provider cloud (non un semplice controllo di presenza chiave) e riporta esito/latenza.
-- **Toggle**: abilita/disabilita il provider senza rimuovere la chiave.
-- **N models**: espande l'elenco dei modelli a catalogo per il provider.
+- **Toggle**: abilita/disabilita il provider **a livello globale**, senza rimuovere la chiave.
+- **N models**: espande l'elenco dei modelli a catalogo per il provider, con i controlli di visibilità (vedi sotto).
 
 Il riquadro in alto a destra riassume quanti provider sono configurati e il totale dei modelli disponibili.
+
+## Visibilità dei modelli nella scelta del modello
+
+**Cosa fa.** Alcuni provider espongono decine o centinaia di modelli, rendendo interminabile il menu di scelta in chat. Da qui puoi **curare quali modelli** compaiono nel selettore del modello, per provider.
+
+**Come si usa.** Espandi un provider (**N models**): ogni modello ha un'icona **occhio**:
+- 👁 **visibile** → compare nel menu della chat; click per nasconderlo.
+- 👁‍🗨 **barrato** → nascosto (riga in grigio); click per rimostrarlo.
+
+In cima alla lista: un contatore **«N visibili · M nascosti»** e i pulsanti **Mostra tutti / Nascondi tutti** per agire in blocco sul provider. Quando un provider ha modelli nascosti, sulla card compare un **badge «N nascosti»** sempre visibile (anche a lista chiusa). La scelta è **persistente** (preferenza `hiddenModels`) e i modelli nascosti vengono esclusi in tempo reale dal menu della chat.
+
+> **Due filtri distinti.** Questo è un filtro **per singolo modello**. Nella sidebar della chat, sotto **Modello**, c'è invece il filtro **Provider visibili** che agisce sull'intero provider. I due si combinano: prima escludi interi provider, poi rifinisci i singoli modelli. Entrambi sono personali e non toccano l'abilitazione globale del provider.
 
 ## Vault delle chiavi API
 

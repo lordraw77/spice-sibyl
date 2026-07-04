@@ -9,10 +9,22 @@
 **How to use it.**
 - **Add key / Update key**: stores or updates the provider's API key. The key goes into the **encrypted vault** (see below), not into a config file.
 - **Test**: `POST /providers/{id}/test` runs a real minimal completion request against the cloud provider (not just a key-presence check) and reports outcome/latency.
-- **Toggle**: enables/disables the provider without removing the key.
-- **N models**: expands the provider's model catalog.
+- **Toggle**: enables/disables the provider **globally**, without removing the key.
+- **N models**: expands the provider's model catalog, with the visibility controls (see below).
 
 The box at the top right summarizes how many providers are configured and the total number of available models.
+
+## Model visibility in the model picker
+
+**What it does.** Some providers expose dozens or hundreds of models, making the chat model menu endless. From here you can **curate which models** appear in the model selector, per provider.
+
+**How to use it.** Expand a provider (**N models**): each model has an **eye** icon:
+- 👁 **visible** → shows up in the chat menu; click to hide it.
+- 👁‍🗨 **crossed out** → hidden (dimmed row); click to show it again.
+
+At the top of the list: a **"N visible · M hidden"** counter and **Mostra tutti / Nascondi tutti** (Show all / Hide all) buttons to act on the whole provider at once. When a provider has hidden models, the card shows an always-visible **"N nascosti" (N hidden) badge** (even when the list is collapsed). The choice is **persisted** (`hiddenModels` preference) and hidden models are excluded from the chat menu in real time.
+
+> **Two distinct filters.** This is a **per-model** filter. In the chat sidebar, under **Modello**, there is instead the **visible-providers** filter that acts on a whole provider. The two combine: first exclude entire providers, then refine individual models. Both are personal and do not touch the provider's global enablement.
 
 ## API key vault
 

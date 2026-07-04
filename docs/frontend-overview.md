@@ -37,17 +37,17 @@ SpiceSibyl's frontend is an **Angular 18 single-page application** that provides
 
 **Voice input** — the composer includes a microphone button (visible when the browser supports the Web Speech API). Clicking it starts speech recognition with a visual pulse animation.
 
-**RAG / knowledge base** — "Knowledge base" sidebar panel with upload/list/delete/re-embed for documents; URL ingestion field for web pages; RAG ON/OFF toggle; citation chips under each grounded reply showing source filename and chunk index. Documents carry `source_type` (file/url) with a 🔗 indicator.
+**RAG / knowledge base** — dedicated `/knowledge` page (`KnowledgePageComponent`) with upload/list/delete/re-embed for documents and a URL ingestion field for web pages; the **RAG ON/OFF toggle** stays in the sidebar *Funzioni* section; citation chips under each grounded reply show source filename and chunk index. Documents carry `source_type` (file/url) with a 🔗 indicator.
 
-**Prompt templates** — saved and reusable system prompts; manage via sidebar panel; one-click apply; save current system prompt as a template.
+**Prompt templates** — dedicated `/templates` page (`TemplatesPageComponent`): saved and reusable system prompts; create/edit/delete; **Applica** sets one as the current system prompt and navigates back to the chat.
 
-**Conversation tags** — color-coded tags on conversations; tag filter bar in sidebar; tag manager section to create/edit/delete tags; assign tags to conversations via a popover.
+**Conversation tags** — color-coded tags on conversations; tag filter bar and per-conversation tag-assign popover live in the **Conversations picker overlay**; tag CRUD (create/edit/delete with color) is on the dedicated `/tags` page (`TagsPageComponent`).
 
 **Dark / light theme** — CSS custom properties system (`--bg-primary`, `--text-primary`, `--accent`, etc.); `ThemeService` with dark/light/system modes and per-user accent color picker (8 presets + color input); toggle in navbar; preference stored in `localStorage`.
 
 **Slash commands** — `/imagine`, `/new`, `/model`, `/export md`, `/export json`; autocomplete menu with keyboard navigation (↑/↓/Tab/Escape) appears as the user types `/`.
 
-**Conversation search** — a search bar in the chat sidebar sends debounced queries (300 ms) to `GET /conversations/search`. Results appear inline; pressing Escape clears the search.
+**Conversation search** — a search bar in the **Conversations picker overlay** (opened from the sidebar button or `Ctrl+K`) sends debounced queries (300 ms) to `GET /conversations/search`. Results appear inline; pressing Escape clears the search.
 
 **Model comparison** — the `/compare` page lets users select 2–4 models, send the same prompt, and stream responses in parallel side-by-side columns with per-model telemetry.
 
@@ -61,7 +61,7 @@ SpiceSibyl's frontend is an **Angular 18 single-page application** that provides
 
 **Onboarding flow** — custom first-run guided tour (`OnboardingComponent` + `OnboardingService`) with a spotlight overlay over `[data-tour]` targets; `spicesibyl_onboarded` flag in `localStorage`; replay button in the chat topbar.
 
-**User preferences** — `UserPreferencesService` persists sidebar section collapse state, selected model, temperature, max tokens, provider filters, capability filters, RAG and tools toggles across page reloads.
+**User preferences** — `UserPreferencesService` persists the remaining sidebar section collapse state (model/system/params), selected model, temperature, max tokens, the per-user **provider visibility filter** (`selectedProviders`) and **per-model hidden list** (`hiddenModels`), capability filter, and the RAG / tools / memory toggles across page reloads.
 
 **Per-message telemetry** — every assistant reply carries latency, time-to-first-token, token counts, throughput (tok/s), and estimated cost surfaced inline below each bubble.
 
@@ -84,13 +84,20 @@ src/app/
 │   ├── chat/          ChatPageComponent (+ ChatStateService for navigation-surviving state)
 │   ├── compare/       ComparePageComponent — side-by-side model comparison
 │   ├── discovery/     DiscoveryPageComponent — live model catalog
+│   ├── knowledge/     KnowledgePageComponent — RAG document management (v2.0)
 │   ├── mcp/           McpPageComponent — MCP server registry (admin-only)
+│   ├── memory/        MemoryPageComponent — persistent memory management (v2.0)
 │   ├── onboarding/    OnboardingComponent — guided first-run tour
 │   ├── ops/           OpsPageComponent — admin ops: health, metrics, backup, export/import
 │   ├── profile/       ProfileModalComponent — profile selector
-│   ├── providers/     ProvidersPageComponent
+│   ├── providers/     ProvidersPageComponent — providers + per-model visibility
 │   ├── shared/        SharedViewComponent — public read-only conversation view
-│   └── stats/         StatsPageComponent — usage dashboard + time-series charts
+│   ├── stats/         StatsPageComponent — usage dashboard + time-series charts
+│   ├── tags/          TagsPageComponent — tag CRUD (v2.0)
+│   ├── templates/     TemplatesPageComponent — prompt template CRUD (v2.0)
+│   ├── tools/         ToolsPageComponent — custom tools + MCP-grouped available tools
+│   ├── workflows/     WorkflowsPageComponent — persistent multi-step workflows
+│   └── workspaces/    WorkspacesPageComponent — shared workspaces & comments
 ├── layout/            NavbarComponent
 └── shared/
     ├── pipes/         UniqueValuesPipe
@@ -101,17 +108,28 @@ src/app/
 
 ```
 /                → redirect to /chat
-/login           → LoginComponent         (public)
-/chat            → ChatPageComponent      (authGuard)
-/compare         → ComparePageComponent   (authGuard)
-/discovery       → DiscoveryPageComponent (authGuard)
-/providers       → ProvidersPageComponent (authGuard)
-/stats           → StatsPageComponent     (authGuard)
-/ops             → OpsPageComponent       (authGuard + adminGuard)
-/mcp             → McpPageComponent       (authGuard + adminGuard)
-/shared/:token   → SharedViewComponent    (public)
+/login           → LoginComponent          (public)
+/chat            → ChatPageComponent        (authGuard)
+/discovery       → DiscoveryPageComponent   (authGuard)
+/providers       → ProvidersPageComponent   (authGuard)
+/stats           → StatsPageComponent       (authGuard)
+/compare         → ComparePageComponent     (authGuard)
+/tools           → ToolsPageComponent       (authGuard)
+/workflows       → WorkflowsPageComponent   (authGuard)
+/workspaces      → WorkspacesPageComponent  (authGuard)
+/templates       → TemplatesPageComponent   (authGuard)   ← v2.0
+/tags            → TagsPageComponent        (authGuard)   ← v2.0
+/knowledge       → KnowledgePageComponent   (authGuard)   ← v2.0
+/memory          → MemoryPageComponent      (authGuard)   ← v2.0
+/help            → HelpPageComponent        (authGuard)
+/info            → InfoPageComponent        (authGuard)
+/ops             → OpsPageComponent         (authGuard + adminGuard)
+/mcp             → McpPageComponent         (authGuard + adminGuard)
+/shared/:token   → SharedViewComponent      (public)
 **               → redirect to /chat
 ```
+
+Routes are surfaced through the **hierarchical navbar** (`NavbarComponent`): a declarative `NavItem[]` model renders macro-menus (Chat · Modelli · Tools · Risorse · Info) with click-to-open submenus, outside-click close, admin filtering and a mobile accordion.
 
 ## Technology choices
 

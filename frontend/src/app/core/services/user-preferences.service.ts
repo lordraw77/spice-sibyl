@@ -12,17 +12,15 @@ export interface UserPreferences {
   maxToolIterations: number;
   toolsEnabled: boolean;
   ragEnabled: boolean;
+  /** Model ids hidden from the chat model picker (curated per provider on /providers). */
+  hiddenModels: string[];
   /** Phase 19: false = incognito chat (no memory injection/extraction) */
   memoryEnabled: boolean;
   sidebarOpen: boolean;
   sectionsOpen: {
-    conversations: boolean;
     model: boolean;
-    provider: boolean;
     system: boolean;
     params: boolean;
-    knowledge: boolean;
-    memory: boolean;
   };
 }
 
@@ -36,16 +34,13 @@ const DEFAULTS: UserPreferences = {
   maxToolIterations: 5,
   toolsEnabled: false,
   ragEnabled: false,
+  hiddenModels: [],
   memoryEnabled: true,
   sidebarOpen: window.innerWidth >= 992,
   sectionsOpen: {
-    conversations: true,
     model: true,
-    provider: true,
     system: false,
     params: false,
-    knowledge: false,
-    memory: false,
   },
 };
 

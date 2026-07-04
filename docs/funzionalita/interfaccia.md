@@ -1,5 +1,26 @@
 # Interfaccia e UX
 
+## Navigazione (navbar)
+
+**Cosa fa.** La barra di navigazione in alto usa **menu gerarchici**: le voci sono raggruppate in macro-voci con sottomenu a discesa, così la navigazione resta ordinata anche con molte pagine.
+
+**Struttura.**
+
+| Macro-voce | Sottomenu |
+|------------|-----------|
+| **Chat** | (voce diretta) |
+| **Modelli** | Providers · Discovery · Compare · Stats |
+| **Tools** | Tools · Workflow · MCP *(admin)* · Workspace |
+| **Risorse** | Template · Tag · Knowledge · Memoria |
+| **Info** | Guida · Info · Ops *(admin)* |
+
+**Come si usa.**
+- **Click** sulla macro-voce per aprire il sottomenu; un click all'esterno lo chiude. La macro-voce è evidenziata quando una sua pagina è attiva.
+- Le voci riservate agli **admin** (MCP, Ops) compaiono solo con il ruolo adeguato; un gruppo senza voci visibili viene nascosto.
+- Su schermi stretti (< 576 px) la navbar collassa nel menu hamburger e i sottomenu diventano **accordion** inline.
+
+A destra restano il **picker del colore d'accento**, il **toggle tema** e il **chip utente** con logout.
+
 ## Tema scuro/chiaro e colore d'accento
 
 **Cosa fa.** Sistema di temi basato su CSS custom properties (`--bg-primary`, `--text-primary`, `--accent`, …) con modalità dark / light / system e colore d'accento personalizzabile.
@@ -20,7 +41,7 @@
 
 | Scorciatoia | Azione |
 |-------------|--------|
-| `Ctrl+K` | ricerca conversazioni (apre la sidebar e mette il focus sulla barra di ricerca) |
+| `Ctrl+K` | apre il **pannello Conversazioni** e mette il focus sulla barra di ricerca |
 | `Alt+N` | nuova chat |
 | `Ctrl+Shift+S` | mostra/nascondi la sidebar |
 

@@ -1,0 +1,58 @@
+<div class="page-shell">
+
+  <header class="page-header">
+    <div>
+      <h1>Memoria 🧠</h1>
+      <p class="subtitle">
+        Fatti su di te ricordati tra le conversazioni del profilo
+        <strong>{{ profileService.current()?.name || 'default' }}</strong> e usati per personalizzare le risposte.
+        Il toggle <strong>incognito ON/OFF</strong> resta nella sidebar della chat.
+      </p>
+    </div>
+    <div class="head-actions">
+      <button class="btn-ghost" (click)="load()" [disabled]="loading()">Aggiorna</button>
+      <button class="btn-danger" *ngIf="memories().length" (click)="forgetAll()">Dimentica tutto</button>
+    </div>
+  </header>
+
+  <!-- Settings + add -->
+  <section class="card">
+    <label class="switch-row">
+      <input type="checkbox" [checked]="memoryProfileEnabled()" (change)="toggleProfileMemory()" />
+      <span>Estrazione automatica dei ricordi (profilo)</span>
+    </label>
+
+    <div class="add-row">
+      <select class="text-input cat-select" [(ngModel)]="formCategory">
+        <option *ngFor="let c of categories" [value]="c">{{ categoryIcons[c] }} {{ c }}</option>
+      </select>
+      <input
+        type="text"
+        class="text-input"
+        placeholder="Aggiungi un ricordo…"
+        [(ngModel)]="formContent"
+        (keyup.enter)="add()" />
+      <button class="btn" (click)="add()" [disabled]="!formContent.trim()">Aggiungi</button>
+    </div>
+  </section>
+
+  <!-- Memory list -->
+  <ul class="item-list" *ngIf="memories().length; else empty">
+    <li *ngFor="let mem of memories()" class="item" [class.disabled-item]="!mem.enabled">
+      <div class="item-main mem-main">
+        <span class="mem-category" [title]="mem.category">{{ categoryIcons[mem.category] || '💡' }}</span>
+        <span class="mem-content" [title]="mem.content">{{ mem.content }}</span>
+      </div>
+      <div class="item-actions">
+        <button class="btn-ghost sm" (click)="toggleItem(mem)" [title]="mem.enabled ? 'Disattiva' : 'Attiva'">
+          {{ mem.enabled ? 'Attivo' : 'Disattivo' }}
+        </button>
+        <button class="btn-danger sm" (click)="delete(mem.id, $event)" title="Dimentica">Elimina</button>
+      </div>
+    </li>
+  </ul>
+  <ng-template #empty>
+    <p class="empty" *ngIf="!loading()">Nessun ricordo salvato.</p>
+  </ng-template>
+
+</div>

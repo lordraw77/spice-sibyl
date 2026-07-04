@@ -118,6 +118,12 @@
           </svg>
           {{ getModels(provider.id).length }} models
         </button>
+
+        <span class="hidden-badge" *ngIf="hiddenModelCount(provider.id) as h"
+              [title]="h + ' modelli nascosti dalla scelta del modello'">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          {{ h }} nascost{{ h === 1 ? 'o' : 'i' }}
+        </span>
       </div>
 
       <!-- Test result inline -->
@@ -131,7 +137,25 @@
 
       <!-- Expandable model list -->
       <div class="model-list" *ngIf="isExpanded(provider.id)">
-        <div class="model-row" *ngFor="let model of getModels(provider.id)">
+        <div class="model-list-head">
+          <span class="model-list-hint">
+            {{ visibleModelCount(provider.id) }} visibili nella scelta del modello<ng-container *ngIf="hiddenModelCount(provider.id) as h"> · <span class="hidden-count">{{ h }} nascost{{ h === 1 ? 'o' : 'i' }}</span></ng-container>
+          </span>
+          <div class="model-list-actions">
+            <button class="btn-mini" (click)="showAllModels(provider.id)">Mostra tutti</button>
+            <button class="btn-mini" (click)="hideAllModels(provider.id)">Nascondi tutti</button>
+          </div>
+        </div>
+        <div class="model-row" *ngFor="let model of getModels(provider.id)" [class.model-hidden]="isModelHidden(model.id)">
+          <button
+            class="model-vis-toggle"
+            (click)="toggleModelVisibility(model.id)"
+            [title]="isModelHidden(model.id) ? 'Nascosto — clicca per mostrare nella scelta del modello' : 'Visibile — clicca per nascondere'"
+            [attr.aria-pressed]="!isModelHidden(model.id)"
+          >
+            <svg *ngIf="!isModelHidden(model.id)" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg *ngIf="isModelHidden(model.id)" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
           <span class="model-label">{{ model.label || model.id }}</span>
           <div class="model-caps">
             <span class="cap-chip free" *ngIf="model.free">free</span>

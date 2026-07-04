@@ -7,9 +7,8 @@ Phase 19 features: per-profile persistent memory, automatic titles, response cac
 **What it does.** SpiceSibyl remembers facts about you across conversations (preferences, personal facts, ongoing projects, standing instructions). After each persisted exchange, an async low-cost LLM call (`MEMORY_EXTRACTION_MODEL`, default = `DEFAULT_MODEL`) extracts noteworthy information and consolidates it into the `profile_memories` table (automatic dedup, capped at `MEMORY_MAX_ITEMS` memories). When memory is on, enabled memories are compacted into a `<user_memory>` block appended to the system prompt (`MEMORY_MAX_CHARS` character budget, most recent first).
 
 **How to use it.**
-- Open the **Memoria 🧠** section in the chat sidebar: memory list with category (⭐ preference, 💡 fact, 📁 project, 📌 instruction), manual add, per-memory enable/disable or delete, **Forget all**.
-- The **ON/OFF** toggle next to the section title is the *per-chat* (incognito) switch: when OFF, new requests neither use nor feed memory.
-- The **automatic memory extraction (profile)** checkbox is the *profile-level* switch: when OFF there is no extraction and no injection for the whole profile.
+- Dedicated **Memoria 🧠** page (`/memory`, **Risorse → Memoria** in the navbar, or the *Gestisci →* link next to the Memory switch in the sidebar): memory list with category (⭐ preference, 💡 fact, 📁 project, 📌 instruction), manual add with category choice, per-memory enable/disable or delete, **Forget all**. The **automatic memory extraction (profile)** checkbox — the *profile-level* switch (when OFF there is no extraction and no injection for the whole profile) — also lives here.
+- The **Memoria ON/OFF** toggle in the sidebar **Funzioni** section is the *per-chat* (incognito) switch: when OFF, new requests neither use nor feed memory.
 - Replies personalized with memory show the **🧠 memoria** chip under the message.
 
 **From Telegram.** `/memory on|off` toggles memory in the current chat (persisted in `telegram_prefs`); `/memory list` shows the memories of the web profile linked via `/link`; `/memory del <id>` forgets one. Injection and extraction only work for linked users.
@@ -27,7 +26,7 @@ API: `GET/POST /v1/memories`, `PATCH/DELETE /v1/memories/{id}`, `DELETE /v1/memo
 
 ## Automatic titles (LLM auto-titling)
 
-**What it does.** After a conversation's first persisted exchange, a background task generates a concise title (max 6 words, in the conversation's language) replacing the old "first 60 chars of the first message" heuristic. The sidebar list refreshes on its own a few seconds later.
+**What it does.** After a conversation's first persisted exchange, a background task generates a concise title (max 6 words, in the conversation's language) replacing the old "first 60 chars of the first message" heuristic. The conversation list (Conversations panel) refreshes on its own a few seconds later.
 
 **Configuration.** `AUTO_TITLE_ENABLED` (default `true`), `TITLE_MODEL` (empty = `MEMORY_EXTRACTION_MODEL`, then `DEFAULT_MODEL`).
 

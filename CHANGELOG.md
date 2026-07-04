@@ -5,6 +5,23 @@ correspond to the project's git tags.
 
 ---
 
+## [2.0.0] — 2026-07-04
+
+### Changed — Web UI 2.0: navigation & sidebar overhaul
+- **Hierarchical navbar** — the flat 12-item navbar became macro-menus with click-to-open submenus: **Chat**, **Modelli** (Providers, Discovery, Compare, Stats), **Tools** (Tools, Workflow, MCP, Workspace), **Risorse** (Template, Tag, Knowledge, Memoria), **Info** (Guida, Info, Ops). Outside-click close, admin-only items hidden when not admin, empty groups hidden, accordion behaviour on mobile
+- **Lighter chat sidebar** — now keeps only the per-chat runtime controls (**Modello**, **Sistema**, **Parametri**) plus the **ON/OFF switches** (Tool calling, Knowledge/RAG, Memoria) each with a "Gestisci →" link to its page. The Conversations list became a **picker overlay** (button + `Ctrl+K`) with search, tag filtering, selection and deletion
+- **Management panels promoted to pages** — Template → `/templates`, Tag → `/tags`, Knowledge base → `/knowledge`, Memoria → `/memory` (new routed standalone components reusing the existing `TemplateService` / `TagService` / `KnowledgeService` / `MemoryService`); the sidebar Provider and Tool-list panels were consolidated into the existing `/providers` and `/tools` pages
+
+### Added
+- **Provider visibility filter** — in the sidebar **Modello** section, a compact chip filter picks which providers' models appear in the model picker (persisted `selectedProviders`, feeds `filteredModels`)
+- **Per-model visibility curation** — on the **Providers** page each provider's model list has a per-model show/hide eye toggle plus per-provider **Mostra tutti / Nascondi tutti**, a visible/hidden counter and an always-visible "N nascosti" badge on the card. Hidden models are excluded from the chat model picker (persisted `hiddenModels`) — fixes the endless scroll on providers with many models
+- **Available tools grouped by MCP server** — the `/tools` page now lists every tool exposed to the model, grouped into a card per MCP server (plus Built-in / Custom), each showing the tool names and descriptions
+
+### Removed
+- The Provider / Templates / Tags / Knowledge-list / Memory-list panels were removed from the chat sidebar (moved to dedicated pages); dead component state, methods and preferences were cleaned up (`UserPreferences.sectionsOpen` reduced to `model` / `system` / `params`; new `hiddenModels` preference added)
+
+---
+
 ## [1.9.0] — 2026-07-03
 
 ### Added — Phase 19: Personalization & quality

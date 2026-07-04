@@ -1,5 +1,26 @@
 # Interface and UX
 
+## Navigation (navbar)
+
+**What it does.** The top navigation bar uses **hierarchical menus**: items are grouped into macro-entries with dropdown submenus, so navigation stays tidy even with many pages.
+
+**Structure.**
+
+| Macro-entry | Submenu |
+|-------------|---------|
+| **Chat** | (direct link) |
+| **Modelli** (Models) | Providers · Discovery · Compare · Stats |
+| **Tools** | Tools · Workflow · MCP *(admin)* · Workspace |
+| **Risorse** (Resources) | Template · Tag · Knowledge · Memoria |
+| **Info** | Guida (Help) · Info · Ops *(admin)* |
+
+**How to use it.**
+- **Click** a macro-entry to open its submenu; a click outside closes it. The macro-entry is highlighted while one of its pages is active.
+- **Admin-only** items (MCP, Ops) appear only with the proper role; a group with no visible items is hidden.
+- On narrow screens (< 576 px) the navbar collapses into a hamburger menu and submenus become inline **accordions**.
+
+On the right sit the **accent-color picker**, the **theme toggle** and the **user chip** with logout.
+
 ## Dark/light theme and accent color
 
 **What it does.** A theming system based on CSS custom properties (`--bg-primary`, `--text-primary`, `--accent`, …) with dark / light / system modes and a customizable accent color.
@@ -20,7 +41,7 @@
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+K` | conversation search (opens the sidebar and focuses the search bar) |
+| `Ctrl+K` | opens the **Conversations panel** and focuses the search bar |
 | `Alt+N` | new chat |
 | `Ctrl+Shift+S` | toggle the sidebar |
 

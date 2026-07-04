@@ -4,19 +4,19 @@
 
 **Cosa fa.** Carica documenti (PDF, TXT, DOCX, Markdown) in una knowledge base per profilo. Il testo viene estratto, suddiviso in chunk (800 caratteri, overlap 120), trasformato in embedding tramite la catena di fallback `EMBEDDING_CHAIN` (default: Ollama `nomic-embed-text` → Gemini → Mistral) e salvato come vettori float32 BLOB in SQLite (`kb_documents` / `kb_chunks`).
 
-**Come si usa.** Pannello **Knowledge base** nella sidebar della chat: carica un file, consulta l'elenco dei documenti, elimina quelli non più utili. API: `GET/POST/DELETE /v1/knowledge/documents`, `POST /v1/knowledge/search`.
+**Come si usa.** Pagina dedicata **Knowledge** (`/knowledge`, voce **Risorse → Knowledge** nella navbar, o link *Gestisci →* accanto all'interruttore RAG in sidebar): carica uno o più file, consulta l'elenco dei documenti, re-indicizza o elimina quelli non più utili. API: `GET/POST/DELETE /v1/knowledge/documents`, `POST /v1/knowledge/search`.
 
 ## Ingestione da URL
 
 **Cosa fa.** `POST /v1/knowledge/urls` scarica una pagina web (estrazione full-text dell'HTML, stesso approccio del tool `read_url`) e la indicizza come un upload. I documenti da web portano `source_type`/`source_url` e sono contrassegnati 🔗 nella UI.
 
-**Come si usa.** Campo URL nel pannello Knowledge della sidebar → invio → il documento compare in lista.
+**Come si usa.** Campo URL nella pagina Knowledge → invio → il documento compare in lista.
 
 ## RAG in conversazione
 
 **Cosa fa.** Con il toggle **RAG ON**, a ogni domanda i chunk più pertinenti (top-k) vengono ripiegati nell'ultimo messaggio utente prima dell'invio al modello; le fonti tornano al client come frame SSE `rag_context` e compaiono come **chip di citazione** sotto la risposta.
 
-**Come si usa.** Attiva il toggle RAG nel pannello Knowledge; fai domande normalmente. Cliccando una citazione si risale al passaggio esatto del documento (ogni chunk memorizza gli offset `char_start`/`char_end` nel testo sorgente, esposto da `GET /v1/knowledge/documents/{id}/source`).
+**Come si usa.** Attiva il toggle **Knowledge (RAG)** nella sezione **Funzioni** della sidebar; fai domande normalmente. Cliccando una citazione si risale al passaggio esatto del documento (ogni chunk memorizza gli offset `char_start`/`char_end` nel testo sorgente, esposto da `GET /v1/knowledge/documents/{id}/source`).
 
 **Scoping per conversazione.** È possibile limitare il retrieval a documenti specifici: `document_ids` su `/knowledge/search` e `rag_document_ids` sulle chat completions.
 

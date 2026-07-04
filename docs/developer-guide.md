@@ -743,7 +743,7 @@ HTTP client for `/admin/*` endpoints (backup, restore, export, import) and `/rea
 Manages dark/light/system theme via `[data-theme]` on `<html>`; stores preference in `localStorage`. `setAccent(color)` updates all `--accent-*` CSS custom properties dynamically.
 
 #### UserPreferencesService
-Persists sidebar section state, selected model, temperature, max tokens, provider filters, capability filter, RAG toggle, tools toggle, and sidebar open state across reloads.
+Persists the remaining sidebar section collapse state (`sectionsOpen`: model/system/params), selected model, temperature, max tokens, the provider visibility filter (`selectedProviders`), the per-model hidden list (`hiddenModels`), capability filter, the RAG / tools / memory toggles, and the sidebar open state across reloads.
 
 #### ChatStateService
 Singleton service (not destroyed on navigation) that holds `messages` signal, `loading` signal, `streaming` signal, and `currentConversationId`. Prevents the chat from resetting when the user navigates to `/stats` and back.

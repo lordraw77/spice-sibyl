@@ -41,116 +41,16 @@
         </ng-template>
       </div>
 
-      <!-- Conversations -->
-      <div class="sidebar-section">
-        <div class="section-header">
-          <button class="section-collapse-btn" (click)="toggleConversations()" [attr.aria-expanded]="conversationsOpen()">
-            <span class="section-label">Conversazioni</span>
-            <svg class="section-chevron" [class.open]="conversationsOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-          <button class="btn-new-chat" (click)="newConversation()" title="Nuova chat">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Nuova
-          </button>
-        </div>
-
-        <ng-container *ngIf="conversationsOpen()">
-          <!-- Search bar -->
-          <div class="search-bar">
-            <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input
-              #searchInput
-              class="search-input"
-              type="text"
-              placeholder="Cerca nelle conversazioni… (Ctrl+K)"
-              [value]="searchQuery()"
-              (input)="onSearchInput($any($event.target).value)"
-              (keydown.escape)="clearSearch()"
-            />
-            <button class="search-clear" *ngIf="searchQuery()" (click)="clearSearch()" title="Cancella">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          </div>
-
-          <!-- Tag filter chips -->
-          <div class="tag-filter-bar" *ngIf="tags().length">
-            <button class="tag-filter-chip" [class.active]="!selectedTagFilter()" (click)="setTagFilter(null)">Tutte</button>
-            <button
-              *ngFor="let tag of tags()"
-              class="tag-filter-chip"
-              [class.active]="selectedTagFilter() === tag.id"
-              [style.border-color]="tag.color"
-              [style.color]="selectedTagFilter() === tag.id ? tag.color : ''"
-              (click)="setTagFilter(tag.id)"
-            >{{ tag.name }}</button>
-          </div>
-
-          <!-- Search results -->
-          <ng-container *ngIf="searchQuery(); else normalList">
-            <div class="search-spinner" *ngIf="isSearching()">
-              <span class="dot-spin-sm"></span>
-            </div>
-            <ul class="conversation-list" *ngIf="!isSearching() && searchResults().length">
-              <li
-                *ngFor="let r of searchResults()"
-                class="conversation-item search-result-item"
-                [class.active]="r.id === currentConversationId"
-                (click)="selectSearchResult(r)"
-              >
-                <span class="conv-title">{{ r.title }}</span>
-                <span class="conv-snippet">{{ r.snippet }}</span>
-              </li>
-            </ul>
-            <p class="no-convs" *ngIf="!isSearching() && !searchResults().length">
-              Nessun risultato.
-            </p>
-          </ng-container>
-
-          <!-- Normal conversation list -->
-          <ng-template #normalList>
-            <ul class="conversation-list" *ngIf="filteredConversations().length; else noConvs">
-              <li
-                *ngFor="let conv of filteredConversations()"
-                class="conversation-item"
-                [class.active]="conv.id === currentConversationId"
-                (click)="selectConversation(conv.id)"
-              >
-                <div class="conv-title-row">
-                  <span class="conv-tags-dots" *ngIf="conv.tags?.length">
-                    <span *ngFor="let t of conv.tags" class="conv-tag-dot" [style.background]="t.color" [title]="t.name"></span>
-                  </span>
-                  <span class="conv-title">{{ conv.title }}</span>
-                </div>
-                <div class="conv-actions">
-                  <button class="conv-action-btn" (click)="openTagAssign(conv.id, $event)" title="Tag">
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-                  </button>
-                  <button class="conv-delete" (click)="deleteConversation(conv.id, $event)" title="Elimina">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  </button>
-                </div>
-              </li>
-            </ul>
-            <ng-template #noConvs>
-              <p class="no-convs">Nessuna conversazione salvata.</p>
-            </ng-template>
-          </ng-template>
-
-          <!-- Tag assign popover (fixed position, outside list overflow) -->
-          <div class="tag-assign-popover" *ngIf="tagAssignConvId" [ngStyle]="tagPopoverStyle" (click)="$event.stopPropagation()">
-            <button
-              *ngFor="let tag of tags()"
-              class="tag-assign-item"
-              [class.selected]="convHasTag(tagAssignConvId, tag.id)"
-              (click)="toggleConversationTag(tagAssignConvId, tag.id)"
-            >
-              <span class="tag-assign-dot" [style.background]="tag.color"></span>
-              {{ tag.name }}
-              <span class="tag-assign-check" *ngIf="convHasTag(tagAssignConvId, tag.id)">&#10003;</span>
-            </button>
-            <p class="no-convs" *ngIf="!tags().length" style="padding: .3rem .5rem">Nessun tag creato.</p>
-          </div>
-        </ng-container>
+      <!-- Conversations: quick actions (full list opens in the picker overlay) -->
+      <div class="conv-actions-row">
+        <button class="conv-open-btn" (click)="openConvPicker()" title="Apri elenco conversazioni">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Conversazioni
+        </button>
+        <button class="btn-new-chat" (click)="newConversation()" title="Nuova chat">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Nuova
+        </button>
       </div>
 
       <!-- Model -->
@@ -183,6 +83,28 @@
             <span class="badge-chip free" *ngIf="selected.free">free</span>
             <span class="badge-chip" *ngFor="let capability of selected.capabilities || []">{{ capability }}</span>
           </div>
+
+          <!-- Provider filter: which providers' models appear in the picker -->
+          <div class="provider-filter" *ngIf="selectableProviders().length">
+            <div class="provider-filter-head">
+              <span class="provider-filter-label">Provider visibili</span>
+              <button class="provider-filter-all" (click)="setAllProviders(true)">Tutti</button>
+            </div>
+            <div class="provider-chips">
+              <button
+                *ngFor="let p of selectableProviders()"
+                type="button"
+                class="provider-chip"
+                [class.on]="isProviderSelected(p.id)"
+                (click)="toggleProvider(p.id)"
+                [title]="p.label + ' — ' + p.model_count + ' modelli'"
+              >
+                <span class="provider-chip-check">{{ isProviderSelected(p.id) ? '✓' : '○' }}</span>
+                {{ p.label }}
+                <span class="provider-chip-count">{{ p.model_count }}</span>
+              </button>
+            </div>
+          </div>
         </ng-container>
       </div>
 
@@ -205,54 +127,6 @@
             <button class="btn-system-save" (click)="saveSystemPrompt()" [disabled]="!systemPrompt.trim()">Salva</button>
             <button class="btn-system-clear" (click)="clearSystemPrompt()" [disabled]="!systemPrompt">Cancella</button>
           </div>
-        </ng-container>
-      </div>
-
-      <!-- Prompt Templates -->
-      <div class="sidebar-section">
-        <div class="section-header">
-          <button class="section-collapse-btn" (click)="toggleTemplates()" [attr.aria-expanded]="templatesOpen()">
-            <span class="section-label">Template</span>
-            <svg class="section-chevron" [class.open]="templatesOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-          <button class="btn-new-chat" (click)="showTemplateForm()" title="Nuovo template" *ngIf="templatesOpen()">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          </button>
-        </div>
-        <ng-container *ngIf="templatesOpen()">
-          <!-- Save current system prompt as template -->
-          <button class="btn-save-as-template" *ngIf="systemPrompt.trim() && !templateFormVisible" (click)="saveTemplateFromCurrent()">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-            Salva prompt corrente come template
-          </button>
-
-          <!-- Template create/edit form -->
-          <div class="template-form" *ngIf="templateFormVisible">
-            <input class="template-form-input" type="text" placeholder="Nome template" [(ngModel)]="templateFormName" />
-            <textarea class="system-textarea" rows="3" placeholder="Contenuto del template…" [(ngModel)]="templateFormContent"></textarea>
-            <div class="system-actions">
-              <button class="btn-system-save" (click)="saveTemplate()" [disabled]="!templateFormName.trim() || !templateFormContent.trim()">
-                {{ templateEditId ? 'Aggiorna' : 'Salva' }}
-              </button>
-              <button class="btn-system-clear" (click)="cancelTemplateForm()">Annulla</button>
-            </div>
-          </div>
-
-          <!-- Template list -->
-          <ul class="template-list" *ngIf="templates().length && !templateFormVisible">
-            <li *ngFor="let t of templates()" class="template-item" (click)="applyTemplate(t)" title="Clicca per applicare">
-              <span class="template-name">{{ t.name }}</span>
-              <div class="template-actions">
-                <button class="conv-action-btn" (click)="showTemplateForm(t); $event.stopPropagation()" title="Modifica">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                </button>
-                <button class="conv-delete" (click)="deleteTemplate(t.id, $event)" title="Elimina">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-              </div>
-            </li>
-          </ul>
-          <p class="no-convs" *ngIf="!templates().length && !templateFormVisible">Nessun template salvato.</p>
         </ng-container>
       </div>
 
@@ -286,232 +160,152 @@
         </ng-container>
       </div>
 
-      <!-- Tools -->
-      <div class="sidebar-section" *ngIf="availableTools().length" data-tour="tools">
+      <!-- Feature switches (ON/OFF). Management lives in dedicated pages. -->
+      <div class="sidebar-section" data-tour="tools">
         <div class="section-header">
-          <span class="section-label">Tool calling</span>
+          <span class="section-label">Funzioni</span>
+        </div>
+
+        <div class="switch-row" *ngIf="availableTools().length">
           <button class="tools-toggle" [class.enabled]="toolsEnabled()" (click)="toggleTools()" title="Abilita / disabilita tool">
             {{ toolsEnabled() ? 'ON' : 'OFF' }}
           </button>
+          <span class="switch-name">Tool calling</span>
+          <a class="manage-link" routerLink="/tools" title="Gestisci i tool">Gestisci →</a>
         </div>
-        <ul class="tools-list" *ngIf="toolsEnabled()">
-          <li *ngFor="let group of mcpToolGroups()" class="tool-group">
-            <button class="tool-group-header" (click)="toggleMcpGroup(group.name)">
-              <svg class="tool-group-chevron" [class.open]="isMcpGroupExpanded(group.name)" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-              <span class="tool-icon">⚙</span>
-              <span class="tool-group-name">{{ group.name === '__builtin__' ? 'built-in' : group.name }}</span>
-              <span class="tool-group-count" *ngIf="!isMcpGroupExpanded(group.name)">{{ group.tools.length }}</span>
-            </button>
-            <ul class="tool-group-children" *ngIf="isMcpGroupExpanded(group.name)">
-              <li *ngFor="let t of group.tools" class="tool-item">
-                <span class="tool-name">{{ t.function.name.replace('mcp__' + group.name + '__', '') }}</span>
-              </li>
-            </ul>
-          </li>
-        </ul>
-      </div>
 
-      <!-- Knowledge base (RAG) -->
-      <div class="sidebar-section">
-        <div class="section-header">
-          <button class="section-collapse-btn" (click)="toggleKnowledge()" [attr.aria-expanded]="knowledgeOpen()">
-            <span class="section-label">Knowledge base</span>
-            <svg class="section-chevron" [class.open]="knowledgeOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
+        <div class="switch-row">
           <button class="tools-toggle" [class.enabled]="ragEnabled()" (click)="toggleRag()" title="Abilita / disabilita RAG">
             {{ ragEnabled() ? 'ON' : 'OFF' }}
           </button>
+          <span class="switch-name">Knowledge (RAG)</span>
+          <a class="manage-link" routerLink="/knowledge" title="Gestisci la knowledge base">Gestisci →</a>
         </div>
-        <ng-container *ngIf="knowledgeOpen()">
-          <p class="kb-hint">I documenti caricati vengono indicizzati e usati come contesto quando il RAG è attivo.</p>
 
-          <!-- Upload -->
-          <label class="btn-save-as-template kb-upload" [class.disabled]="kbUploading()">
-            <svg *ngIf="!kbUploading()" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            {{ kbUploading() ? 'Caricamento…' : 'Carica documenti' }}
-            <input type="file" multiple accept=".pdf,.txt,.md,.markdown,.docx" (change)="onKbFileSelected($event)" hidden [disabled]="kbUploading()" />
-          </label>
-
-          <!-- URL ingestion (Phase 17) -->
-          <div class="kb-url-row">
-            <input
-              type="url"
-              class="kb-url-input"
-              placeholder="https://esempio.com/articolo"
-              [value]="kbUrl()"
-              (input)="kbUrl.set($any($event.target).value)"
-              (keyup.enter)="ingestKbUrl()"
-              [disabled]="kbUploading()" />
-            <button class="kb-url-btn" (click)="ingestKbUrl()" [disabled]="kbUploading() || !kbUrl().trim()" title="Indicizza pagina web">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-            </button>
-          </div>
-
-          <!-- Document list -->
-          <ul class="kb-list" *ngIf="kbDocuments().length">
-            <li *ngFor="let doc of kbDocuments()" class="kb-item">
-              <span class="kb-status" [class.ready]="doc.status === 'ready'" [class.pending]="doc.status === 'pending'" [class.error]="doc.status === 'error'" [title]="doc.error || doc.status"></span>
-              <span class="kb-name" [title]="doc.source_url || doc.filename">
-                <span *ngIf="doc.source_type === 'url'" class="kb-url-tag" title="Pagina web">🔗</span>{{ doc.filename }}
-              </span>
-              <span class="kb-chunks" *ngIf="doc.status === 'ready'">{{ doc.chunk_count }}</span>
-              <button class="conv-delete" (click)="reEmbedKbDocument(doc.id, $event)" title="Re-embed (re-indicizza)">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-              </button>
-              <button class="conv-delete" (click)="deleteKbDocument(doc.id, $event)" title="Elimina">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </li>
-          </ul>
-          <p class="no-convs" *ngIf="!kbDocuments().length">Nessun documento caricato.</p>
-        </ng-container>
-      </div>
-
-      <!-- Memory (Phase 19) -->
-      <div class="sidebar-section">
-        <div class="section-header">
-          <button class="section-collapse-btn" (click)="toggleMemorySection()" [attr.aria-expanded]="memoryOpen()">
-            <span class="section-label">Memoria 🧠</span>
-            <svg class="section-chevron" [class.open]="memoryOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
+        <div class="switch-row">
           <button class="tools-toggle" [class.enabled]="memoryEnabled()" (click)="toggleMemory()" title="ON = ricordi usati nelle risposte; OFF = chat in incognito">
             {{ memoryEnabled() ? 'ON' : 'OFF' }}
           </button>
+          <span class="switch-name">Memoria</span>
+          <a class="manage-link" routerLink="/memory" title="Gestisci la memoria">Gestisci →</a>
         </div>
-        <ng-container *ngIf="memoryOpen()">
-          <p class="kb-hint">I fatti su di te vengono ricordati tra le conversazioni e usati per personalizzare le risposte.</p>
-
-          <label class="memory-profile-toggle">
-            <input type="checkbox" [checked]="memoryProfileEnabled()" (change)="toggleMemoryProfile()" />
-            Estrazione automatica dei ricordi (profilo)
-          </label>
-
-          <!-- Manual add -->
-          <div class="kb-url-row">
-            <input
-              type="text"
-              class="kb-url-input"
-              placeholder="Aggiungi un ricordo…"
-              [(ngModel)]="memoryFormContent"
-              (keyup.enter)="addMemory()" />
-            <button class="kb-url-btn" (click)="addMemory()" [disabled]="!memoryFormContent.trim()" title="Salva ricordo">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            </button>
-          </div>
-
-          <!-- Memory list -->
-          <ul class="kb-list" *ngIf="memories().length">
-            <li *ngFor="let mem of memories()" class="kb-item memory-item" [class.memory-disabled]="!mem.enabled">
-              <span class="memory-category" [title]="mem.category">{{ {preference: '⭐', fact: '💡', project: '📁', instruction: '📌'}[mem.category] || '💡' }}</span>
-              <span class="kb-name" [title]="mem.content">{{ mem.content }}</span>
-              <button class="conv-action-btn" (click)="toggleMemoryItem(mem)" [title]="mem.enabled ? 'Disattiva' : 'Attiva'">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" *ngIf="mem.enabled"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" *ngIf="!mem.enabled"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-              </button>
-              <button class="conv-delete" (click)="deleteMemory(mem.id, $event)" title="Dimentica">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </li>
-          </ul>
-          <p class="no-convs" *ngIf="!memories().length">Nessun ricordo salvato.</p>
-
-          <button class="btn-system-clear memory-forget-all" *ngIf="memories().length" (click)="forgetAllMemories()">
-            Dimentica tutto
-          </button>
-        </ng-container>
-      </div>
-
-      <!-- Tag Manager -->
-      <div class="sidebar-section">
-        <div class="section-header">
-          <button class="section-collapse-btn" (click)="toggleTags()" [attr.aria-expanded]="tagsOpen()">
-            <span class="section-label">Tag</span>
-            <svg class="section-chevron" [class.open]="tagsOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-          <button class="btn-new-chat" (click)="showTagForm()" title="Nuovo tag" *ngIf="tagsOpen()">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          </button>
-        </div>
-        <ng-container *ngIf="tagsOpen()">
-        <!-- Tag create/edit form -->
-        <div class="template-form" *ngIf="tagFormVisible">
-          <input class="template-form-input" type="text" placeholder="Nome tag" [(ngModel)]="tagFormName" />
-          <div class="tag-color-picker">
-            <button
-              *ngFor="let c of TAG_COLORS"
-              class="tag-color-swatch"
-              [style.background]="c"
-              [class.selected]="tagFormColor === c"
-              (click)="tagFormColor = c"
-            ></button>
-          </div>
-          <div class="system-actions">
-            <button class="btn-system-save" (click)="saveTag()" [disabled]="!tagFormName.trim()">
-              {{ tagEditId ? 'Aggiorna' : 'Salva' }}
-            </button>
-            <button class="btn-system-clear" (click)="cancelTagForm()">Annulla</button>
-          </div>
-        </div>
-        <!-- Tag list -->
-        <div class="tag-manager-list" *ngIf="tags().length && !tagFormVisible">
-          <div *ngFor="let tag of tags()" class="tag-manager-item">
-            <span class="tag-manager-dot" [style.background]="tag.color"></span>
-            <span class="tag-manager-name">{{ tag.name }}</span>
-            <button class="conv-action-btn" (click)="showTagForm(tag)" title="Modifica">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            </button>
-            <button class="conv-delete" (click)="deleteTag(tag.id, $event)" title="Elimina">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          </div>
-        </div>
-        <p class="no-convs" *ngIf="!tags().length && !tagFormVisible">Nessun tag creato.</p>
-        </ng-container>
-      </div>
-
-      <!-- Providers -->
-      <div class="sidebar-section">
-        <div class="section-header">
-          <button class="section-collapse-btn" (click)="toggleProviderSection()" [attr.aria-expanded]="providerOpen()">
-            <span class="section-label">Provider</span>
-            <svg class="section-chevron" [class.open]="providerOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-        </div>
-        <ng-container *ngIf="providerOpen()">
-          <div class="provider-filters">
-            <select class="form-select form-select-sm" [ngModel]="availabilityFilter()" (ngModelChange)="setAvailabilityFilter($event)">
-              <option value="all">Tutti</option>
-              <option value="free">Solo free</option>
-            </select>
-            <select class="form-select form-select-sm" [ngModel]="capabilityFilter()" (ngModelChange)="setCapabilityFilter($event)">
-              <option *ngFor="let capability of availableCapabilities()" [value]="capability">
-                {{ capability === 'all' ? 'Tutte' : capability }}
-              </option>
-            </select>
-          </div>
-          <ul class="provider-list">
-            <li *ngFor="let provider of providers()">
-              <button type="button" class="provider-toggle" [class.active]="isProviderSelected(provider.id)" (click)="toggleProvider(provider.id)">
-                <div class="provider-row">
-                  <span class="provider-name">
-                    <span class="provider-check" [class.on]="isProviderSelected(provider.id)">
-                      {{ isProviderSelected(provider.id) ? '✓' : '○' }}
-                    </span>
-                    {{ provider.label }}
-                  </span>
-                  <span class="provider-count">{{ provider.model_count }}</span>
-                </div>
-              </button>
-              <div class="provider-caps" *ngIf="provider.capabilities.length">
-                <span class="mini-cap" *ngFor="let capability of provider.capabilities">{{ capability }}</span>
-              </div>
-            </li>
-          </ul>
-        </ng-container>
       </div>
 
     </div>
   </aside>
+
+  <!-- ── Conversation picker overlay ─────────────────────────── -->
+  <div class="conv-picker-backdrop" *ngIf="convPickerOpen()" (click)="closeConvPicker()"></div>
+  <div class="conv-picker" *ngIf="convPickerOpen()" (click)="closeTagPopover()">
+    <div class="conv-picker-head">
+      <span class="section-label">Conversazioni</span>
+      <button class="btn-new-chat" (click)="newConversation(); closeConvPicker()" title="Nuova chat">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nuova
+      </button>
+      <button class="btn-icon" (click)="closeConvPicker()" title="Chiudi" aria-label="Chiudi">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
+    <div class="conv-picker-body">
+      <!-- Search bar -->
+      <div class="search-bar">
+        <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input
+          #searchInput
+          class="search-input"
+          type="text"
+          placeholder="Cerca nelle conversazioni… (Ctrl+K)"
+          [value]="searchQuery()"
+          (input)="onSearchInput($any($event.target).value)"
+          (keydown.escape)="clearSearch()"
+        />
+        <button class="search-clear" *ngIf="searchQuery()" (click)="clearSearch()" title="Cancella">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Tag filter chips -->
+      <div class="tag-filter-bar" *ngIf="tags().length">
+        <button class="tag-filter-chip" [class.active]="!selectedTagFilter()" (click)="setTagFilter(null)">Tutte</button>
+        <button
+          *ngFor="let tag of tags()"
+          class="tag-filter-chip"
+          [class.active]="selectedTagFilter() === tag.id"
+          [style.border-color]="tag.color"
+          [style.color]="selectedTagFilter() === tag.id ? tag.color : ''"
+          (click)="setTagFilter(tag.id)"
+        >{{ tag.name }}</button>
+      </div>
+
+      <!-- Search results -->
+      <ng-container *ngIf="searchQuery(); else normalList">
+        <div class="search-spinner" *ngIf="isSearching()">
+          <span class="dot-spin-sm"></span>
+        </div>
+        <ul class="conversation-list" *ngIf="!isSearching() && searchResults().length">
+          <li
+            *ngFor="let r of searchResults()"
+            class="conversation-item search-result-item"
+            [class.active]="r.id === currentConversationId"
+            (click)="selectSearchResult(r); closeConvPicker()"
+          >
+            <span class="conv-title">{{ r.title }}</span>
+            <span class="conv-snippet">{{ r.snippet }}</span>
+          </li>
+        </ul>
+        <p class="no-convs" *ngIf="!isSearching() && !searchResults().length">
+          Nessun risultato.
+        </p>
+      </ng-container>
+
+      <!-- Normal conversation list -->
+      <ng-template #normalList>
+        <ul class="conversation-list" *ngIf="filteredConversations().length; else noConvs">
+          <li
+            *ngFor="let conv of filteredConversations()"
+            class="conversation-item"
+            [class.active]="conv.id === currentConversationId"
+            (click)="selectConversation(conv.id); closeConvPicker()"
+          >
+            <div class="conv-title-row">
+              <span class="conv-tags-dots" *ngIf="conv.tags?.length">
+                <span *ngFor="let t of conv.tags" class="conv-tag-dot" [style.background]="t.color" [title]="t.name"></span>
+              </span>
+              <span class="conv-title">{{ conv.title }}</span>
+            </div>
+            <div class="conv-actions">
+              <button class="conv-action-btn" (click)="openTagAssign(conv.id, $event)" title="Tag">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+              </button>
+              <button class="conv-delete" (click)="deleteConversation(conv.id, $event)" title="Elimina">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          </li>
+        </ul>
+        <ng-template #noConvs>
+          <p class="no-convs">Nessuna conversazione salvata.</p>
+        </ng-template>
+      </ng-template>
+
+      <!-- Tag assign popover (fixed position, outside list overflow) -->
+      <div class="tag-assign-popover" *ngIf="tagAssignConvId" [ngStyle]="tagPopoverStyle" (click)="$event.stopPropagation()">
+        <button
+          *ngFor="let tag of tags()"
+          class="tag-assign-item"
+          [class.selected]="convHasTag(tagAssignConvId, tag.id)"
+          (click)="toggleConversationTag(tagAssignConvId, tag.id)"
+        >
+          <span class="tag-assign-dot" [style.background]="tag.color"></span>
+          {{ tag.name }}
+          <span class="tag-assign-check" *ngIf="convHasTag(tagAssignConvId, tag.id)">&#10003;</span>
+        </button>
+        <p class="no-convs" *ngIf="!tags().length" style="padding: .3rem .5rem">Nessun tag creato.</p>
+      </div>
+    </div>
+  </div>
 
   <!-- ── Main panel ──────────────────────────────────────────── -->
   <div class="main-panel">

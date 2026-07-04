@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
@@ -7,7 +7,17 @@ import {
   CustomToolIn,
   CustomToolsService,
 } from '../../core/services/custom-tools.service';
+import { ChatService } from '../../core/services/chat.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { ToolDefinition } from '../../core/models/chat.models';
+
+/** A group of available tools sharing an MCP server (or the built-in / custom bucket). */
+interface ToolGroup {
+  key: string;
+  label: string;
+  isMcp: boolean;
+  tools: { name: string; description: string }[];
+}
 
 /** Phase 18 — user-defined custom tools management (per profile). */
 @Component({
@@ -19,10 +29,52 @@ import { NotificationService } from '../../core/services/notification.service';
 })
 export class ToolsPageComponent implements OnInit {
   private readonly toolsApi = inject(CustomToolsService);
+  private readonly chatService = inject(ChatService);
   private readonly notify = inject(NotificationService);
 
   readonly tools = signal<CustomTool[]>([]);
   readonly loading = signal(false);
+
+  // Available tools exposed to the model (built-in + MCP servers + custom),
+  // grouped by MCP server for display.
+  readonly availableTools = signal<ToolDefinition[]>([]);
+  readonly availableLoading = signal(false);
+
+  readonly toolGroups = computed<ToolGroup[]>(() => {
+    const groups = new Map<string, ToolGroup>();
+    for (const tool of this.availableTools()) {
+      const fullName = tool.function.name;
+      const mcpMatch = fullName.match(/^mcp__(.+?)__(.+)$/);
+      let key: string;
+      let label: string;
+      let isMcp = false;
+      let displayName: string;
+      if (mcpMatch) {
+        key = mcpMatch[1];
+        label = mcpMatch[1];
+        isMcp = true;
+        displayName = mcpMatch[2];
+      } else if (fullName.startsWith('custom__')) {
+        key = 'custom';
+        label = 'Custom';
+        displayName = fullName.replace(/^custom__/, '');
+      } else {
+        key = '__builtin__';
+        label = 'Built-in';
+        displayName = fullName;
+      }
+      const group = groups.get(key) ?? { key, label, isMcp, tools: [] };
+      group.tools.push({ name: displayName, description: tool.function.description });
+      groups.set(key, group);
+    }
+    // MCP servers first (alphabetical), then Built-in, then Custom.
+    return Array.from(groups.values()).sort((a, b) => {
+      const rank = (g: ToolGroup) => (g.key === '__builtin__' ? 1 : g.key === 'custom' ? 2 : 0);
+      return rank(a) - rank(b) || a.label.localeCompare(b.label);
+    });
+  });
+
+  readonly mcpGroups = computed(() => this.toolGroups().filter((g) => g.isMcp));
   readonly saving = signal(false);
   readonly formOpen = signal(false);
   readonly expanded = signal<Set<string>>(new Set());
@@ -44,6 +96,7 @@ export class ToolsPageComponent implements OnInit {
 
   ngOnInit(): void {
     this.refresh();
+    this.loadAvailableTools();
   }
 
   refresh(): void {
@@ -51,6 +104,14 @@ export class ToolsPageComponent implements OnInit {
     this.toolsApi.list().subscribe({
       next: (list) => { this.tools.set(list); this.loading.set(false); },
       error: () => { this.loading.set(false); },
+    });
+  }
+
+  loadAvailableTools(): void {
+    this.availableLoading.set(true);
+    this.chatService.listTools().subscribe({
+      next: (list) => { this.availableTools.set(list); this.availableLoading.set(false); },
+      error: () => this.availableLoading.set(false),
     });
   }
 

@@ -1,0 +1,64 @@
+<div class="page-shell">
+
+  <header class="page-header">
+    <div>
+      <h1>Tag</h1>
+      <p class="subtitle">
+        Etichette per organizzare le conversazioni del profilo
+        <strong>{{ profileService.current()?.name || 'default' }}</strong>.
+      </p>
+    </div>
+    <div class="head-actions">
+      <button class="btn-ghost" (click)="load()" [disabled]="loading()">Aggiorna</button>
+      <button class="btn" (click)="formVisible ? cancelForm() : showForm()">
+        {{ formVisible ? 'Chiudi' : 'Nuovo tag' }}
+      </button>
+    </div>
+  </header>
+
+  <!-- Create / edit form -->
+  <section class="card" *ngIf="formVisible">
+    <div class="card-head"><h2>{{ editId ? 'Modifica tag' : 'Nuovo tag' }}</h2></div>
+    <div class="field">
+      <span class="field-label">Nome</span>
+      <input class="text-input" type="text" placeholder="Nome tag" [(ngModel)]="formName" />
+    </div>
+    <div class="field">
+      <span class="field-label">Colore</span>
+      <div class="color-picker">
+        <button
+          *ngFor="let c of TAG_COLORS"
+          class="color-swatch"
+          [style.background]="c"
+          [class.selected]="formColor === c"
+          (click)="formColor = c"
+          type="button"
+        ></button>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn" (click)="save()" [disabled]="!formName.trim()">
+        {{ editId ? 'Aggiorna' : 'Salva' }}
+      </button>
+      <button class="btn-ghost" (click)="cancelForm()">Annulla</button>
+    </div>
+  </section>
+
+  <!-- List -->
+  <ul class="item-list" *ngIf="tags().length; else empty">
+    <li *ngFor="let tag of tags()" class="item">
+      <div class="item-main tag-main">
+        <span class="tag-dot" [style.background]="tag.color"></span>
+        <strong class="item-name">{{ tag.name }}</strong>
+      </div>
+      <div class="item-actions">
+        <button class="btn-ghost sm" (click)="showForm(tag)" title="Modifica">Modifica</button>
+        <button class="btn-danger sm" (click)="delete(tag.id, $event)" title="Elimina">Elimina</button>
+      </div>
+    </li>
+  </ul>
+  <ng-template #empty>
+    <p class="empty" *ngIf="!loading()">Nessun tag creato.</p>
+  </ng-template>
+
+</div>

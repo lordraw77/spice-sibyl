@@ -7,9 +7,8 @@ Funzionalità della Fase 19: memoria persistente per profilo, titoli automatici,
 **Cosa fa.** SpiceSibyl ricorda i fatti su di te tra una conversazione e l'altra (preferenze, fatti personali, progetti in corso, istruzioni permanenti). Dopo ogni scambio salvato, una chiamata LLM asincrona a basso costo (`MEMORY_EXTRACTION_MODEL`, default = `DEFAULT_MODEL`) estrae le informazioni degne di nota e le consolida nella tabella `profile_memories` (dedup automatico, massimo `MEMORY_MAX_ITEMS` ricordi). Quando la memoria è attiva, i ricordi abilitati vengono compattati in un blocco `<user_memory>` aggiunto al system prompt (budget `MEMORY_MAX_CHARS` caratteri, più recenti per primi).
 
 **Come si usa.**
-- Apri la sezione **Memoria 🧠** nella sidebar della chat: elenco dei ricordi con categoria (⭐ preferenza, 💡 fatto, 📁 progetto, 📌 istruzione), aggiunta manuale, attiva/disattiva o elimina il singolo ricordo, **Dimentica tutto**.
-- Il toggle **ON/OFF** accanto al titolo della sezione è l'interruttore *per-chat* (incognito): con OFF le nuove richieste non usano né alimentano la memoria.
-- La checkbox **Estrazione automatica dei ricordi (profilo)** è l'interruttore *di profilo*: con OFF niente estrazione né iniezione per tutto il profilo.
+- Pagina dedicata **Memoria 🧠** (`/memory`, voce **Risorse → Memoria** nella navbar, o link *Gestisci →* accanto all'interruttore Memoria in sidebar): elenco dei ricordi con categoria (⭐ preferenza, 💡 fatto, 📁 progetto, 📌 istruzione), aggiunta manuale con scelta della categoria, attiva/disattiva o elimina il singolo ricordo, **Dimentica tutto**. Qui c'è anche la checkbox **Estrazione automatica dei ricordi (profilo)** — interruttore *di profilo*: con OFF niente estrazione né iniezione per tutto il profilo.
+- Il toggle **Memoria ON/OFF** nella sezione **Funzioni** della sidebar è l'interruttore *per-chat* (incognito): con OFF le nuove richieste non usano né alimentano la memoria.
 - Quando una risposta è stata personalizzata con la memoria compare il chip **🧠 memoria** sotto il messaggio.
 
 **Da Telegram.** `/memory on|off` attiva/disattiva la memoria nella chat corrente (persistito in `telegram_prefs`); `/memory list` mostra i ricordi del profilo web collegato via `/link`; `/memory del <id>` ne dimentica uno. L'iniezione e l'estrazione funzionano solo per gli utenti collegati.
@@ -27,7 +26,7 @@ API: `GET/POST /v1/memories`, `PATCH/DELETE /v1/memories/{id}`, `DELETE /v1/memo
 
 ## Titoli automatici (LLM auto-titling)
 
-**Cosa fa.** Dopo il primo scambio salvato di una conversazione, un task in background genera un titolo conciso (max 6 parole, nella lingua della conversazione) al posto della vecchia euristica "primi 60 caratteri del messaggio". La lista in sidebar si aggiorna da sola pochi secondi dopo.
+**Cosa fa.** Dopo il primo scambio salvato di una conversazione, un task in background genera un titolo conciso (max 6 parole, nella lingua della conversazione) al posto della vecchia euristica "primi 60 caratteri del messaggio". La lista delle conversazioni (pannello Conversazioni) si aggiorna da sola pochi secondi dopo.
 
 **Configurazione.** `AUTO_TITLE_ENABLED` (default `true`), `TITLE_MODEL` (vuoto = `MEMORY_EXTRACTION_MODEL`, poi `DEFAULT_MODEL`).
 

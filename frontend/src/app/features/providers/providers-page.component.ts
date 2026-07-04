@@ -15,6 +15,7 @@ import { CommonModule } from '@angular/common';
 import { forkJoin } from 'rxjs';
 
 import { ChatService } from '../../core/services/chat.service';
+import { UserPreferencesService } from '../../core/services/user-preferences.service';
 import { ChatModel, ProviderStatus, ProviderTestResult } from '../../core/models/chat.models';
 
 interface TestState {
@@ -38,6 +39,7 @@ interface KeyFormState {
 })
 export class ProvidersPageComponent implements OnInit {
   private readonly chatService = inject(ChatService);
+  private readonly userPrefs = inject(UserPreferencesService);
 
   providers = signal<ProviderStatus[]>([]);
   modelsByProvider = signal<Record<string, ChatModel[]>>({});
@@ -46,6 +48,9 @@ export class ProvidersPageComponent implements OnInit {
   expandedProviders = signal<Set<string>>(new Set());
   testStates = signal<Record<string, TestState>>({});
   keyForms = signal<Record<string, KeyFormState>>({});
+
+  /** Model ids hidden from the chat model picker (persisted in user prefs). */
+  readonly hiddenModels = signal<Set<string>>(new Set(this.userPrefs.get().hiddenModels));
 
   readonly configuredCount = computed(() => this.providers().filter(p => p.configured).length);
   readonly totalModels = computed(() => this.providers().reduce((s, p) => s + p.model_count, 0));
@@ -104,6 +109,48 @@ export class ProvidersPageComponent implements OnInit {
 
   getModels(providerId: string): ChatModel[] {
     return this.modelsByProvider()[providerId] ?? [];
+  }
+
+  // ── Model visibility in the chat model picker ───────────────
+  isModelHidden(modelId: string): boolean {
+    return this.hiddenModels().has(modelId);
+  }
+
+  /** Count of models still visible in the picker for this provider. */
+  visibleModelCount(providerId: string): number {
+    const hidden = this.hiddenModels();
+    return this.getModels(providerId).filter(m => !hidden.has(m.id)).length;
+  }
+
+  /** Count of models hidden from the picker for this provider. */
+  hiddenModelCount(providerId: string): number {
+    const hidden = this.hiddenModels();
+    return this.getModels(providerId).filter(m => hidden.has(m.id)).length;
+  }
+
+  private persistHidden(next: Set<string>): void {
+    this.hiddenModels.set(next);
+    this.userPrefs.set('hiddenModels', Array.from(next));
+  }
+
+  toggleModelVisibility(modelId: string): void {
+    const next = new Set(this.hiddenModels());
+    next.has(modelId) ? next.delete(modelId) : next.add(modelId);
+    this.persistHidden(next);
+  }
+
+  /** Hide every model of a provider from the picker. */
+  hideAllModels(providerId: string): void {
+    const next = new Set(this.hiddenModels());
+    for (const m of this.getModels(providerId)) next.add(m.id);
+    this.persistHidden(next);
+  }
+
+  /** Show every model of a provider in the picker. */
+  showAllModels(providerId: string): void {
+    const next = new Set(this.hiddenModels());
+    for (const m of this.getModels(providerId)) next.delete(m.id);
+    this.persistHidden(next);
   }
 
   toggleEnabled(provider: ProviderStatus): void {

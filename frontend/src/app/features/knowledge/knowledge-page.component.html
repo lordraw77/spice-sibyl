@@ -1,0 +1,56 @@
+<div class="page-shell">
+
+  <header class="page-header">
+    <div>
+      <h1>Knowledge base</h1>
+      <p class="subtitle">
+        Documenti indicizzati per il profilo <strong>{{ profileService.current()?.name || 'default' }}</strong>,
+        usati come contesto quando il RAG è attivo. Il toggle <strong>ON/OFF del RAG</strong> resta nella sidebar della chat.
+      </p>
+    </div>
+    <div class="head-actions">
+      <button class="btn-ghost" (click)="load()" [disabled]="loading()">Aggiorna</button>
+      <label class="btn" [class.disabled]="kbUploading()">
+        {{ kbUploading() ? 'Caricamento…' : 'Carica documenti' }}
+        <input type="file" multiple accept=".pdf,.txt,.md,.markdown,.docx" (change)="onFileSelected($event)" hidden [disabled]="kbUploading()" />
+      </label>
+    </div>
+  </header>
+
+  <!-- URL ingestion -->
+  <section class="card">
+    <div class="card-head"><h2>Aggiungi una pagina web</h2></div>
+    <div class="url-row">
+      <input
+        type="url"
+        class="text-input"
+        placeholder="https://esempio.com/articolo"
+        [value]="kbUrl()"
+        (input)="kbUrl.set($any($event.target).value)"
+        (keyup.enter)="ingestUrl()"
+        [disabled]="kbUploading()" />
+      <button class="btn" (click)="ingestUrl()" [disabled]="kbUploading() || !kbUrl().trim()">Indicizza</button>
+    </div>
+  </section>
+
+  <!-- Document list -->
+  <ul class="item-list" *ngIf="kbDocuments().length; else empty">
+    <li *ngFor="let doc of kbDocuments()" class="item">
+      <div class="item-main doc-main">
+        <span class="kb-status" [class.ready]="doc.status === 'ready'" [class.pending]="doc.status === 'pending'" [class.error]="doc.status === 'error'" [title]="doc.error || doc.status"></span>
+        <span class="doc-name" [title]="doc.source_url || doc.filename">
+          <span *ngIf="doc.source_type === 'url'" class="kb-url-tag" title="Pagina web">🔗</span>{{ doc.filename }}
+        </span>
+        <span class="doc-chunks" *ngIf="doc.status === 'ready'">{{ doc.chunk_count }} chunk</span>
+      </div>
+      <div class="item-actions">
+        <button class="btn-ghost sm" (click)="reEmbed(doc.id, $event)" title="Re-indicizza">Re-embed</button>
+        <button class="btn-danger sm" (click)="deleteDoc(doc.id, $event)" title="Elimina">Elimina</button>
+      </div>
+    </li>
+  </ul>
+  <ng-template #empty>
+    <p class="empty" *ngIf="!loading()">Nessun documento caricato.</p>
+  </ng-template>
+
+</div>

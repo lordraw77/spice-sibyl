@@ -26,26 +26,23 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { Subject, Subscription, debounceTime, distinctUntilChanged, switchMap, of, forkJoin } from 'rxjs';
-import { catchError, map, takeUntil } from 'rxjs/operators';
+import { Subject, Subscription, debounceTime, distinctUntilChanged, switchMap, of } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 
 import { ChatService } from '../../core/services/chat.service';
 import { ChatStateService } from '../../core/services/chat-state.service';
 import { ConversationService } from '../../core/services/conversation.service';
 import { ProfileService } from '../../core/services/profile.service';
-import { TemplateService } from '../../core/services/template.service';
 import { TagService } from '../../core/services/tag.service';
-import { KnowledgeService } from '../../core/services/knowledge.service';
-import { MemoryService } from '../../core/services/memory.service';
 import { FeedbackService } from '../../core/services/feedback.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ProfileModalComponent } from '../profile/profile-modal.component';
 import { OnboardingComponent } from '../onboarding/onboarding.component';
 import { OnboardingService } from '../../core/services/onboarding.service';
-import { ChatCompletionResponse, ChatMessage, ChatModel, ConversationSummary, KbDocument, ProfileMemory, PromptTemplate, ProviderSummary, RagSource, SearchResult, Tag, TelegramLinkStatus, ToolDefinition, ToolEvent } from '../../core/models/chat.models';
+import { ChatCompletionResponse, ChatMessage, ChatModel, ConversationSummary, ProviderSummary, RagSource, SearchResult, Tag, TelegramLinkStatus, ToolDefinition, ToolEvent } from '../../core/models/chat.models';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked, Renderer } from 'marked';
 import DOMPurify from 'dompurify';
@@ -58,7 +55,7 @@ import { PushNotifyService } from '../../core/services/push-notify.service';
 @Component({
   selector: 'app-chat-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, ProfileModalComponent, OnboardingComponent],
+  imports: [CommonModule, FormsModule, DatePipe, RouterLink, ProfileModalComponent, OnboardingComponent],
   templateUrl: './chat-page.component.html',
   styleUrl: './chat-page.component.css',
 })
@@ -72,10 +69,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly router = inject(Router);
   private readonly appConfig = inject(AppConfigService);
   private readonly userPrefs = inject(UserPreferencesService);
-  private readonly templateService = inject(TemplateService);
   private readonly tagService = inject(TagService);
-  private readonly knowledgeService = inject(KnowledgeService);
-  private readonly memoryService = inject(MemoryService);
   private readonly feedbackService = inject(FeedbackService);
   private readonly auth = inject(AuthService);
   readonly pushNotify = inject(PushNotifyService);
@@ -98,61 +92,35 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   /** MCP group collapsed state: key = group name, value = true if expanded */
   readonly mcpGroupExpanded = signal<Record<string, boolean>>({});
 
-  // Knowledge base / RAG
+  // RAG on/off (management lives in the /knowledge page)
   readonly ragEnabled = signal(this.savedPrefs.ragEnabled);
-  readonly kbDocuments = signal<KbDocument[]>([]);
-  readonly kbUploading = signal(false);
-  readonly kbUrl = signal('');
 
-  // Phase 19: persistent memory
-  readonly memoryEnabled = signal(this.savedPrefs.memoryEnabled); // per-chat (incognito) toggle
-  readonly memoryProfileEnabled = signal(true);                   // per-profile switch (backend)
-  readonly memories = signal<ProfileMemory[]>([]);
-  memoryFormContent = '';
-  memoryFormCategory: ProfileMemory['category'] = 'fact';
+  // Phase 19: persistent memory — per-chat incognito toggle
+  // (memory management lives in the /memory page)
+  readonly memoryEnabled = signal(this.savedPrefs.memoryEnabled);
 
-  readonly conversationsOpen = signal(this.savedPrefs.sectionsOpen.conversations);
+  /** Conversation picker overlay (replaces the old inline Conversations section). */
+  readonly convPickerOpen = signal(false);
   readonly modelOpen = signal(this.savedPrefs.sectionsOpen.model);
-  readonly providerOpen = signal(this.savedPrefs.sectionsOpen.provider);
   readonly systemOpen = signal(this.savedPrefs.sectionsOpen.system);
   readonly paramsOpen = signal(this.savedPrefs.sectionsOpen.params);
-  readonly templatesOpen = signal(false);
-  readonly tagsOpen = signal(false);
-  readonly knowledgeOpen = signal(this.savedPrefs.sectionsOpen.knowledge);
-  readonly memoryOpen = signal(this.savedPrefs.sectionsOpen.memory);
 
-  // Prompt templates
-  readonly templates = signal<PromptTemplate[]>([]);
-  templateFormVisible = false;
-  templateEditId: string | null = null;
-  templateFormName = '';
-  templateFormContent = '';
-
-  // Tags
+  // Tags — the conversation picker uses tag filtering + per-conversation tag
+  // assignment; tag CRUD itself lives in the /tags page.
   readonly tags = signal<Tag[]>([]);
   readonly selectedTagFilter = signal<string | null>(null);
-  tagFormVisible = false;
-  tagEditId: string | null = null;
-  tagFormName = '';
-  tagFormColor = '#d6b279';
   tagAssignConvId: string | null = null;
-
-  readonly TAG_COLORS = ['#d6b279', '#e07070', '#89d39a', '#8ed0ff', '#c89aff', '#ff9a5c', '#5ac8c8', '#ff7eb3'];
 
   // Telegram linking
   telegramLink = signal<TelegramLinkStatus>({ linked: false });
   telegramLinkCode = '';
   telegramLinkLoading = false;
 
-  toggleConversations(): void { this.conversationsOpen.update(v => !v); this.userPrefs.setSection('conversations', this.conversationsOpen()); }
+  openConvPicker(): void { this.convPickerOpen.set(true); }
+  closeConvPicker(): void { this.convPickerOpen.set(false); this.tagAssignConvId = null; }
   toggleModel(): void { this.modelOpen.update(v => !v); this.userPrefs.setSection('model', this.modelOpen()); }
-  toggleProviderSection(): void { this.providerOpen.update(v => !v); this.userPrefs.setSection('provider', this.providerOpen()); }
   toggleSystem(): void { this.systemOpen.update(v => !v); this.userPrefs.setSection('system', this.systemOpen()); }
   toggleParams(): void { this.paramsOpen.update(v => !v); this.userPrefs.setSection('params', this.paramsOpen()); }
-  toggleTemplates(): void { this.templatesOpen.update(v => !v); }
-  toggleTags(): void { this.tagsOpen.update(v => !v); }
-  toggleKnowledge(): void { this.knowledgeOpen.update(v => !v); this.userPrefs.setSection('knowledge', this.knowledgeOpen()); }
-  toggleMemorySection(): void { this.memoryOpen.update(v => !v); this.userPrefs.setSection('memory', this.memoryOpen()); }
 
   /** Conversations filtered by the selected tag */
   readonly filteredConversations = computed(() => {
@@ -171,10 +139,10 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
       const profile = this.profileService.current();
       if (profile) {
         this.loadConversationList();
-        this.loadTemplates();
+        // Tags stay loaded here: the conversation picker uses tag filter chips
+        // and the tag-assign popover. Templates / knowledge / memory are now
+        // managed in their own routed pages.
         this.loadTags();
-        this.loadKbDocuments();
-        this.loadMemories();
         if (profile.id !== this.chatState.lastActiveProfileId) {
           this.chatState.lastActiveProfileId = profile.id;
           this.currentConversationId = null;
@@ -202,11 +170,10 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   onGlobalKeydown(event: KeyboardEvent): void {
     const ctrl = event.ctrlKey || event.metaKey;
 
-    // Ctrl+K → focus conversation search
+    // Ctrl+K → open the conversation picker and focus its search field
     if (ctrl && event.key === 'k') {
       event.preventDefault();
-      if (!this.sidebarOpen) this.toggleSidebar();
-      if (!this.conversationsOpen()) this.conversationsOpen.set(true);
+      this.openConvPicker();
       setTimeout(() => this.searchInputEl?.nativeElement?.focus(), 50);
       return;
     }
@@ -274,9 +241,17 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   // Alias to the singleton service signal so state survives navigation.
   readonly messages = this.chatState.messages;
   readonly models = signal<ChatModel[]>([]);
+  /** Providers exposed by the backend; used by the Model-section provider filter. */
   readonly providers = signal<ProviderSummary[]>([]);
   readonly capabilityFilter = signal<string>(this.savedPrefs.capabilityFilter);
+  /** Personal per-chat filter: which providers' models appear in the model picker. */
   readonly selectedProviders = signal<string[]>([]);
+
+  /** Enabled providers only — the ones offered in the Model-section filter. */
+  readonly selectableProviders = computed(() => this.providers().filter((p) => p.enabled));
+
+  /** Models hidden from the picker (curated on the /providers page). */
+  readonly hiddenModels = signal<Set<string>>(new Set(this.savedPrefs.hiddenModels));
 
   /** Sorted list of all capabilities present across loaded models, prefixed with 'all'. */
   readonly availableCapabilities = computed(() => {
@@ -294,9 +269,12 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     const capability = this.capabilityFilter();
     const availability = this.availabilityFilter();
     const enabledProviders = new Set(this.selectedProviders());
+    const hidden = this.hiddenModels();
     const search = this.modelSearchQuery().trim().toLowerCase();
 
     return this.models().filter((model) => {
+      if (hidden.has(model.id)) return false;
+
       const providerOk =
         enabledProviders.size === 0 || enabledProviders.has(model.provider || '');
 
@@ -438,11 +416,6 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     return !events.some(e => e.kind === 'result' && e.id === callId);
   }
 
-  setAvailabilityFilter(value: 'all' | 'free'): void {
-    this.availabilityFilter.set(value);
-    this.userPrefs.set('availabilityFilter', value);
-    this.ensureValidSelectedModel();
-  }
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
@@ -482,7 +455,6 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
       error: () => {},
     });
 
-    this.loadTemplates();
     this.loadTags();
     this.loadTelegramLink();
 
@@ -857,68 +829,10 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   // ── Persistent memory (Phase 19) ───────────────────────────
-  loadMemories(): void {
-    this.memoryService.list().subscribe({
-      next: items => this.memories.set(items),
-      error: () => {},
-    });
-    this.memoryService.getSettings().subscribe({
-      next: s => this.memoryProfileEnabled.set(s.memory_enabled),
-      error: () => {},
-    });
-  }
-
   /** Per-chat incognito toggle: OFF = no injection/extraction for new exchanges. */
   toggleMemory(): void {
     this.memoryEnabled.update(v => !v);
     this.userPrefs.set('memoryEnabled', this.memoryEnabled());
-  }
-
-  /** Per-profile master switch (backend: no extraction, no injection at all). */
-  toggleMemoryProfile(): void {
-    const next = !this.memoryProfileEnabled();
-    this.memoryService.setSettings(next).subscribe({
-      next: s => this.memoryProfileEnabled.set(s.memory_enabled),
-      error: () => this.notifications.add('error', 'Memoria', 'Aggiornamento impostazione fallito.'),
-    });
-  }
-
-  addMemory(): void {
-    const content = this.memoryFormContent.trim();
-    if (!content) return;
-    this.memoryService.create(content, this.memoryFormCategory).subscribe({
-      next: mem => {
-        this.memories.update(items => [mem, ...items]);
-        this.memoryFormContent = '';
-      },
-      error: () => this.notifications.add('error', 'Memoria', 'Salvataggio fallito.'),
-    });
-  }
-
-  toggleMemoryItem(mem: ProfileMemory): void {
-    this.memoryService.update(mem.id, { enabled: !mem.enabled }).subscribe({
-      next: updated => this.memories.update(items => items.map(m => m.id === mem.id ? updated : m)),
-      error: () => {},
-    });
-  }
-
-  deleteMemory(id: string, event?: Event): void {
-    event?.stopPropagation();
-    this.memoryService.delete(id).subscribe({
-      next: () => this.memories.update(items => items.filter(m => m.id !== id)),
-      error: () => {},
-    });
-  }
-
-  forgetAllMemories(): void {
-    if (!confirm('Dimenticare tutti i ricordi di questo profilo?')) return;
-    this.memoryService.forgetAll().subscribe({
-      next: () => {
-        this.memories.set([]);
-        this.notifications.add('success', 'Memoria', 'Tutti i ricordi sono stati eliminati.');
-      },
-      error: () => this.notifications.add('error', 'Memoria', 'Eliminazione fallita.'),
-    });
   }
 
   // ── Feedback 👍/👎 (Phase 19) ──────────────────────────────
@@ -944,189 +858,6 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     });
   }
 
-  // ── Knowledge base (RAG) ───────────────────────────────────
-  loadKbDocuments(): void {
-    this.knowledgeService.listDocuments(this.profileService.currentId).subscribe({
-      next: docs => this.kbDocuments.set(docs),
-      error: () => {},
-    });
-  }
-
-  onKbFileSelected(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const files = Array.from(input.files ?? []);
-    input.value = '';
-    if (!files.length) return;
-
-    const allowed = /\.(pdf|txt|md|markdown|docx)$/i;
-    const valid: File[] = [];
-    for (const file of files) {
-      if (!allowed.test(file.name)) {
-        this.notifications.add('error', 'Formato non supportato', `"${file.name}": usa PDF, TXT, DOCX o Markdown.`);
-        continue;
-      }
-      if (file.size > 20 * 1024 * 1024) {
-        this.notifications.add('error', 'File troppo grande', `"${file.name}": dimensione massima 20 MB.`);
-        continue;
-      }
-      // Client-side de-dup: skip files already present in the list by name+size
-      // (the backend also rejects content duplicates by hash with a 409).
-      const dup = this.kbDocuments().some(
-        d => d.filename === file.name && d.size_bytes === file.size,
-      );
-      if (dup) {
-        this.notifications.add('info', 'Già presente', `"${file.name}" è già nella knowledge base.`);
-        continue;
-      }
-      valid.push(file);
-    }
-    if (!valid.length) return;
-
-    this.kbUploading.set(true);
-    // Upload all files in parallel, isolating per-file failures so one bad/duplicate
-    // file doesn't abort the rest. The error interceptor already toasts each failure.
-    const uploads = valid.map(file =>
-      this.knowledgeService.uploadDocument(file, this.profileService.currentId).pipe(
-        map(doc => ({ ok: true, doc } as const)),
-        catchError((err: { status?: number }) => of({ ok: false, status: err?.status } as const)),
-      ),
-    );
-    forkJoin(uploads).subscribe(results => {
-      this.kbUploading.set(false);
-      const added = results.filter(r => r.ok).map(r => (r as { ok: true; doc: KbDocument }).doc);
-      if (added.length) {
-        this.kbDocuments.update(docs => [
-          ...added,
-          ...docs.filter(d => !added.some(a => a.id === d.id)),
-        ]);
-      }
-      const duplicates = results.filter(r => !r.ok && (r as { status?: number }).status === 409).length;
-      const failed = results.filter(r => !r.ok && (r as { status?: number }).status !== 409).length;
-
-      const parts: string[] = [];
-      if (added.length) parts.push(`${added.length} aggiunti`);
-      if (duplicates) parts.push(`${duplicates} duplicati ignorati`);
-      if (failed) parts.push(`${failed} falliti`);
-      if (added.length) {
-        this.notifications.add('success', 'Caricamento completato', parts.join(' · '));
-      } else if (duplicates && !failed) {
-        this.notifications.add('info', 'Nessun nuovo documento', `${duplicates} duplicati ignorati.`);
-      }
-    });
-  }
-
-  deleteKbDocument(id: string, event: Event): void {
-    event.stopPropagation();
-    this.knowledgeService.deleteDocument(id).subscribe({
-      next: () => this.kbDocuments.update(docs => docs.filter(d => d.id !== id)),
-      error: () => {},
-    });
-  }
-
-  /** Ingest a web page / URL into the knowledge base (Phase 17). */
-  ingestKbUrl(): void {
-    const url = this.kbUrl().trim();
-    if (!url) return;
-    if (!/^https?:\/\//i.test(url)) {
-      this.notifications.add('error', 'URL non valido', 'Inserisci un URL http(s) completo.');
-      return;
-    }
-    this.kbUploading.set(true);
-    this.knowledgeService.ingestUrl(url, this.profileService.currentId).subscribe({
-      next: doc => {
-        this.kbDocuments.update(docs => [doc, ...docs.filter(d => d.id !== doc.id)]);
-        this.kbUploading.set(false);
-        this.kbUrl.set('');
-        this.notifications.add('success', 'Pagina aggiunta', `"${doc.filename}" indicizzata (${doc.chunk_count} chunk).`);
-      },
-      error: (err: Error) => {
-        this.kbUploading.set(false);
-        this.notifications.add('error', 'Ingest URL fallito', err?.message || 'Impossibile leggere la pagina.');
-      },
-    });
-  }
-
-  /** Re-chunk + re-embed a document (after changing the embedding model). */
-  reEmbedKbDocument(id: string, event: Event): void {
-    event.stopPropagation();
-    this.knowledgeService.reEmbed(id).subscribe({
-      next: doc => {
-        this.kbDocuments.update(docs => docs.map(d => (d.id === doc.id ? doc : d)));
-        this.notifications.add('success', 'Re-embed completato', `"${doc.filename}" re-indicizzato (${doc.chunk_count} chunk).`);
-      },
-      error: (err: Error) => {
-        this.notifications.add('error', 'Re-embed fallito', err?.message || 'Impossibile re-indicizzare.');
-      },
-    });
-  }
-
-  // ── Prompt Templates ───────────────────────────────────────
-  loadTemplates(): void {
-    this.templateService.list(this.profileService.currentId).subscribe({
-      next: list => this.templates.set(list),
-      error: () => {},
-    });
-  }
-
-  applyTemplate(t: PromptTemplate): void {
-    this.systemPrompt = t.content;
-    localStorage.setItem('spicesibyl_system_prompt', t.content);
-    this.notifications.add('success', 'Template applicato', `"${t.name}" impostato come system prompt.`);
-  }
-
-  showTemplateForm(edit?: PromptTemplate): void {
-    this.templateFormVisible = true;
-    if (edit) {
-      this.templateEditId = edit.id;
-      this.templateFormName = edit.name;
-      this.templateFormContent = edit.content;
-    } else {
-      this.templateEditId = null;
-      this.templateFormName = '';
-      this.templateFormContent = '';
-    }
-  }
-
-  saveTemplateFromCurrent(): void {
-    if (!this.systemPrompt.trim()) return;
-    this.templateFormVisible = true;
-    this.templateEditId = null;
-    this.templateFormName = '';
-    this.templateFormContent = this.systemPrompt;
-  }
-
-  cancelTemplateForm(): void {
-    this.templateFormVisible = false;
-    this.templateEditId = null;
-    this.templateFormName = '';
-    this.templateFormContent = '';
-  }
-
-  saveTemplate(): void {
-    const name = this.templateFormName.trim();
-    const content = this.templateFormContent.trim();
-    if (!name || !content) return;
-    if (this.templateEditId) {
-      this.templateService.update(this.templateEditId, { name, content }).subscribe({
-        next: () => { this.cancelTemplateForm(); this.loadTemplates(); },
-        error: () => this.notifications.add('error', 'Errore', 'Impossibile aggiornare il template.'),
-      });
-    } else {
-      this.templateService.create(name, content, this.profileService.currentId).subscribe({
-        next: () => { this.cancelTemplateForm(); this.loadTemplates(); },
-        error: () => this.notifications.add('error', 'Errore', 'Impossibile creare il template.'),
-      });
-    }
-  }
-
-  deleteTemplate(id: string, event: Event): void {
-    event.stopPropagation();
-    this.templateService.delete(id).subscribe({
-      next: () => this.loadTemplates(),
-      error: () => this.notifications.add('error', 'Errore', 'Impossibile eliminare il template.'),
-    });
-  }
-
   // ── Tags ──────────────────────────────────────────────────
   loadTags(): void {
     this.tagService.list(this.profileService.currentId).subscribe({
@@ -1137,50 +868,6 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
 
   setTagFilter(tagId: string | null): void {
     this.selectedTagFilter.set(tagId);
-  }
-
-  showTagForm(edit?: Tag): void {
-    this.tagFormVisible = true;
-    if (edit) {
-      this.tagEditId = edit.id;
-      this.tagFormName = edit.name;
-      this.tagFormColor = edit.color;
-    } else {
-      this.tagEditId = null;
-      this.tagFormName = '';
-      this.tagFormColor = '#d6b279';
-    }
-  }
-
-  cancelTagForm(): void {
-    this.tagFormVisible = false;
-    this.tagEditId = null;
-    this.tagFormName = '';
-    this.tagFormColor = '#d6b279';
-  }
-
-  saveTag(): void {
-    const name = this.tagFormName.trim();
-    if (!name) return;
-    if (this.tagEditId) {
-      this.tagService.update(this.tagEditId, { name, color: this.tagFormColor }).subscribe({
-        next: () => { this.cancelTagForm(); this.loadTags(); this.loadConversationList(); },
-        error: () => this.notifications.add('error', 'Errore', 'Impossibile aggiornare il tag.'),
-      });
-    } else {
-      this.tagService.create(name, this.tagFormColor, this.profileService.currentId).subscribe({
-        next: () => { this.cancelTagForm(); this.loadTags(); },
-        error: () => this.notifications.add('error', 'Errore', 'Impossibile creare il tag.'),
-      });
-    }
-  }
-
-  deleteTag(id: string, event: Event): void {
-    event.stopPropagation();
-    this.tagService.delete(id).subscribe({
-      next: () => { this.loadTags(); this.loadConversationList(); },
-      error: () => this.notifications.add('error', 'Errore', 'Impossibile eliminare il tag.'),
-    });
   }
 
   tagPopoverStyle: Record<string, string> = {};
@@ -1746,9 +1433,6 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
         .appendMessages(this.currentConversationId!, [userToSave, assistantMessage], this.memoryEnabled())
         .subscribe({ next: () => {
           this.loadConversationList();
-          // Phase 19: memory extraction runs async after the exchange is saved —
-          // refresh the sidebar list shortly after so new memories appear.
-          setTimeout(() => this.loadMemories(), 6000);
         } });
     };
 
@@ -1908,15 +1592,14 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     this.ensureValidSelectedModel();
   }
 
+  /** Include/exclude a provider from the model picker (persisted per user). */
   toggleProvider(providerId: string): void {
     const current = new Set(this.selectedProviders());
-
     if (current.has(providerId)) {
       current.delete(providerId);
     } else {
       current.add(providerId);
     }
-
     const updated = Array.from(current);
     this.selectedProviders.set(updated);
     this.userPrefs.set('selectedProviders', updated);
@@ -1925,6 +1608,14 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
 
   isProviderSelected(providerId: string): boolean {
     return this.selectedProviders().includes(providerId);
+  }
+
+  /** Select all / clear the provider filter. */
+  setAllProviders(all: boolean): void {
+    const updated = all ? this.selectableProviders().map((p) => p.id) : [];
+    this.selectedProviders.set(updated);
+    this.userPrefs.set('selectedProviders', updated);
+    this.ensureValidSelectedModel();
   }
 
   /** Pause auto-scroll when the user scrolls more than 80 px above the bottom. */

@@ -78,6 +78,34 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'templates',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/templates/templates-page.component').then(
+        (m) => m.TemplatesPageComponent
+      ),
+  },
+  {
+    path: 'tags',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/tags/tags-page.component').then((m) => m.TagsPageComponent),
+  },
+  {
+    path: 'knowledge',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/knowledge/knowledge-page.component').then(
+        (m) => m.KnowledgePageComponent
+      ),
+  },
+  {
+    path: 'memory',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/memory/memory-page.component').then((m) => m.MemoryPageComponent),
+  },
+  {
     path: 'help',
     canActivate: [authGuard],
     loadComponent: () =>

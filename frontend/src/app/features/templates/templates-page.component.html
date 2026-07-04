@@ -1,0 +1,56 @@
+<div class="page-shell">
+
+  <header class="page-header">
+    <div>
+      <h1>Template</h1>
+      <p class="subtitle">
+        Prompt riutilizzabili per il profilo <strong>{{ profileService.current()?.name || 'default' }}</strong>.
+        Applica un template per impostarlo come system prompt della chat.
+      </p>
+    </div>
+    <div class="head-actions">
+      <button class="btn-ghost" (click)="load()" [disabled]="loading()">Aggiorna</button>
+      <button class="btn" (click)="formVisible ? cancelForm() : showForm()">
+        {{ formVisible ? 'Chiudi' : 'Nuovo template' }}
+      </button>
+    </div>
+  </header>
+
+  <!-- Create / edit form -->
+  <section class="card" *ngIf="formVisible">
+    <div class="card-head"><h2>{{ editId ? 'Modifica template' : 'Nuovo template' }}</h2></div>
+    <div class="field">
+      <span class="field-label">Nome</span>
+      <input class="text-input" type="text" placeholder="Nome template" [(ngModel)]="formName" />
+    </div>
+    <div class="field">
+      <span class="field-label">Contenuto</span>
+      <textarea class="text-area" rows="6" placeholder="Contenuto del template…" [(ngModel)]="formContent"></textarea>
+    </div>
+    <div class="form-actions">
+      <button class="btn" (click)="save()" [disabled]="!formName.trim() || !formContent.trim()">
+        {{ editId ? 'Aggiorna' : 'Salva' }}
+      </button>
+      <button class="btn-ghost" (click)="cancelForm()">Annulla</button>
+    </div>
+  </section>
+
+  <!-- List -->
+  <ul class="item-list" *ngIf="templates().length; else empty">
+    <li *ngFor="let t of templates()" class="item">
+      <div class="item-main">
+        <strong class="item-name">{{ t.name }}</strong>
+        <p class="item-preview">{{ t.content }}</p>
+      </div>
+      <div class="item-actions">
+        <button class="btn-ghost sm" (click)="apply(t)" title="Imposta come system prompt">Applica</button>
+        <button class="btn-ghost sm" (click)="showForm(t)" title="Modifica">Modifica</button>
+        <button class="btn-danger sm" (click)="delete(t.id, $event)" title="Elimina">Elimina</button>
+      </div>
+    </li>
+  </ul>
+  <ng-template #empty>
+    <p class="empty" *ngIf="!loading()">Nessun template salvato.</p>
+  </ng-template>
+
+</div>
