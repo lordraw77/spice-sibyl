@@ -17,6 +17,7 @@ from app.dependencies.rate_limit import rate_limit
 from app.api.v1.endpoints import (
     auth,
     chat,
+    comments,
     conversations,
     health,
     images,
@@ -37,6 +38,7 @@ from app.api.v1.endpoints import (
     templates,
     tools,
     workflows,
+    workspaces,
 )
 
 api_router = APIRouter(prefix="/v1")
@@ -63,6 +65,9 @@ api_router.include_router(providers.router, prefix="/providers", tags=["provider
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"], dependencies=_protected)
 api_router.include_router(images.router, prefix="/images", tags=["images"], dependencies=_protected)
 api_router.include_router(conversations.router, prefix="/conversations", tags=["conversations"], dependencies=_protected)
+# Phase 20.b: comments live under a conversation path but access is gated by the
+# workspace/ownership check inside the endpoint (not the profile scope).
+api_router.include_router(comments.router, prefix="/conversations", tags=["comments"], dependencies=_protected)
 api_router.include_router(profiles.router, prefix="/profiles", tags=["profiles"], dependencies=_protected)
 api_router.include_router(stats.router, prefix="/stats", tags=["stats"], dependencies=_protected)
 api_router.include_router(tools.router, prefix="/tools", tags=["tools"], dependencies=_protected)
@@ -76,3 +81,4 @@ api_router.include_router(workflows.router, prefix="/workflows", tags=["workflow
 api_router.include_router(memories.router, prefix="/memories", tags=["memories"], dependencies=_protected)
 api_router.include_router(feedback.router, prefix="/feedback", tags=["feedback"], dependencies=_protected)
 api_router.include_router(info.router, prefix="/info", tags=["info"], dependencies=_protected)
+api_router.include_router(workspaces.router, prefix="/workspaces", tags=["workspaces"], dependencies=_protected)

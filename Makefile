@@ -10,13 +10,44 @@ APP_VERSION   := $(patsubst v%,%,$(VERSION))
 
 .PHONY: up down logs backend frontend test-backend install-backend install-frontend \
         build push release prod-up prod-down frontend-docs \
-        dev dev-build dev-build-backend dev-build-frontend rebuild publish
+        dev dev-build dev-build-backend dev-build-frontend rebuild publish \
+        tag push-tags
 
 # Copy docs/funzionalita + screenshots into frontend/public/docs (in-app Help
 # page). Must run before the frontend/nginx image builds: their contexts only
 # include frontend/, so the repo-root docs/ tree is not visible to Docker.
 frontend-docs:
 	node frontend/scripts/copy-docs.mjs
+
+# ── Git tags ──────────────────────────────────────────────────────────────────
+# Show the most recent git tag.
+tag:
+	@echo $(GIT_TAG)
+
+# Push all local tags to the remote.
+push-tags:
+	git push --tags
+
+# Create the next tag by bumping a part of the latest one (default: patch).
+# Usage: make next-tag            → v1.2.3 becomes v1.2.4
+#        make next-tag BUMP=minor → v1.2.3 becomes v1.3.0
+#        make next-tag BUMP=major → v1.2.3 becomes v2.0.0
+BUMP ?= patch
+next-tag:
+	@current="$(patsubst v%,%,$(GIT_TAG))"; \
+	major=$$(echo "$$current" | cut -d. -f1); \
+	minor=$$(echo "$$current" | cut -d. -f2); \
+	patch=$$(echo "$$current" | cut -d. -f3); \
+	major=$${major:-0}; minor=$${minor:-0}; patch=$${patch:-0}; \
+	case "$(BUMP)" in \
+	  major) major=$$((major+1)); minor=0; patch=0 ;; \
+	  minor) minor=$$((minor+1)); patch=0 ;; \
+	  patch) patch=$$((patch+1)) ;; \
+	  *) echo "Unknown BUMP='$(BUMP)' (use major|minor|patch)"; exit 1 ;; \
+	esac; \
+	next="v$$major.$$minor.$$patch"; \
+	echo "Creating tag $$next (was $(GIT_TAG))"; \
+	git tag "$$next"
 
 # ── Development ───────────────────────────────────────────────────────────────
 # Build EVERYTHING for dev: the backend image (code is baked into the image, so a

@@ -317,6 +317,76 @@ CREATE TABLE IF NOT EXISTS profile_memories (
 );
 
 CREATE INDEX IF NOT EXISTS idx_profile_memories_profile ON profile_memories(profile_id, updated_at DESC);
+
+-- Phase 20.a: shared workspaces. A workspace is a team container owned by a
+-- user; other users join as members with a role. Conversations and knowledge
+-- base documents (owned by an individual profile) are *shared into* a workspace
+-- via join tables, making them visible to every member per their role.
+CREATE TABLE IF NOT EXISTS workspaces (
+    id         TEXT    PRIMARY KEY,
+    name       TEXT    NOT NULL,
+    owner_id   TEXT    NOT NULL,              -- users.id
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS workspace_members (
+    workspace_id TEXT    NOT NULL,
+    user_id      TEXT    NOT NULL,
+    role         TEXT    NOT NULL DEFAULT 'viewer',  -- owner|admin|editor|viewer
+    added_at     INTEGER NOT NULL,
+    PRIMARY KEY (workspace_id, user_id),
+    FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id);
+
+CREATE TABLE IF NOT EXISTS workspace_conversations (
+    workspace_id    TEXT    NOT NULL,
+    conversation_id TEXT    NOT NULL,
+    shared_by       TEXT    NOT NULL,
+    shared_at       INTEGER NOT NULL,
+    PRIMARY KEY (workspace_id, conversation_id),
+    FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_conversations_conv ON workspace_conversations(conversation_id);
+
+CREATE TABLE IF NOT EXISTS workspace_documents (
+    workspace_id TEXT    NOT NULL,
+    document_id  TEXT    NOT NULL,
+    shared_by    TEXT    NOT NULL,
+    shared_at    INTEGER NOT NULL,
+    PRIMARY KEY (workspace_id, document_id),
+    FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+    FOREIGN KEY (document_id) REFERENCES kb_documents(id) ON DELETE CASCADE
+);
+
+-- Phase 20.b: threaded comments / annotations. A comment targets a
+-- conversation (message_id NULL) or a specific message within it; threading is
+-- via parent_id. Visible to anyone who can access the conversation (its owner
+-- or a member of a workspace it is shared into). Soft-deleted so replies keep
+-- their thread anchor.
+CREATE TABLE IF NOT EXISTS comments (
+    id              TEXT    PRIMARY KEY,
+    conversation_id TEXT    NOT NULL,
+    message_id      TEXT,                       -- NULL = conversation-level
+    parent_id       TEXT,                       -- NULL = top-level thread
+    user_id         TEXT    NOT NULL,
+    body            TEXT    NOT NULL,
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL,
+    deleted         INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+    FOREIGN KEY (parent_id) REFERENCES comments(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_comments_conversation ON comments(conversation_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_comments_message ON comments(message_id);
 """
 
 _MIGRATIONS = [

@@ -18,6 +18,7 @@ A feature-by-feature guide to SpiceSibyl: what each feature does, how to use it,
 | 📊 Stats | [Usage statistics](statistics.md) | Tokens, latency, costs; daily charts |
 | ✈️ Telegram | [Telegram bot](telegram.md) | Commands, voice, photos, documents, reminders, web profile linking |
 | 🧠 Memory | [Memory & personalization](memory-and-personalization.md) | Persistent memory, automatic titles, response cache, 👍/👎 feedback, Info page |
+| 👥 Collaboration | [Workspaces and collaboration](workspaces-and-collaboration.md) | Shared workspaces, role-based access, shared conversations/documents, threaded comments |
 | 🖥 UI | [Interface and UX](interface.md) | Themes, PWA, mobile, onboarding, keyboard shortcuts |
 | ⚙️ Ops | [Observability and operations](operations.md) | Health/readiness, Prometheus metrics, structured logging, backups |
 

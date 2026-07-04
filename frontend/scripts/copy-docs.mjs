@@ -41,6 +41,7 @@ const ORDER = [
   'statistiche',
   'telegram',
   'memoria-e-personalizzazione',
+  'workspace-e-collaborazione',
   'interfaccia',
   'operazioni',
 ];

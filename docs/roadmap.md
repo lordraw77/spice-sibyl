@@ -148,8 +148,8 @@
 
 ## Phase 20 — Collaboration
 *Priority 5 — highest-value but gated on Phase 13 auth/accounts; sequenced last.*
-- **20.a — Shared workspaces** — team-scoped conversations and knowledge bases with membership and role-based access (builds on Phase 13 accounts and Phase 17 KB scoping)
-- **20.b — Annotations & comments** — threaded comments on shared conversations and individual messages
+- **20.a — Shared workspaces** ✓ — team-scoped workspaces (`workspaces` + `workspace_members`) owned by a user, with role-based access (`owner` > `admin` > `editor` > `viewer`). Members are invited by email; conversations and knowledge base documents (owned by an individual profile) are *shared into* a workspace via join tables (`workspace_conversations` / `workspace_documents`), making them visible to every member. `GET/POST/PATCH/DELETE /v1/workspaces` + `/{ws}/members`, `/{ws}/conversations`, `/{ws}/documents`; sharing requires editor+ and ownership of the resource, membership management requires admin+, deletion is owner-only, and any member may self-leave. Web UI: "Workspace" page with a workspace list/create sidebar and a detail pane for members (invite/role/remove) and shared conversations/documents (builds on Phase 13 accounts and Phase 17 KB scoping)
+- **20.b — Annotations & comments** ✓ — threaded comments on shared conversations (`comments` table, `parent_id` threading, `message_id` for per-message anchoring; soft-deleted so replies keep their anchor). Access mirrors conversation reach — the owner or any member of a workspace it is shared into can read/post, while editing/deleting is restricted to the comment's author. `GET/POST/PATCH/DELETE /v1/conversations/{id}/comments`. Web UI: a collapsible threaded comment panel under each shared conversation in the Workspace page (post / reply / edit / delete own)
 - **20.c — Real-time collaboration** — multiple users in one conversation over WebSocket, with presence indicators and live-streaming of in-flight responses to all participants
 
 ## Phase 21 — Telegram knowledge base

@@ -18,6 +18,7 @@ Guida puntuale a tutte le funzionalità di SpiceSibyl: cosa fanno, come si usano
 | 📊 Statistiche | [Statistiche d'uso](statistiche.md) | Token, latenza, costi; grafici giornalieri |
 | ✈️ Telegram | [Bot Telegram](telegram.md) | Comandi, voce, foto, documenti, promemoria, link col profilo web |
 | 🧠 Memoria | [Memoria e personalizzazione](memoria-e-personalizzazione.md) | Memoria persistente, titoli automatici, cache risposte, feedback 👍/👎, pagina Info |
+| 👥 Collaborazione | [Workspace e collaborazione](workspace-e-collaborazione.md) | Workspace condivisi, accesso basato sui ruoli, conversazioni/documenti condivisi, commenti in thread |
 | 🖥 UI | [Interfaccia e UX](interfaccia.md) | Temi, PWA, mobile, onboarding, scorciatoie da tastiera |
 | ⚙️ Ops | [Osservabilità e operazioni](operazioni.md) | Health/readiness, metriche Prometheus, log strutturati, backup |
 

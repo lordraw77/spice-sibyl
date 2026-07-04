@@ -1,0 +1,61 @@
+<div class="comments">
+  <div class="comment-compose">
+    <textarea class="c-input" [(ngModel)]="newComment" rows="2"
+              placeholder="Aggiungi un commento…"></textarea>
+    <button class="btn" (click)="post()" [disabled]="!newComment.trim()">Commenta</button>
+  </div>
+
+  <p class="muted" *ngIf="!loading() && !comments().length">Ancora nessun commento.</p>
+
+  <ul class="thread-list">
+    <ng-container *ngFor="let node of tree()">
+      <ng-container *ngTemplateOutlet="nodeTpl; context: { $implicit: node, depth: 0 }"></ng-container>
+    </ng-container>
+  </ul>
+</div>
+
+<!-- Recursive comment node -->
+<ng-template #nodeTpl let-c let-depth="depth">
+  <li class="c-node" [style.marginLeft.px]="depth * 20">
+    <div class="c-head">
+      <span class="c-author">{{ c.author_email }}</span>
+      <span class="c-time">{{ c.updated_at * 1000 | date: 'short' }}</span>
+    </div>
+
+    <ng-container *ngIf="editingId() === c.id; else bodyView">
+      <textarea class="c-input" [(ngModel)]="editBody" rows="2"></textarea>
+      <div class="c-actions">
+        <button class="btn small" (click)="submitEdit(c)">Salva</button>
+        <button class="btn-ghost small" (click)="cancelInline()">Annulla</button>
+      </div>
+    </ng-container>
+
+    <ng-template #bodyView>
+      <p class="c-body" [class.deleted]="c.deleted">
+        {{ c.deleted ? '[commento eliminato]' : c.body }}
+      </p>
+      <div class="c-actions" *ngIf="!c.deleted">
+        <button class="link-btn" (click)="startReply(c.id)">Rispondi</button>
+        <ng-container *ngIf="c.user_id === myId()">
+          <button class="link-btn" (click)="startEdit(c)">Modifica</button>
+          <button class="link-btn danger" (click)="remove(c)">Elimina</button>
+        </ng-container>
+      </div>
+    </ng-template>
+
+    <!-- inline reply box -->
+    <div class="c-reply" *ngIf="replyingTo() === c.id">
+      <textarea class="c-input" [(ngModel)]="replyBody" rows="2"
+                placeholder="Scrivi una risposta…"></textarea>
+      <div class="c-actions">
+        <button class="btn small" (click)="submitReply(c.id)" [disabled]="!replyBody.trim()">Invia</button>
+        <button class="btn-ghost small" (click)="cancelInline()">Annulla</button>
+      </div>
+    </div>
+
+    <!-- children -->
+    <ng-container *ngFor="let child of c.replies">
+      <ng-container *ngTemplateOutlet="nodeTpl; context: { $implicit: child, depth: depth + 1 }"></ng-container>
+    </ng-container>
+  </li>
+</ng-template>

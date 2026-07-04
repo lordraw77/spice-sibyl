@@ -70,6 +70,14 @@ export const routes: Routes = [
       import('./features/mcp/mcp-page.component').then((m) => m.McpPageComponent),
   },
   {
+    path: 'workspaces',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/workspaces/workspaces-page.component').then(
+        (m) => m.WorkspacesPageComponent
+      ),
+  },
+  {
     path: 'help',
     canActivate: [authGuard],
     loadComponent: () =>

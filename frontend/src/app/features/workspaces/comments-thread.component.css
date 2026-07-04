@@ -1,0 +1,62 @@
+.comments { display: flex; flex-direction: column; gap: .75rem; }
+
+.comment-compose { display: flex; gap: .5rem; align-items: flex-start; }
+.comment-compose .c-input { flex: 1; }
+
+.muted { color: var(--text-muted); font-size: .82rem; margin: .2rem 0; }
+
+.thread-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+
+.c-node {
+  padding: .5rem .65rem;
+  border-radius: .5rem;
+  background: var(--bg-surface-hover);
+  border-left: 2px solid var(--border);
+}
+.c-head { display: flex; align-items: baseline; gap: .6rem; margin-bottom: .2rem; }
+.c-author { font-weight: 600; font-size: .82rem; color: var(--text-primary); }
+.c-time { font-size: .72rem; color: var(--text-muted); }
+.c-body { margin: .15rem 0; font-size: .86rem; color: var(--text-secondary, var(--text-primary)); white-space: pre-wrap; word-break: break-word; }
+.c-body.deleted { font-style: italic; color: var(--text-muted); }
+
+.c-actions { display: flex; gap: .5rem; align-items: center; margin-top: .3rem; }
+.c-reply { margin-top: .4rem; display: flex; flex-direction: column; gap: .35rem; }
+
+.c-input {
+  width: 100%;
+  background: var(--bg-input, var(--bg-surface));
+  border: 1px solid var(--border);
+  border-radius: .5rem;
+  padding: .45rem .6rem;
+  color: var(--text-primary);
+  font-size: .85rem;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+}
+.c-input:focus { border-color: var(--accent); }
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: .76rem;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.link-btn:hover { color: var(--accent); }
+.link-btn.danger:hover { color: #c66; }
+
+.btn, .btn-ghost {
+  border-radius: .5rem;
+  padding: .45rem .85rem;
+  font-size: .85rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.btn { background: var(--accent); color: #1a1a1a; border-color: var(--accent); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-ghost { background: transparent; color: var(--text-tertiary); }
+.btn.small, .btn-ghost.small { padding: .3rem .6rem; font-size: .78rem; }
