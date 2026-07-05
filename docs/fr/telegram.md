@@ -22,6 +22,8 @@
 | `/memory on\|off\|list\|del <id>` | mémoire personnelle sur le profil associé (voir [Mémoire et personnalisation](memory-and-personalization.md)) |
 | `/kb list\|del <id>` | gère la base de connaissances du profil associé ; pour ajouter un document, envoyez un fichier avec la **légende `/kb`** (voir ci-dessous) |
 | `/rag on\|off` | active/désactive l'injection de la base de connaissances dans ce chat (par chat, **OFF par défaut**) |
+| `/tool on\|off` | active/désactive la boucle d'outils pour ce chat (par chat, **OFF par défaut**) |
+| `/tools` | liste les outils disponibles (groupés) et l'état actuel du basculement — lecture seule, ne modifie pas l'état |
 | `/lang` · `/lang en\|it\|fr\|de\|es` | langue du bot par chat (clavier inline ou directe) ; persistée dans `telegram_prefs` |
 
 ## Gestion des médias
@@ -37,6 +39,16 @@
 - **Ingestion** — envoyez un fichier **PDF / TXT / DOCX / MD** avec la légende `/kb` : il est ajouté à la base du profil associé en réutilisant le même pipeline que les téléversements web (`rag_service.ingest` : extraction → découpage → embedding), avec détection des doublons par hachage sha256.
 - **Gestion** — `/kb list` affiche les documents avec une icône d'état (✅ prêt · ⏳ en attente · ⚠️ erreur), 🔗 pour les documents issus d'URL, et le nombre de chunks ; `/kb del <id>` supprime un document par préfixe d'id.
 - **Récupération** — avec `/rag on`, chaque message fait récupérer par `_stream_reply` les chunks les plus pertinents (`rag_service.retrieve`, recherche hybride + rerank facultatif) et les intègre au dernier message utilisateur ; la réponse reçoit un pied 📚 sources (noms de fichiers dédupliqués). L'interrupteur est **par chat**, persisté dans `telegram_prefs.rag` et rechargé au démarrage.
+
+## Outils et MCP (Phase 23.b)
+
+Apporte la **boucle d'outils** du chat web à Telegram : avec `/tool on`, une completion ne se limite plus au streaming — le bot fusionne les outils intégrés, les **outils personnalisés** du profil associé et chaque **outil MCP** découvert (`mcp__<server>__<tool>`, voir [MCP](mcp.md)) dans la requête et exécute la boucle server-side partagée (`ChatService._stream_with_tools`), ainsi le comportement est identique sur les deux canaux.
+
+- **Basculer** — `/tool on|off` bascule directement la boucle d'outils. **Par chat**, **OFF par défaut**, persisté dans `telegram_prefs.tools` et rechargé au démarrage (comme `/rag`). Les outils liés au profil (`kb_search`, `create_reminder`, outils personnalisés) se résolvent sur le profil associé.
+- **Énumération** — `/tools` énumère les outils disponibles groupés par type (🧩 intégrés · 🔌 MCP · 🛠 personnalisés) ainsi que l'état actuel du basculement ; c'est une lecture seule qui ne modifie jamais l'état (utilisez `/tool` pour le changer).
+- **Progression** — les appels d'outils apparaissent en direct dans la réponse (⚙ *nom de l'outil* pendant l'exécution, retourné en ✅ au résultat).
+- **Découverte** — les outils MCP sont re-sondés quand vous exécutez `/tools` (ou quand le cache est froid) et stockés dans `mcp_service`, ainsi les messages ordinaires ne paient pas la latence du sondage.
+- **Mode agent** — les modèles `agent/*` orchestrent leurs propres outils ; le basculement `/tool` ne s'y applique pas.
 
 ## Actions rapides
 

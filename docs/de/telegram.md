@@ -22,6 +22,8 @@
 | `/memory on\|off\|list\|del <id>` | persönliches Gedächtnis über das verknüpfte Profil (siehe [Gedächtnis und Personalisierung](memory-and-personalization.md)) |
 | `/kb list\|del <id>` | verwaltet die Wissensdatenbank des verknüpften Profils; zum Hinzufügen eine Datei mit **`/kb`-Bildunterschrift** senden (siehe unten) |
 | `/rag on\|off` | schaltet die Wissensdatenbank-Injektion in diesem Chat um (pro Chat, **standardmäßig OFF**) |
+| `/tool on\|off` | schaltet die Tool-Schleife für diesen Chat um (pro Chat, **standardmäßig OFF**) |
+| `/tools` | listet die verfügbaren Tools (gruppiert) und den aktuellen Umschalter-Status auf — nur Anzeige, ändert den Zustand nicht |
 | `/lang` · `/lang en\|it\|fr\|de\|es` | Bot-Sprache pro Chat (Inline-Tastatur oder direkt); persistiert in `telegram_prefs` |
 
 ## Medien
@@ -37,6 +39,16 @@ Erweitert das RAG des Web-Profils (siehe [Wissensdatenbank](knowledge-rag.md)) a
 - **Aufnahme** — sende eine **PDF / TXT / DOCX / MD**-Datei mit `/kb`-Bildunterschrift: sie wird der Wissensdatenbank des verknüpften Profils hinzugefügt, mit derselben Pipeline wie Web-Uploads (`rag_service.ingest`: Extraktion → Chunking → Embedding) und sha256-Duplikaterkennung.
 - **Verwaltung** — `/kb list` zeigt Dokumente mit Status-Icon (✅ bereit · ⏳ ausstehend · ⚠️ Fehler), 🔗 für URL-Dokumente und Chunk-Anzahl; `/kb del <id>` entfernt ein Dokument per Id-Präfix.
 - **Abruf** — mit `/rag on` lässt `_stream_reply` bei jeder Nachricht die relevantesten Chunks abrufen (`rag_service.retrieve`, hybride Suche + optionales Rerank) und in die letzte Benutzernachricht einfügen; die Antwort erhält eine 📚-Quellen-Fußzeile (deduplizierte Dateinamen). Der Schalter ist **pro Chat**, persistiert in `telegram_prefs.rag` und wird beim Start neu geladen.
+
+## Tools und MCP (Phase 23.b)
+
+Bringt die **Tool-Schleife** des Web-Chats zu Telegram: mit `/tool on` beschränkt sich eine Completion nicht mehr aufs Streaming — der Bot fusioniert die integrierten Tools, die **benutzerdefinierten Tools** des verknüpften Profils und jedes erkannte **MCP-Tool** (`mcp__<server>__<tool>`, siehe [MCP](mcp.md)) in die Anfrage und führt die gemeinsame Server-seitige Schleife aus (`ChatService._stream_with_tools`), sodass das Verhalten über Kanäle hinweg identisch ist.
+
+- **Umschalter** — `/tool on|off` schaltet die Tool-Schleife direkt um. **Pro Chat**, **standardmäßig OFF**, persistiert in `telegram_prefs.tools` und beim Start neu geladen (wie `/rag`). Profilbezogene Tools (`kb_search`, `create_reminder`, benutzerdefinierte Tools) werden beim verknüpften Profil aufgelöst.
+- **Auflistung** — `/tools` listet die verfügbaren Tools gruppiert nach Art (🧩 integriert · 🔌 MCP · 🛠 benutzerdefiniert) zusammen mit dem aktuellen Umschalter-Status auf; das ist reine Anzeige und ändert den Zustand nie (nutze `/tool`, um ihn zu ändern).
+- **Fortschritt** — Tool-Aufrufe erscheinen live in der Streaming-Antwort (⚙ *Tool-Name* während Ausführung, wird zu ✅ beim Ergebnis).
+- **Erkennung** — MCP-Tools werden erneut sondiert, wenn Sie `/tools` ausführen (oder wenn der Cache kalt ist) und in `mcp_service` gespeichert, sodass normale Nachrichten nicht die Sondierungslatenz zahlen.
+- **Agent-Modus** — `agent/*`-Modelle orchestrieren ihre eigenen Tools; der `/tool`-Umschalter gilt nicht für sie.
 
 ## Schnellaktionen
 

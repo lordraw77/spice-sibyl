@@ -27,6 +27,7 @@ Localized user-facing strings live in app/telegram/i18n.py.
 import asyncio
 import base64
 import io
+import json
 import logging
 import re
 import time
@@ -55,11 +56,13 @@ from app.db.search_repository import search_conversations
 from app.db.stats_repository import get_usage_stats
 from app.db import telegram_reminder_repository as reminder_repo
 from app.db import telegram_prefs_repository as prefs_repo
+from app.db import conversation_repository as conv_repo
 from app.telegram import i18n
 from app.telegram.i18n import t
 from app.dependencies.provider_factory import get_provider
 from app.schemas.chat import ChatCompletionRequest, ChatMessage
 from app.services.image_service import generate_image, ImageGenerationError, get_available_provider
+from app.services.chat_service import ChatService
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +96,25 @@ _memory_prefs: dict[int, bool] = {}
 
 # Phase 21: chat_id → RAG injection toggle (/rag on|off), warm-cached; OFF by default
 _rag_prefs: dict[int, bool] = {}
+
+# Phase 23.b: chat_id → tool-loop toggle (/tools on|off), warm-cached; OFF by default.
+# When ON (and not in agent mode), completions run the server-side tool loop with
+# the built-in + custom + MCP tools merged in, exactly as the web chat.
+_tools_prefs: dict[int, bool] = {}
+
+# Reused for the server-side tool-execution loop (Phase 23.b): the bot shares the
+# web chat's loop so tool behavior stays identical across channels.
+_chat_service = ChatService()
+
+# Phase 23.a: chat_id → active persisted conversation id (linked chats only).
+# Warm-started from telegram_prefs at boot; a chat with an entry here streams its
+# exchanges into a regular profile conversation instead of the in-memory _sessions
+# buffer. Chats not present (or unlinked) fall back to in-memory history.
+_active_convs: dict[int, str] = {}
+
+# chat_ids whose _sessions buffer has already been hydrated from its persisted
+# active conversation this process (avoids re-reading the DB on every message).
+_hydrated: set[int] = set()
 
 # The running Application, set by build_application — lets the create_reminder
 # tool schedule jobs on the live JobQueue from outside the bot.
@@ -161,6 +183,97 @@ def _split(text: str, limit: int = 4000) -> list[str]:
     return parts or [text[:limit]]
 
 
+# ── Persisted conversations (Phase 23.a) ──────────────────────────────────────
+# For linked chats (/link), Telegram exchanges are stored as regular profile
+# conversations (channel='telegram') so they show up in the web sidebar and share
+# history across channels. Unlinked chats keep the in-memory _sessions buffer.
+
+def _title_from(text: str, limit: int = 60) -> str:
+    """Derive a provisional conversation title from the first user message."""
+    title = " ".join((text or "").split())
+    return (title[:limit] + "…") if len(title) > limit else (title or "Telegram")
+
+
+def _user_text_of(content) -> str:
+    """Flatten a (possibly multimodal) user message to plain text for persistence."""
+    if isinstance(content, list):
+        return next(
+            (p["text"] for p in content if isinstance(p, dict) and p.get("type") == "text"),
+            "[media]",
+        )
+    return content if isinstance(content, str) else "[media]"
+
+
+async def _ensure_hydrated(chat_id: int) -> None:
+    """Load the active persisted conversation's recent messages into the in-memory
+    working buffer once per process, so context survives a bot restart."""
+    if chat_id in _hydrated:
+        return
+    _hydrated.add(chat_id)
+    conv_id = _active_convs.get(chat_id)
+    if not conv_id:
+        return
+    try:
+        async with aiosqlite.connect(settings.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            conv = await conv_repo.get_conversation(db, conv_id)
+        if conv and conv.messages:
+            _sessions[chat_id] = [
+                {"role": m.role, "content": m.content}
+                for m in conv.messages
+                if m.role in ("user", "assistant") and isinstance(m.content, str)
+            ][-_MAX_HISTORY:]
+        elif not conv:
+            # Stale pointer (conversation deleted from the web) — drop it.
+            _active_convs.pop(chat_id, None)
+            await prefs_repo.set_active_conversation(chat_id, None)
+    except Exception:
+        logger.exception("hydrate: fallita chat_id=%s conv=%s", chat_id, conv_id)
+
+
+async def _persist_exchange(chat_id: int, model: str, user_content, assistant_content: str) -> None:
+    """Persist a completed user/assistant exchange for a linked chat, creating the
+    active conversation on first use. No-op for unlinked chats (in-memory only)."""
+    profile_id = await _linked_profile_id(chat_id)
+    if not profile_id:
+        return
+    user_text = _user_text_of(user_content)
+    try:
+        async with aiosqlite.connect(settings.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            conv_id = _active_convs.get(chat_id)
+            if not conv_id:
+                summary = await conv_repo.create_conversation(
+                    db, _title_from(user_text), model, profile_id, channel="telegram"
+                )
+                conv_id = summary.id
+                _active_convs[chat_id] = conv_id
+                _hydrated.add(chat_id)
+                await prefs_repo.set_active_conversation(chat_id, conv_id)
+                # Generate a nicer title asynchronously (only for a new conversation).
+                from app.services import title_service
+                title_service.schedule_titling(conv_id, user_text, assistant_content)
+            await conv_repo.append_messages(
+                db,
+                conv_id,
+                [
+                    ChatMessage(role="user", content=user_text),
+                    ChatMessage(role="assistant", content=assistant_content, model=model),
+                ],
+            )
+    except Exception:
+        logger.exception("persist_exchange: fallita chat_id=%s", chat_id)
+
+
+async def _reset_conversation(chat_id: int) -> None:
+    """Start a fresh conversation (/new): clear the working buffer and detach the
+    active conversation so a linked chat lazily creates a new one on next message."""
+    _sessions[chat_id].clear()
+    _hydrated.add(chat_id)
+    if _active_convs.pop(chat_id, None) is not None:
+        await prefs_repo.set_active_conversation(chat_id, None)
+
+
 # ── Command handlers ─────────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -183,7 +296,7 @@ async def cmd_new(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.warning("cmd_new: accesso negato user_id=%s", user.id)
         return
     logger.info("cmd_new: reset sessione chat_id=%s user_id=%s", update.effective_chat.id, user.id)
-    _sessions[update.effective_chat.id].clear()
+    await _reset_conversation(update.effective_chat.id)
     await update.message.reply_text(t(_locale(update.effective_chat.id), "new_cleared"))
 
 
@@ -199,7 +312,7 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         model_id = args[0].strip()
         logger.info("cmd_model: cambio modello chat_id=%s old=%s new=%s", chat_id, _models.get(chat_id, _default_model()), model_id)
         _models[chat_id] = model_id
-        _sessions[chat_id].clear()
+        await _reset_conversation(chat_id)
         await update.message.reply_text(
             f"✅ Modello impostato: <code>{model_id}</code>\nConversazione azzerata.",
             parse_mode=ParseMode.HTML,
@@ -271,7 +384,7 @@ async def _cb_model_select(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     old = _models.get(chat_id, _default_model())
     logger.info("cmd_model: cambio modello (inline) chat_id=%s old=%s new=%s", chat_id, old, model_id)
     _models[chat_id] = model_id
-    _sessions[chat_id].clear()
+    await _reset_conversation(chat_id)
     await query.edit_message_text(
         f"✅ Modello impostato: <code>{model_id}</code>\nConversazione azzerata.",
         parse_mode=ParseMode.HTML,
@@ -314,7 +427,7 @@ async def cmd_agent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_agent_model(current):
         _chat_models[chat_id] = current  # remember to restore on /chat
     _models[chat_id] = _AGENT_MODEL
-    _sessions[chat_id].clear()
+    await _reset_conversation(chat_id)
     await update.message.reply_text(
         f"🤖 Modalità <b>agente</b>: <code>{_AGENT_MODEL}</code>\n"
         f"Delego a Proxmox · Synology · Linux · HAOS · WatchYourLAN.\n"
@@ -346,7 +459,7 @@ async def cmd_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     _models[chat_id] = target
     if not _is_agent_model(target):
         _chat_models[chat_id] = target
-    _sessions[chat_id].clear()
+    await _reset_conversation(chat_id)
     await update.message.reply_text(
         f"💬 Modalità <b>chat</b>: <code>{target}</code>\n"
         f"Conversazione azzerata. Passa all'agente con /agent.",
@@ -553,6 +666,101 @@ async def cmd_rag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(t(loc, "rag_usage"), parse_mode=ParseMode.HTML)
 
 
+def _split_message(text: str, max_length: int = 4000) -> list[str]:
+    """Split text into chunks that respect HTML tags and line breaks."""
+    if len(text) <= max_length:
+        return [text]
+
+    chunks = []
+    current_chunk = ""
+    lines = text.split("\n")
+
+    for line in lines:
+        if len(current_chunk) + len(line) + 1 <= max_length:
+            current_chunk += line + "\n"
+        else:
+            if current_chunk:
+                chunks.append(current_chunk.rstrip("\n"))
+            current_chunk = line + "\n"
+
+    if current_chunk:
+        chunks.append(current_chunk.rstrip("\n"))
+
+    return chunks
+
+
+def _format_tool_list(defs: list[dict]) -> str:
+    """Render tool definitions as grouped <code> lines for the /tools message."""
+    builtins, mcp_tools, custom = [], [], []
+    for d in defs:
+        name = (d.get("function") or {}).get("name", "?")
+        if name.startswith("mcp__"):
+            mcp_tools.append(name)
+        elif name.startswith("custom__"):
+            custom.append(name.removeprefix("custom__"))
+        else:
+            builtins.append(name)
+    lines: list[str] = []
+    for label, names in (("🧩 built-in", builtins), ("🔌 MCP", mcp_tools), ("🛠 custom", custom)):
+        if names:
+            lines.append(f"<b>{label}</b>")
+            lines.extend(f"  <code>{n}</code>" for n in names)
+    return "\n".join(lines)
+
+
+async def cmd_tool(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Phase 23.c: /tool on|off — toggle the tool loop for this chat.
+
+    This is the only way to flip the per-chat toggle; /tools is view-only.
+    """
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        return
+    chat_id = update.effective_chat.id
+    loc = _locale(chat_id)
+    args = [a.strip() for a in (context.args or []) if a.strip()]
+    sub = args[0].lower() if args else ""
+
+    if sub in ("on", "off"):
+        enabled = sub == "on"
+        _tools_prefs[chat_id] = enabled
+        await prefs_repo.set_tools(chat_id, enabled)
+        await update.message.reply_text(t(loc, "tools_on" if enabled else "tools_off"))
+        return
+
+    await update.message.reply_text(t(loc, "tool_usage"), parse_mode=ParseMode.HTML)
+
+
+async def cmd_tools(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Phase 23.b: /tools — list the tools available in this chat (view-only).
+
+    Use /tool on|off to toggle the tool loop; /tools never mutates state.
+    """
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        return
+    chat_id = update.effective_chat.id
+    loc = _locale(chat_id)
+
+    profile = await _linked_profile_id(user.id)
+    defs = await _assemble_tool_defs(profile, force_refresh=True)
+    current = _tools_prefs.get(chat_id, False)
+
+    if defs:
+        header = t(loc, "tools_header", count=len(defs))
+    else:
+        header = t(loc, "tools_none")
+    header += "\n\n" + t(loc, "tools_status_on" if current else "tools_status_off")
+    await update.message.reply_text(header, parse_mode=ParseMode.HTML)
+
+    # Send tool list in chunks (Telegram limit: 4096 chars)
+    if defs:
+        tool_list = _format_tool_list(defs)
+        chunks = _split_message(tool_list, max_length=4000)
+        for chunk in chunks:
+            await update.message.reply_text(chunk, parse_mode=ParseMode.HTML)
+
+
 async def cmd_kb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Phase 21: /kb list|del <id> — manage the linked profile's knowledge base.
 
@@ -725,6 +933,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         {"type": "image_url", "image_url": {"url": data_url}},
     ]
 
+    await _ensure_hydrated(chat_id)
     session = _sessions[chat_id]
     session.append({"role": "user", "content": vision_content})
 
@@ -767,6 +976,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             session.append({"role": "assistant", "content": full_content})
             _tg_messages_sent += 1
             logger.info("handle_photo: risposta completata chat_id=%s response_len=%d", chat_id, len(full_content))
+            # Phase 23.a: persist the image exchange into the linked profile's conversation
+            await _persist_exchange(chat_id, model, vision_content, full_content)
 
     except asyncio.CancelledError:
         raise
@@ -861,6 +1072,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         pass
 
     model = _models.get(chat_id, _default_model())
+    await _ensure_hydrated(chat_id)
     session = _sessions[chat_id]
     session.append({"role": "user", "content": transcript})
     if len(session) > _MAX_HISTORY:
@@ -868,7 +1080,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         session = _sessions[chat_id]
 
     reply_sent = await msg.reply_text("⏳")
-    await _stream_reply(chat_id, session, model, reply_sent, update)
+    await _stream_reply(chat_id, session, model, reply_sent, update, persist_user=transcript)
 
 
 # ── Quick-action buttons ────────────────────────────────────────────────────
@@ -936,6 +1148,37 @@ async def _cb_quick_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 # ── Shared streaming helper ─────────────────────────────────────────────────
 
+async def _assemble_tool_defs(profile_id: str | None, force_refresh: bool = False) -> list[dict]:
+    """Build the tool-definition list for the Telegram tool loop (Phase 23.b).
+
+    Mirrors the web ``GET /v1/tools`` endpoint: built-in tools + every tool
+    discovered from enabled MCP servers + the linked profile's custom tools.
+    MCP discovery is cached in ``mcp_service``; we only re-probe when asked to
+    (``/tools`` listing) or when the cache is cold, so ordinary messages don't
+    pay the probe latency on every turn. Failures never hide the built-ins.
+    """
+    from app.services import custom_tool_service, mcp_service
+    from app.tools.registry import TOOL_DEFINITIONS
+
+    defs = list(TOOL_DEFINITIONS)
+    try:
+        if force_refresh or not mcp_service.get_tool_definitions():
+            async with aiosqlite.connect(settings.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                await mcp_service.refresh(db)
+        defs.extend(mcp_service.get_tool_definitions())
+    except Exception:  # noqa: BLE001 — MCP is optional; never break the tool list
+        logger.exception("_assemble_tool_defs: MCP discovery failed")
+    if profile_id:
+        try:
+            async with aiosqlite.connect(settings.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                defs.extend(await custom_tool_service.get_tool_definitions(db, profile_id))
+        except Exception:  # noqa: BLE001 — custom tools must never hide the built-ins
+            logger.exception("_assemble_tool_defs: custom tool listing failed")
+    return defs
+
+
 async def _stream_reply(
     chat_id: int,
     session: list[dict],
@@ -943,8 +1186,13 @@ async def _stream_reply(
     sent,  # the placeholder Message we edit
     update: Update | None,
     orig_message=None,
+    persist_user: str | list | None = None,
 ) -> None:
-    """Stream a provider response, edit *sent* as tokens arrive, attach quick-action buttons."""
+    """Stream a provider response, edit *sent* as tokens arrive, attach quick-action buttons.
+
+    When ``persist_user`` is set (a genuine new user turn) and streaming succeeds, the
+    exchange is stored into the linked profile's active conversation (Phase 23.a).
+    Quick-action refinements pass None to stay in-memory only."""
     global _tg_messages_sent, _tg_errors
 
     # Bind a request id so Telegram-originated provider/sidecar logs correlate.
@@ -1005,20 +1253,67 @@ async def _stream_reply(
         except Exception:
             logger.exception("stream_reply: iniezione RAG fallita chat_id=%s", chat_id)
 
+    # Phase 23.b: when tools are enabled for this chat (and we're not in agent
+    # mode — agent/* models orchestrate their own tools), merge the built-in +
+    # custom + MCP tools into the request and run the shared server-side tool
+    # loop instead of a plain stream. tool-call progress is surfaced live below.
+    tools_active = _tools_prefs.get(chat_id, False) and not model.startswith("agent/")
     request = ChatCompletionRequest(model=model, messages=messages, max_tokens=2048)
+    if tools_active:
+        tool_profile = linked_profile or await _linked_profile_id(chat_id)
+        tool_defs = await _assemble_tool_defs(tool_profile)
+        if tool_defs:
+            request = ChatCompletionRequest(
+                model=model,
+                messages=messages,
+                max_tokens=2048,
+                tools=tool_defs,
+                profile_id=tool_profile,
+            )
+        else:
+            tools_active = False
+
+    def _chunk_source():
+        """Yield native provider-style chunks whether or not tools are active.
+
+        With tools active we adapt the web tool loop's SSE frames into the same
+        shape the streaming consumer below already understands (tool_call /
+        tool_result control chunks, content deltas, a terminating meta chunk)."""
+        if not tools_active:
+            return provider.stream(request)
+
+        async def _adapt():
+            async for frame in _chat_service._stream_with_tools(provider, request):
+                event = frame.get("event")
+                if event == "done":
+                    return
+                try:
+                    payload = json.loads(frame.get("data") or "null")
+                except (TypeError, ValueError):
+                    continue
+                if event == "tool_call":
+                    yield {"_sse_event": "tool_call", "_icon": "⚙", "name": payload.get("name")}
+                elif event == "tool_result":
+                    yield {"_sse_event": "tool_result"}
+                elif event == "error":
+                    raise RuntimeError(payload.get("message") or "tool loop error")
+                elif event == "message" and isinstance(payload, dict):
+                    yield payload
+
+        return _adapt()
 
     full_content = ""
     progress: list[str] = []
     last_edit = time.monotonic()
 
     try:
-        async for chunk in provider.stream(request):
+        async for chunk in _chunk_source():
             if chunk.get("object") == "chat.completion.meta":
                 break
 
             sse_event = chunk.get("_sse_event")
             if sse_event == "tool_call":
-                progress.append(f"🔧 {chunk.get('name', 'agent')} …")
+                progress.append(f"{chunk.get('_icon', '🔧')} {chunk.get('name', 'agent')} …")
                 now = time.monotonic()
                 if now - last_edit >= 1.0:
                     try:
@@ -1029,7 +1324,10 @@ async def _stream_reply(
                 continue
             if sse_event == "tool_result":
                 if progress:
-                    progress[-1] = progress[-1].replace("🔧", "✅").removesuffix(" …")
+                    # flip the running-icon prefix (🔧 agent, ⚙ tool loop) to ✅
+                    progress[-1] = (
+                        progress[-1].replace("🔧", "✅").replace("⚙", "✅").removesuffix(" …")
+                    )
                 continue
 
             choices = chunk.get("choices") or []
@@ -1078,6 +1376,11 @@ async def _stream_reply(
             session.append({"role": "assistant", "content": full_content})
             _tg_messages_sent += 1
             logger.info("stream_reply: completata chat_id=%s model=%s len=%d", chat_id, model, len(full_content))
+
+            # Phase 23.a: persist a genuine new turn into the linked profile's
+            # active conversation (no-op for unlinked chats / quick-action refinements).
+            if persist_user is not None:
+                await _persist_exchange(chat_id, model, persist_user, full_content)
 
             # Phase 19: async memory extraction on the linked profile
             if linked_profile and _memory_prefs.get(chat_id, True):
@@ -1130,6 +1433,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     model = _models.get(chat_id, _default_model())
     logger.info("handle_message: chat_id=%s user_id=%s model=%s text_len=%d", chat_id, user.id, model, len(text))
 
+    await _ensure_hydrated(chat_id)
     session = _sessions[chat_id]
     session.append({"role": "user", "content": text})
 
@@ -1140,26 +1444,60 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
     sent = await update.message.reply_text("⏳")
 
-    await _stream_reply(chat_id, session, model, sent, update)
+    await _stream_reply(chat_id, session, model, sent, update, persist_user=text)
 
 
 # ── /history command ─────────────────────────────────────────────────────────
 
+def _channel_badge(channel: str) -> str:
+    """Emoji marking a conversation's channel of origin in /history."""
+    return "✈️" if channel == "telegram" else "🌐"
+
+
 async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show recent conversation exchanges in this chat's in-memory session."""
+    """List recent conversations.
+
+    For linked chats (Phase 23.a): the profile's recent conversations across both
+    channels, each with an inline button to resume it. For unlinked chats: the
+    current in-memory session preview (legacy behaviour)."""
     user = update.effective_user
     if not _is_allowed(user.id):
         logger.warning("cmd_history: accesso negato user_id=%s", user.id)
         return
 
     chat_id = update.effective_chat.id
-    session = _sessions.get(chat_id, [])
+    loc = _locale(chat_id)
+    profile_id = await _linked_profile_id(chat_id)
 
-    if not session:
-        await update.message.reply_text("📭 Nessun messaggio nella conversazione corrente.\nUsa /search per cercare nelle conversazioni salvate.")
+    if profile_id:
+        async with aiosqlite.connect(settings.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            conversations = await conv_repo.list_conversations(db, profile_id)
+        if not conversations:
+            await update.message.reply_text(t(loc, "history_empty"))
+            return
+
+        active_id = _active_convs.get(chat_id)
+        buttons = []
+        for conv in conversations[:12]:
+            title = " ".join((conv.title or "—").split())[:50]
+            marker = "✅ " if conv.id == active_id else ""
+            label = f"{marker}{_channel_badge(conv.channel)} {title}"
+            buttons.append([InlineKeyboardButton(label, callback_data=f"resume:{conv.id}")])
+        await update.message.reply_text(
+            t(loc, "history_title"),
+            reply_markup=InlineKeyboardMarkup(buttons),
+            parse_mode=ParseMode.HTML,
+        )
         return
 
-    lines = ["📜 <b>Conversazione corrente</b>\n"]
+    # Unlinked: preview the in-memory session (no persistence available).
+    session = _sessions.get(chat_id, [])
+    if not session:
+        await update.message.reply_text(t(loc, "history_empty_unlinked"))
+        return
+
+    lines = [t(loc, "history_current_header") + "\n"]
     for msg in session[-20:]:
         role = "👤" if msg["role"] == "user" else "🤖"
         content = msg["content"]
@@ -1171,11 +1509,52 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         lines.append(f"{role} {preview}")
 
     model = _models.get(chat_id, _default_model())
-    lines.append(f"\n<i>Modello: {model} · {len(session)} messaggi</i>")
+    lines.append(f"\n<i>{model} · {len(session)}</i>")
 
     text = "\n".join(lines)
     for chunk in _split(text):
         await update.message.reply_text(chunk, parse_mode=ParseMode.HTML)
+
+
+async def _cb_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Resume a conversation picked from the /history keyboard (Phase 23.a)."""
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat_id
+    loc = _locale(chat_id)
+    if not _is_allowed(query.from_user.id):
+        return
+
+    conv_id = query.data.removeprefix("resume:")
+    profile_id = await _linked_profile_id(chat_id)
+    if not profile_id:
+        return
+
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT profile_id FROM conversations WHERE id = ?", (conv_id,)
+        ) as cur:
+            owner = await cur.fetchone()
+        conv = await conv_repo.get_conversation(db, conv_id) if owner else None
+    if not conv or owner["profile_id"] != profile_id:
+        await query.edit_message_text(t(loc, "history_resume_gone"))
+        return
+
+    _active_convs[chat_id] = conv_id
+    _hydrated.add(chat_id)
+    _sessions[chat_id] = [
+        {"role": m.role, "content": m.content}
+        for m in conv.messages
+        if m.role in ("user", "assistant") and isinstance(m.content, str)
+    ][-_MAX_HISTORY:]
+    await prefs_repo.set_active_conversation(chat_id, conv_id)
+    logger.info("cmd_history: ripresa conversazione chat_id=%s conv=%s", chat_id, conv_id)
+
+    title = " ".join((conv.title or "—").split())[:60]
+    await query.edit_message_text(
+        t(loc, "history_resumed", title=title), parse_mode=ParseMode.HTML
+    )
 
 
 # ── /search command ──────────────────────────────────────────────────────────
@@ -1455,14 +1834,16 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     except Exception:
         pass
 
+    await _ensure_hydrated(chat_id)
     session = _sessions[chat_id]
-    session.append({"role": "user", "content": f"{caption}\n\n{doc_context}"})
+    doc_message = f"{caption}\n\n{doc_context}"
+    session.append({"role": "user", "content": doc_message})
     if len(session) > _MAX_HISTORY:
         _sessions[chat_id] = session[-_MAX_HISTORY:]
         session = _sessions[chat_id]
 
     reply_sent = await msg.reply_text("⏳")
-    await _stream_reply(chat_id, session, model, reply_sent, update)
+    await _stream_reply(chat_id, session, model, reply_sent, update, persist_user=doc_message)
 
 
 # ── Reminders (/remind) ───────────────────────────────────────────────────────
@@ -1699,6 +2080,16 @@ async def _load_rag_prefs() -> None:
         logger.exception("_load_rag_prefs: caricamento preferenze RAG fallito")
 
 
+async def _load_tools_prefs() -> None:
+    """Warm-start the per-chat tool-loop toggle cache from telegram_prefs (Phase 23.b)."""
+    try:
+        _tools_prefs.update(await prefs_repo.load_all_tools())
+        if _tools_prefs:
+            logger.info("_load_tools_prefs: %d preferenze strumenti caricate", len(_tools_prefs))
+    except Exception:
+        logger.exception("_load_tools_prefs: caricamento preferenze strumenti fallito")
+
+
 async def _load_locales() -> None:
     """Warm-start the locale cache from telegram_prefs at boot."""
     try:
@@ -1706,6 +2097,16 @@ async def _load_locales() -> None:
         logger.info("_load_locales: %d preferenze lingua caricate", len(_locales))
     except Exception:
         logger.exception("_load_locales: caricamento preferenze lingua fallito")
+
+
+async def _load_active_convs() -> None:
+    """Warm-start the per-chat active-conversation cache from telegram_prefs (Phase 23.a)."""
+    try:
+        _active_convs.update(await prefs_repo.load_all_active())
+        if _active_convs:
+            logger.info("_load_active_convs: %d conversazioni attive caricate", len(_active_convs))
+    except Exception:
+        logger.exception("_load_active_convs: caricamento conversazioni attive fallito")
 
 
 async def _reload_reminders(app: Application) -> None:
@@ -1729,7 +2130,7 @@ _BOT_COMMANDS = [
     BotCommand("new", "Nuova conversazione"),
     BotCommand("model", "Scegli il modello (tastiera inline)"),
     BotCommand("models", "Lista modelli disponibili (/models <query>)"),
-    BotCommand("history", "Mostra la conversazione corrente"),
+    BotCommand("history", "Conversazioni recenti (riprendi da web o Telegram)"),
     BotCommand("search", "Cerca nelle conversazioni (/search <testo>)"),
     BotCommand("stats", "Statistiche di utilizzo"),
     BotCommand("remind", "Imposta un promemoria (/remind 15:50 testo)"),
@@ -1738,6 +2139,8 @@ _BOT_COMMANDS = [
     BotCommand("memory", "Memoria personale (/memory on|off|list|del)"),
     BotCommand("kb", "Knowledge base (/kb list|del; invia un file con didascalia /kb)"),
     BotCommand("rag", "Attiva/disattiva la knowledge base (/rag on|off)"),
+    BotCommand("tool", "Attiva/disattiva l'uso degli strumenti (/tool on|off)"),
+    BotCommand("tools", "Strumenti/MCP: elenca gli strumenti disponibili"),
     BotCommand("lang", "Cambia lingua del bot / change bot language"),
     BotCommand("link", "Collega al profilo web"),
     BotCommand("unlink", "Scollega dal profilo web"),
@@ -1753,6 +2156,8 @@ async def _post_init(app: Application) -> None:
     await _load_locales()
     await _load_memory_prefs()
     await _load_rag_prefs()
+    await _load_tools_prefs()
+    await _load_active_convs()
     await _reload_reminders(app)
 
 
@@ -1788,6 +2193,8 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("memory", cmd_memory))
     app.add_handler(CommandHandler("kb", cmd_kb))
     app.add_handler(CommandHandler("rag", cmd_rag))
+    app.add_handler(CommandHandler("tool", cmd_tool))
+    app.add_handler(CommandHandler("tools", cmd_tools))
     app.add_handler(CommandHandler("lang", cmd_lang))
     app.add_handler(CommandHandler("link", cmd_link))
     app.add_handler(CommandHandler("unlink", cmd_unlink))
@@ -1796,6 +2203,7 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(_cb_model_back, pattern=r"^mp:__back__$"))
     app.add_handler(CallbackQueryHandler(_cb_model_select, pattern=r"^ms:\d+$"))
     app.add_handler(CallbackQueryHandler(_cb_quick_action, pattern=r"^qa:"))
+    app.add_handler(CallbackQueryHandler(_cb_resume, pattern=r"^resume:"))
     app.add_handler(CallbackQueryHandler(_cb_lang, pattern=r"^lang:"))
     # Inline query handler
     app.add_handler(InlineQueryHandler(handle_inline_query))

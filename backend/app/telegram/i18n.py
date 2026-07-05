@@ -48,6 +48,7 @@ MESSAGES: dict[str, dict[str, str]] = {
             "  /memory — memoria personale (on|off|list|del)\n"
             "  /kb — knowledge base (list|del; file con didascalia /kb)\n"
             "  /rag — attiva/disattiva la knowledge base (on|off)\n"
+            "  /tools — strumenti e MCP (elenca, on|off)\n"
             "  /lang — cambia lingua del bot\n"
             "  /link — collega al profilo web\n"
             "  /unlink — scollega dal profilo web\n"
@@ -58,7 +59,13 @@ MESSAGES: dict[str, dict[str, str]] = {
             "📚 Invia un file con didascalia <code>/kb</code> per aggiungerlo alla knowledge base\n"
             "✨ Usa <code>@botname query</code> in qualsiasi chat per risposte inline"
         ),
-        "new_cleared": "✅ Conversazione azzerata.",
+        "new_cleared": "✅ Nuova conversazione avviata.",
+        "history_title": "📜 <b>Le tue conversazioni recenti</b>\nTocca per riprenderne una:",
+        "history_empty": "📭 Nessuna conversazione salvata. Scrivi un messaggio per iniziarne una.",
+        "history_empty_unlinked": "📭 Nessun messaggio nella conversazione corrente.\nUsa /search per cercare, oppure /link per sincronizzare la cronologia con il web.",
+        "history_current_header": "📜 <b>Conversazione corrente</b>",
+        "history_resumed": "▶️ Conversazione ripresa: <b>{title}</b>",
+        "history_resume_gone": "⚠ Conversazione non più disponibile.",
         "lang_choose": "🌐 Scegli la lingua del bot:",
         "lang_set": "✅ Lingua impostata: {label}",
         "remind_usage": (
@@ -129,6 +136,17 @@ MESSAGES: dict[str, dict[str, str]] = {
             "nella sidebar web per usare la knowledge base."
         ),
         "rag_sources_header": "\n\n📚 Fonti: {sources}",
+        "tool_usage": (
+            "Uso: <code>/tool on|off</code>\n"
+            "  attiva/disattiva l'uso degli strumenti in questa chat\n"
+            "  usa <code>/tools</code> per elencare gli strumenti disponibili"
+        ),
+        "tools_on": "🔧 Strumenti attivati per questa chat.",
+        "tools_off": "🔧 Strumenti disattivati per questa chat.",
+        "tools_header": "🔧 Strumenti disponibili ({count}):",
+        "tools_none": "🔧 Nessuno strumento disponibile.",
+        "tools_status_on": "Stato attuale: <b>attivi</b> ✅",
+        "tools_status_off": "Stato attuale: <b>disattivati</b> 🚫",
     },
     "en": {
         "access_denied": "⛔ Access not authorized.",
@@ -154,6 +172,7 @@ MESSAGES: dict[str, dict[str, str]] = {
             "  /memory — personal memory (on|off|list|del)\n"
             "  /kb — knowledge base (list|del; file with a /kb caption)\n"
             "  /rag — toggle the knowledge base (on|off)\n"
+            "  /tools — tools and MCP (list, on|off)\n"
             "  /lang — change the bot language\n"
             "  /link — link to web profile\n"
             "  /unlink — unlink from web profile\n"
@@ -164,7 +183,13 @@ MESSAGES: dict[str, dict[str, str]] = {
             "📚 Send a file with a <code>/kb</code> caption to add it to the knowledge base\n"
             "✨ Use <code>@botname query</code> in any chat for inline answers"
         ),
-        "new_cleared": "✅ Conversation cleared.",
+        "new_cleared": "✅ New conversation started.",
+        "history_title": "📜 <b>Your recent conversations</b>\nTap one to resume it:",
+        "history_empty": "📭 No saved conversations yet. Send a message to start one.",
+        "history_empty_unlinked": "📭 No messages in the current conversation.\nUse /search to look them up, or /link to sync history with the web app.",
+        "history_current_header": "📜 <b>Current conversation</b>",
+        "history_resumed": "▶️ Resumed conversation: <b>{title}</b>",
+        "history_resume_gone": "⚠ Conversation no longer available.",
         "lang_choose": "🌐 Choose the bot language:",
         "lang_set": "✅ Language set: {label}",
         "remind_usage": (
@@ -235,6 +260,17 @@ MESSAGES: dict[str, dict[str, str]] = {
             "web sidebar to use the knowledge base."
         ),
         "rag_sources_header": "\n\n📚 Sources: {sources}",
+        "tool_usage": (
+            "Usage: <code>/tool on|off</code>\n"
+            "  enable/disable tool use in this chat\n"
+            "  use <code>/tools</code> to list the available tools"
+        ),
+        "tools_on": "🔧 Tools enabled for this chat.",
+        "tools_off": "🔧 Tools disabled for this chat.",
+        "tools_header": "🔧 Available tools ({count}):",
+        "tools_none": "🔧 No tools available.",
+        "tools_status_on": "Current status: <b>enabled</b> ✅",
+        "tools_status_off": "Current status: <b>disabled</b> 🚫",
     },
     "fr": {
         "access_denied": "⛔ Accès non autorisé.",
@@ -260,6 +296,7 @@ MESSAGES: dict[str, dict[str, str]] = {
             "  /memory — mémoire personnelle (on|off|list|del)\n"
             "  /kb — base de connaissances (list|del ; fichier avec la légende /kb)\n"
             "  /rag — activer/désactiver la base de connaissances (on|off)\n"
+            "  /tools — outils et MCP (lister, on|off)\n"
             "  /lang — changer la langue du bot\n"
             "  /link — associer au profil web\n"
             "  /unlink — dissocier du profil web\n"
@@ -270,7 +307,13 @@ MESSAGES: dict[str, dict[str, str]] = {
             "📚 Envoyez un fichier avec la légende <code>/kb</code> pour l'ajouter à la base de connaissances\n"
             "✨ Utilisez <code>@botname requête</code> dans n'importe quel chat pour des réponses en ligne"
         ),
-        "new_cleared": "✅ Conversation réinitialisée.",
+        "new_cleared": "✅ Nouvelle conversation démarrée.",
+        "history_title": "📜 <b>Vos conversations récentes</b>\nAppuyez pour en reprendre une :",
+        "history_empty": "📭 Aucune conversation enregistrée. Envoyez un message pour en commencer une.",
+        "history_empty_unlinked": "📭 Aucun message dans la conversation actuelle.\nUtilisez /search pour rechercher, ou /link pour synchroniser l'historique avec le web.",
+        "history_current_header": "📜 <b>Conversation actuelle</b>",
+        "history_resumed": "▶️ Conversation reprise : <b>{title}</b>",
+        "history_resume_gone": "⚠ Conversation introuvable.",
         "lang_choose": "🌐 Choisissez la langue du bot :",
         "lang_set": "✅ Langue définie : {label}",
         "remind_usage": (
@@ -341,6 +384,17 @@ MESSAGES: dict[str, dict[str, str]] = {
             "dans la barre latérale web pour utiliser la base de connaissances."
         ),
         "rag_sources_header": "\n\n📚 Sources : {sources}",
+        "tool_usage": (
+            "Usage : <code>/tool on|off</code>\n"
+            "  activer/désactiver les outils dans ce chat\n"
+            "  utilisez <code>/tools</code> pour lister les outils disponibles"
+        ),
+        "tools_on": "🔧 Outils activés pour ce chat.",
+        "tools_off": "🔧 Outils désactivés pour ce chat.",
+        "tools_header": "🔧 Outils disponibles ({count}) :",
+        "tools_none": "🔧 Aucun outil disponible.",
+        "tools_status_on": "État actuel : <b>activés</b> ✅",
+        "tools_status_off": "État actuel : <b>désactivés</b> 🚫",
     },
     "de": {
         "access_denied": "⛔ Zugriff nicht autorisiert.",
@@ -366,6 +420,7 @@ MESSAGES: dict[str, dict[str, str]] = {
             "  /memory — persönliches Gedächtnis (on|off|list|del)\n"
             "  /kb — Wissensdatenbank (list|del; Datei mit Bildunterschrift /kb)\n"
             "  /rag — Wissensdatenbank ein-/ausschalten (on|off)\n"
+            "  /tools — Tools und MCP (auflisten, on|off)\n"
             "  /lang — Bot-Sprache ändern\n"
             "  /link — mit Web-Profil verknüpfen\n"
             "  /unlink — vom Web-Profil trennen\n"
@@ -376,7 +431,13 @@ MESSAGES: dict[str, dict[str, str]] = {
             "📚 Sende eine Datei mit der Bildunterschrift <code>/kb</code>, um sie zur Wissensdatenbank hinzuzufügen\n"
             "✨ Nutze <code>@botname Anfrage</code> in jedem Chat für Inline-Antworten"
         ),
-        "new_cleared": "✅ Unterhaltung zurückgesetzt.",
+        "new_cleared": "✅ Neue Unterhaltung gestartet.",
+        "history_title": "📜 <b>Deine letzten Unterhaltungen</b>\nTippe, um eine fortzusetzen:",
+        "history_empty": "📭 Noch keine gespeicherten Unterhaltungen. Sende eine Nachricht, um eine zu starten.",
+        "history_empty_unlinked": "📭 Keine Nachrichten in der aktuellen Unterhaltung.\nNutze /search zum Suchen oder /link, um den Verlauf mit dem Web zu synchronisieren.",
+        "history_current_header": "📜 <b>Aktuelle Unterhaltung</b>",
+        "history_resumed": "▶️ Unterhaltung fortgesetzt: <b>{title}</b>",
+        "history_resume_gone": "⚠ Unterhaltung nicht mehr verfügbar.",
         "lang_choose": "🌐 Wähle die Bot-Sprache:",
         "lang_set": "✅ Sprache eingestellt: {label}",
         "remind_usage": (
@@ -447,6 +508,17 @@ MESSAGES: dict[str, dict[str, str]] = {
             "Web-Seitenleiste ein, um die Wissensdatenbank zu nutzen."
         ),
         "rag_sources_header": "\n\n📚 Quellen: {sources}",
+        "tool_usage": (
+            "Verwendung: <code>/tool on|off</code>\n"
+            "  Tools in diesem Chat ein-/ausschalten\n"
+            "  nutze <code>/tools</code>, um die verfügbaren Tools aufzulisten"
+        ),
+        "tools_on": "🔧 Tools für diesen Chat aktiviert.",
+        "tools_off": "🔧 Tools für diesen Chat deaktiviert.",
+        "tools_header": "🔧 Verfügbare Tools ({count}):",
+        "tools_none": "🔧 Keine Tools verfügbar.",
+        "tools_status_on": "Aktueller Status: <b>aktiv</b> ✅",
+        "tools_status_off": "Aktueller Status: <b>deaktiviert</b> 🚫",
     },
     "es": {
         "access_denied": "⛔ Acceso no autorizado.",
@@ -472,6 +544,7 @@ MESSAGES: dict[str, dict[str, str]] = {
             "  /memory — memoria personal (on|off|list|del)\n"
             "  /kb — base de conocimiento (list|del; archivo con el pie /kb)\n"
             "  /rag — activar/desactivar la base de conocimiento (on|off)\n"
+            "  /tools — herramientas y MCP (listar, on|off)\n"
             "  /lang — cambiar el idioma del bot\n"
             "  /link — vincular al perfil web\n"
             "  /unlink — desvincular del perfil web\n"
@@ -482,7 +555,13 @@ MESSAGES: dict[str, dict[str, str]] = {
             "📚 Envía un archivo con el pie <code>/kb</code> para añadirlo a la base de conocimiento\n"
             "✨ Usa <code>@botname consulta</code> en cualquier chat para respuestas en línea"
         ),
-        "new_cleared": "✅ Conversación reiniciada.",
+        "new_cleared": "✅ Nueva conversación iniciada.",
+        "history_title": "📜 <b>Tus conversaciones recientes</b>\nToca una para retomarla:",
+        "history_empty": "📭 Aún no hay conversaciones guardadas. Envía un mensaje para empezar una.",
+        "history_empty_unlinked": "📭 No hay mensajes en la conversación actual.\nUsa /search para buscar, o /link para sincronizar el historial con la web.",
+        "history_current_header": "📜 <b>Conversación actual</b>",
+        "history_resumed": "▶️ Conversación retomada: <b>{title}</b>",
+        "history_resume_gone": "⚠ La conversación ya no está disponible.",
         "lang_choose": "🌐 Elige el idioma del bot:",
         "lang_set": "✅ Idioma establecido: {label}",
         "remind_usage": (
@@ -553,6 +632,17 @@ MESSAGES: dict[str, dict[str, str]] = {
             "barra lateral web para usar la base de conocimiento."
         ),
         "rag_sources_header": "\n\n📚 Fuentes: {sources}",
+        "tool_usage": (
+            "Uso: <code>/tool on|off</code>\n"
+            "  activar/desactivar el uso de herramientas en este chat\n"
+            "  usa <code>/tools</code> para listar las herramientas disponibles"
+        ),
+        "tools_on": "🔧 Herramientas activadas para este chat.",
+        "tools_off": "🔧 Herramientas desactivadas para este chat.",
+        "tools_header": "🔧 Herramientas disponibles ({count}):",
+        "tools_none": "🔧 No hay herramientas disponibles.",
+        "tools_status_on": "Estado actual: <b>activadas</b> ✅",
+        "tools_status_off": "Estado actual: <b>desactivadas</b> 🚫",
     },
 }
 

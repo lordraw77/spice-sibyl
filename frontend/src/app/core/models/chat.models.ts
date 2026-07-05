@@ -245,6 +245,8 @@ export interface ConversationSummary {
   id: string;
   title: string;
   model: string;
+  /** Phase 23.a: channel of origin — 'web' (default) or 'telegram' */
+  channel?: string;
   created_at: number;
   updated_at: number;
   tags?: Tag[];

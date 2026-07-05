@@ -273,6 +273,7 @@
               <span class="conv-tags-dots" *ngIf="conv.tags?.length">
                 <span *ngFor="let t of conv.tags" class="conv-tag-dot" [style.background]="t.color" [title]="t.name"></span>
               </span>
+              <span class="conv-channel-badge" *ngIf="conv.channel === 'telegram'" [title]="'chat.conversations.viaTelegram' | t">✈️</span>
               <span class="conv-title">{{ conv.title }}</span>
             </div>
             <div class="conv-actions">

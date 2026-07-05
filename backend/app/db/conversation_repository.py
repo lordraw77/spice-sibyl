@@ -9,10 +9,12 @@ from app.schemas.conversations import Conversation, ConversationSummary
 
 
 def _row_to_summary(row: aiosqlite.Row) -> ConversationSummary:
+    keys = row.keys()
     return ConversationSummary(
         id=row["id"],
         title=row["title"],
         model=row["model"],
+        channel=row["channel"] if "channel" in keys else "web",
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -84,17 +86,23 @@ async def get_conversation(
 
 
 async def create_conversation(
-    db: aiosqlite.Connection, title: str, model: str, profile_id: str
+    db: aiosqlite.Connection,
+    title: str,
+    model: str,
+    profile_id: str,
+    channel: str = "web",
 ) -> ConversationSummary:
     conversation_id = str(uuid.uuid4())
     now = int(time.time())
     await db.execute(
-        "INSERT INTO conversations (id, profile_id, title, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (conversation_id, profile_id, title, model, now, now),
+        "INSERT INTO conversations (id, profile_id, title, model, channel, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (conversation_id, profile_id, title, model, channel, now, now),
     )
     await db.commit()
     return ConversationSummary(
-        id=conversation_id, title=title, model=model, created_at=now, updated_at=now
+        id=conversation_id, title=title, model=model, channel=channel,
+        created_at=now, updated_at=now,
     )
 
 

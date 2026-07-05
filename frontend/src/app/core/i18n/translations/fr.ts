@@ -126,6 +126,7 @@ export const fr: TranslationMap = {
   'chat.tags.all': 'Toutes',
   'chat.search.noResults': 'Aucun résultat.',
   'chat.conversations.none': 'Aucune conversation enregistrée.',
+  'chat.conversations.viaTelegram': 'Démarrée depuis Telegram',
   'chat.tags.none': 'Aucune étiquette créée.',
   'chat.status.thinking': 'Réflexion…',
   'chat.status.ready': 'Prêt',

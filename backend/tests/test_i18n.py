@@ -23,6 +23,8 @@ _FORMAT_KWARGS = {
     "chunks": 3,
     "error": "boom",
     "sources": "a, b",
+    "title": "My chat",
+    "count": 7,
 }
 
 

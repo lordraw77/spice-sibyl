@@ -1247,6 +1247,14 @@ select.form-select-sm:focus {
   flex-shrink: 0;
 }
 
+/* Phase 23.a: channel-of-origin badge for Telegram-started conversations */
+.conv-channel-badge {
+  flex-shrink: 0;
+  font-size: .7rem;
+  line-height: 1;
+  opacity: .85;
+}
+
 .conv-tag-dot {
   width: 6px;
   height: 6px;

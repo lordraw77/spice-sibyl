@@ -9,12 +9,12 @@
 | Command | What it does |
 |---------|--------------|
 | `/start` | welcome message |
-| `/new` | new conversation (resets the chat context) |
+| `/new` | starts a fresh conversation (linked users: a new persisted conversation is created on the next message) |
 | `/model` | model selection via a **two-step inline keyboard** (provider → model, with back navigation and ✅ on the current model) |
 | `/models` | lists available models |
 | `/agent` · `/chat` | switches between agent mode (Multi-MCP orchestrator) and normal chat |
 | `/imagine <prompt>` | generates an image (`IMAGE_GENERATION_CHAIN`) and sends it as a photo with a provider/model caption |
-| `/history` | last 20 messages of the current session |
+| `/history` | **linked users:** recent conversations across both channels, with an inline keyboard to resume any of them; **unlinked:** last 20 messages of the current session |
 | `/search <query>` | full-text search (FTS5) across all saved conversations: titles + snippets |
 | `/link` · `/unlink` | generates the code to link/unlink the web profile (see [Authentication and profiles](authentication-and-profiles.md)) |
 | `/remind` | reminders: `/remind 15:50 Check backups` or relative `/remind +30m …`, `2h`, `1d` |
@@ -22,6 +22,8 @@
 | `/memory on\|off\|list\|del <id>` | personal memory over the linked profile (see [Memory and personalization](memory-and-personalization.md)) |
 | `/kb list\|del <id>` | manage the linked profile's knowledge base; to add a document send a file with a **`/kb` caption** (see below) |
 | `/rag on\|off` | toggle knowledge-base injection in this chat (per-chat, **OFF by default**) |
+| `/tool on\|off` | toggle the tool loop for this chat (per-chat, **OFF by default**) |
+| `/tools` | list the available tools (grouped) and the current toggle status — view-only, does not change state |
 | `/lang` · `/lang en\|it` | per-chat bot UI language (inline keyboard or direct); persisted in `telegram_prefs` |
 
 ## Media handling
@@ -30,6 +32,17 @@
 - **Voice/audio messages** → transcribed with Groq Whisper (`whisper-large-v3`); the bot shows the transcription, then streams the reply to the transcribed text.
 - **Documents** PDF / TXT / DOCX / MD → text is extracted (truncated to 8,000 characters) and used as **one-shot** context for the model, together with any caption. With a `/kb` caption the document is instead **ingested into the knowledge base** (see below).
 
+## Shared conversation history (Phase 23.a)
+
+For a **linked web profile** (`/link`), Telegram is no longer a separate in-memory chat: every exchange is persisted as a regular profile conversation, so history is shared across both channels.
+
+- **Persistence** — each successful turn (text, voice, photo, document) is stored into the chat's *active conversation*, created lazily on the first message with an auto-generated title. The conversation is tagged `channel='telegram'` and shows up in the **web sidebar with an ✈️ badge**; conversely, conversations you started on the web can be resumed from Telegram.
+- **`/history`** — lists the profile's most recent conversations (both channels) as an inline keyboard; tap one to resume it (the active one is marked ✅). The full context is rehydrated so the model continues where you left off — even across a bot restart.
+- **`/new`** — detaches the active conversation; the next message starts a fresh one. Switching model (`/model`) or mode (`/agent` / `/chat`) does the same.
+- **Unlinked chats** keep the previous in-memory session (last 40 messages), with no cross-channel sync — `/link` to enable it.
+
+Implementation: `telegram_prefs.active_conversation_id` (warm-cached at boot), `conversation_repository.append_messages`, and the new `conversations.channel` column.
+
 ## Knowledge base (RAG)
 
 Extends the web profile's RAG (see [Knowledge base](knowledge-rag.md)) to the Telegram channel. Requires a **linked web profile** (`/link`): every `/kb`/`/rag` command and `/kb`-captioned upload prompts to link when no profile is connected.
@@ -37,6 +50,16 @@ Extends the web profile's RAG (see [Knowledge base](knowledge-rag.md)) to the Te
 - **Ingestion** — send a **PDF / TXT / DOCX / MD** file with a `/kb` caption: it is added to the linked profile's knowledge base reusing the same pipeline as web uploads (`rag_service.ingest`: extraction → chunking → embedding), with sha256 byte-hash duplicate detection.
 - **Management** — `/kb list` shows documents with a status icon (✅ ready · ⏳ pending · ⚠️ error), 🔗 for URL-sourced documents, and chunk count; `/kb del <id>` removes a document by id prefix.
 - **Retrieval** — with `/rag on`, each message has `_stream_reply` retrieve the most relevant chunks (`rag_service.retrieve`, hybrid search + optional rerank) and fold them into the last user message; the reply gets a 📚 sources footer (deduplicated filenames). The toggle is **per-chat**, persisted in `telegram_prefs.rag` and reloaded on boot.
+
+## Tools & MCP (Phase 23.b)
+
+Brings the web chat's **tool loop** to Telegram: with `/tool on`, a completion no longer just streams — the bot merges the built-in tools, the linked profile's **custom tools** and every discovered **MCP tool** (`mcp__<server>__<tool>`, see [MCP](mcp.md)) into the request and runs the shared server-side loop (`ChatService._stream_with_tools`), so behavior is identical across channels.
+
+- **Toggle** — `/tool on|off` flips the tool loop directly. **Per-chat**, **OFF by default**, persisted in `telegram_prefs.tools` and warm-cached at boot (like `/rag`). Profile-aware tools (`kb_search`, `create_reminder`, custom tools) resolve against the linked profile.
+- **Listing** — `/tools` lists the available tools grouped by kind (🧩 built-in · 🔌 MCP · 🛠 custom) together with the current toggle status; it is view-only and never changes state (use `/tool` to change it).
+- **Progress** — tool calls appear live in the streaming reply (⚙ *tool name* while executing, flipped to ✅ on result).
+- **Discovery** — MCP tools are re-probed when you run `/tools` (or when the cache is cold) and cached in `mcp_service`, so ordinary messages don't pay the probe latency.
+- **Agent mode** — `agent/*` models orchestrate their own tools; the `/tool` toggle does not apply to them.
 
 ## Quick actions
 

@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     profile_id TEXT    NOT NULL DEFAULT 'default',
     title      TEXT    NOT NULL,
     model      TEXT    NOT NULL,
+    channel    TEXT    NOT NULL DEFAULT 'web',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
@@ -438,6 +439,13 @@ _MIGRATIONS = [
     "ALTER TABLE telegram_prefs ADD COLUMN rag INTEGER NOT NULL DEFAULT 0",
     # Phase 22: per-profile UI locale (NULL = follow the browser language)
     "ALTER TABLE profiles ADD COLUMN locale TEXT DEFAULT NULL",
+    # Phase 23.a: conversation channel of origin (web | telegram) for cross-channel history
+    "ALTER TABLE conversations ADD COLUMN channel TEXT NOT NULL DEFAULT 'web'",
+    # Phase 23.a: per-chat "active conversation" so Telegram exchanges persist as
+    # regular profile conversations (linked users) instead of in-memory history
+    "ALTER TABLE telegram_prefs ADD COLUMN active_conversation_id TEXT DEFAULT NULL",
+    # Phase 23.b: per-chat Telegram tool-loop toggle (/tools on|off) — OFF by default
+    "ALTER TABLE telegram_prefs ADD COLUMN tools INTEGER NOT NULL DEFAULT 0",
 ]
 
 

@@ -18,6 +18,8 @@ class ConversationSummary(BaseModel):
     id: str
     title: str
     model: str
+    # Phase 23.a: channel of origin — "web" (default) or "telegram"
+    channel: str = "web"
     created_at: int
     updated_at: int
     tags: list[Tag] = []
