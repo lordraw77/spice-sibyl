@@ -1,15 +1,14 @@
 <div class="ws-shell">
   <header class="page-header">
     <div>
-      <h1>Workspace condivisi</h1>
+      <h1>{{ 'ws.title' | t }}</h1>
       <p class="subtitle">
-        Crea team, invita membri per email e condividi conversazioni e documenti della
-        knowledge base. L'accesso è regolato dal ruolo:
+        {{ 'ws.subtitle.a' | t }}
         <strong>owner</strong> &gt; <strong>admin</strong> &gt; <strong>editor</strong> &gt; <strong>viewer</strong>.
       </p>
     </div>
     <div class="head-actions">
-      <button class="btn-ghost" (click)="refresh()" [disabled]="loading()">Aggiorna</button>
+      <button class="btn-ghost" (click)="refresh()" [disabled]="loading()">{{ 'common.refresh' | t }}</button>
     </div>
   </header>
 
@@ -17,12 +16,12 @@
     <!-- Workspace list + create -->
     <aside class="ws-list">
       <div class="create-row">
-        <input class="ws-input" [(ngModel)]="newWorkspaceName" placeholder="Nuovo workspace…"
+        <input class="ws-input" [(ngModel)]="newWorkspaceName" [placeholder]="'ws.newPlaceholder' | t"
                (keyup.enter)="create()" spellcheck="false" />
-        <button class="btn" (click)="create()" [disabled]="!newWorkspaceName.trim()">Crea</button>
+        <button class="btn" (click)="create()" [disabled]="!newWorkspaceName.trim()">{{ 'common.create' | t }}</button>
       </div>
 
-      <p class="muted" *ngIf="!workspaces().length">Nessun workspace. Creane uno per iniziare.</p>
+      <p class="muted" *ngIf="!workspaces().length">{{ 'ws.none' | t }}</p>
 
       <ul class="ws-items">
         <li *ngFor="let ws of workspaces()"
@@ -31,7 +30,7 @@
           <span class="ws-name">{{ ws.name }}</span>
           <span class="ws-meta">
             <span class="role-badge" [attr.data-role]="ws.role">{{ ws.role }}</span>
-            <span class="ws-count">{{ ws.member_count }} membri</span>
+            <span class="ws-count">{{ 'ws.members' | t: { n: ws.member_count } }}</span>
           </span>
         </li>
       </ul>
@@ -42,21 +41,21 @@
       <div class="detail-head">
         <h2>{{ ws.name }}</h2>
         <div class="detail-actions" *ngIf="canManage()">
-          <button class="btn-ghost" (click)="rename(ws)">Rinomina</button>
-          <button class="btn-danger" *ngIf="myRole() === 'owner'" (click)="deleteWorkspace(ws)">Elimina</button>
+          <button class="btn-ghost" (click)="rename(ws)">{{ 'ws.rename' | t }}</button>
+          <button class="btn-danger" *ngIf="myRole() === 'owner'" (click)="deleteWorkspace(ws)">{{ 'common.delete' | t }}</button>
         </div>
       </div>
 
       <!-- Members -->
       <div class="ws-card">
-        <div class="card-head"><h3>Membri</h3></div>
+        <div class="card-head"><h3>{{ 'ws.membersTitle' | t }}</h3></div>
         <div class="invite-row" *ngIf="canManage()">
-          <input class="ws-input" [(ngModel)]="inviteEmail" placeholder="email@esempio.com"
+          <input class="ws-input" [(ngModel)]="inviteEmail" [placeholder]="'ws.emailPlaceholder' | t"
                  type="email" spellcheck="false" (keyup.enter)="invite()" />
           <select class="ws-select" [(ngModel)]="inviteRole">
             <option *ngFor="let r of assignableRoles" [value]="r">{{ r }}</option>
           </select>
-          <button class="btn" (click)="invite()" [disabled]="!inviteEmail.trim()">Invita</button>
+          <button class="btn" (click)="invite()" [disabled]="!inviteEmail.trim()">{{ 'ws.invite' | t }}</button>
         </div>
 
         <ul class="member-list">
@@ -67,7 +66,7 @@
                       (ngModelChange)="changeRole(m, $event)">
                 <option *ngFor="let r of assignableRoles" [value]="r">{{ r }}</option>
               </select>
-              <button class="icon-btn" title="Rimuovi" (click)="removeMember(m)">✕</button>
+              <button class="icon-btn" [title]="'common.remove' | t" (click)="removeMember(m)">✕</button>
             </ng-container>
             <ng-template #roleLabel>
               <span class="role-badge" [attr.data-role]="m.role">{{ m.role }}</span>
@@ -78,24 +77,24 @@
 
       <!-- Shared conversations -->
       <div class="ws-card">
-        <div class="card-head"><h3>Conversazioni condivise</h3></div>
+        <div class="card-head"><h3>{{ 'ws.sharedConvs' | t }}</h3></div>
         <div class="invite-row" *ngIf="canShare()">
           <select class="ws-select grow" [(ngModel)]="shareConversationId">
-            <option value="">Scegli una conversazione…</option>
+            <option value="">{{ 'ws.pickConv' | t }}</option>
             <option *ngFor="let c of myConversations()" [value]="c.id">{{ c.title }}</option>
           </select>
-          <button class="btn" (click)="shareConversation()" [disabled]="!shareConversationId">Condividi</button>
+          <button class="btn" (click)="shareConversation()" [disabled]="!shareConversationId">{{ 'chat.share' | t }}</button>
         </div>
-        <p class="muted" *ngIf="!sharedConversations().length">Nessuna conversazione condivisa.</p>
+        <p class="muted" *ngIf="!sharedConversations().length">{{ 'ws.noSharedConvs' | t }}</p>
         <ul class="share-list">
           <ng-container *ngFor="let c of sharedConversations()">
             <li class="share-row">
               <span class="share-title">{{ c.title }}</span>
               <span class="share-model">{{ c.model }}</span>
               <button class="link-btn" (click)="toggleComments(c)">
-                {{ commentsFor()?.conversation_id === c.conversation_id ? 'Chiudi commenti' : 'Commenti' }}
+                {{ (commentsFor()?.conversation_id === c.conversation_id ? 'ws.closeComments' : 'ws.comments') | t }}
               </button>
-              <button class="icon-btn" *ngIf="canShare()" title="Rimuovi condivisione"
+              <button class="icon-btn" *ngIf="canShare()" [title]="'ws.unshare' | t"
                       (click)="unshareConversation(c.conversation_id)">✕</button>
             </li>
             <li class="comments-slot" *ngIf="commentsFor()?.conversation_id === c.conversation_id">
@@ -107,20 +106,20 @@
 
       <!-- Shared documents -->
       <div class="ws-card">
-        <div class="card-head"><h3>Documenti condivisi</h3></div>
+        <div class="card-head"><h3>{{ 'ws.sharedDocs' | t }}</h3></div>
         <div class="invite-row" *ngIf="canShare()">
           <select class="ws-select grow" [(ngModel)]="shareDocumentId">
-            <option value="">Scegli un documento…</option>
+            <option value="">{{ 'ws.pickDoc' | t }}</option>
             <option *ngFor="let d of myDocuments()" [value]="d.id">{{ d.filename }}</option>
           </select>
-          <button class="btn" (click)="shareDocument()" [disabled]="!shareDocumentId">Condividi</button>
+          <button class="btn" (click)="shareDocument()" [disabled]="!shareDocumentId">{{ 'chat.share' | t }}</button>
         </div>
-        <p class="muted" *ngIf="!sharedDocuments().length">Nessun documento condiviso.</p>
+        <p class="muted" *ngIf="!sharedDocuments().length">{{ 'ws.noSharedDocs' | t }}</p>
         <ul class="share-list">
           <li *ngFor="let d of sharedDocuments()" class="share-row">
             <span class="share-title">{{ d.filename }}</span>
-            <span class="share-model">{{ d.chunk_count }} chunk · {{ d.status }}</span>
-            <button class="icon-btn" *ngIf="canShare()" title="Rimuovi condivisione"
+            <span class="share-model">{{ 'ws.chunks' | t: { n: d.chunk_count } }} · {{ d.status }}</span>
+            <button class="icon-btn" *ngIf="canShare()" [title]="'ws.unshare' | t"
                     (click)="unshareDocument(d.document_id)">✕</button>
           </li>
         </ul>
@@ -129,7 +128,7 @@
 
     <ng-template #emptyState>
       <section class="ws-detail empty">
-        <p class="muted">Seleziona un workspace per gestirne membri e risorse condivise.</p>
+        <p class="muted">{{ 'ws.selectPrompt' | t }}</p>
       </section>
     </ng-template>
   </div>

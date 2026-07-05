@@ -1,74 +1,56 @@
-# Internationalization (i18n)
+# Internationalisation (i18n)
 
-**What it does.** SpiceSibyl speaks five languages across both channels — **English, French, German, Italian and Spanish** — with a runtime language switcher in the web console and a per-chat language in the Telegram bot. No rebuild or reload is needed to change language on the web.
+**Ce que ça fait.** SpiceSibyl parle cinq langues sur les deux canaux — **anglais, français, allemand, italien et espagnol** — avec un sélecteur de langue à runtime dans la console web et une langue par chat dans le bot Telegram. Sur le web, changer de langue ne nécessite ni recompilation ni rechargement de la page.
 
-> 🇮🇹 Versione italiana: [internazionalizzazione.md](../it/internazionalizzazione.md)
+> Versions : [English](../en/internationalization.md) · [Italiano](../it/internazionalizzazione.md)
 
-## Web console
+## Console web
 
-- **Language switcher.** A 🌐 globe button in the navbar (next to the theme/accent controls) opens a menu of the five locales; the active one is highlighted. Switching re-renders the interface instantly.
-- **Auto-detection.** On first visit — when the user has not yet chosen a language — the browser language (`navigator.languages`) is matched against the supported set; if none matches, the historical default (**Italian**) is used, preserving the original behaviour for existing users.
-- **Persistence.** The choice is stored in `localStorage` (immediate, offline) **and** on the active profile via `PATCH /api/v1/profiles/{id}` (`{ "locale": "fr" }`), so it follows the user across devices. A profile's stored locale is adopted on login/selection *unless* the browser already holds an explicit local choice.
-- **Coverage.** Navbar and menus, the language/theme/accent tooltips, chat loading indicators (model warm-up / tool execution / streaming), the onboarding tour, and common actions are localized. Voice input (Web Speech API) and TTS follow the active locale's BCP-47 tag (e.g. `fr-FR`) instead of the previous hardcoded `it-IT`.
+- **Sélecteur de langue.** Un bouton 🌐 dans la navbar (à côté des contrôles de thème/accent) ouvre un menu des cinq langues ; celle active est surlignée. Le changement redessine l'interface à l'instant.
+- **Détection automatique.** À la première visite — quand l'utilisateur n'a pas encore choisi de langue — la langue du navigateur (`navigator.languages`) est comparée à celles prises en charge ; si aucune ne correspond, la valeur par défaut historique (**italien**) est utilisée, préservant le comportement d'origine pour les utilisateurs existants.
+- **Persistance.** Le choix est stocké dans `localStorage` (immédiat, hors ligne) **et** sur le profil actif via `PATCH /api/v1/profiles/{id}` (`{ "locale": "fr" }`), de sorte qu'il suit l'utilisateur entre appareils. La langue enregistrée sur le profil est adoptée à la connexion/sélection *sauf* si le navigateur contient déjà un choix explicite local.
+- **Couverture.** Navbar et menus, les tooltips langue/thème/accent, les indicateurs de chargement du chat, les pages (fournisseurs, statistiques, outils, workflows, MCP, espaces, etc.), la fenêtre de profil, les toasts et le tour d'onboarding sont localisés. La saisie vocale (Web Speech API) et le TTS suivent le tag BCP-47 de la langue active (ex. `fr-FR`) au lieu de l'ancien `it-IT` fixe.
 
 ### Architecture
 
-A lightweight, dependency-free runtime i18n layer (mirrors the project's minimalist style — see the Telegram catalog and the SDK-less MCP client):
+Une couche i18n à runtime légère et sans dépendance (dans l'esprit minimaliste du projet — voir le catalogue Telegram et le client MCP sans SDK) :
 
-| Piece | File |
-|-------|------|
-| Locale metadata (codes, native labels, BCP-47 tags) | [`core/i18n/locale.ts`](../../frontend/src/app/core/i18n/locale.ts) |
-| Catalogs (one flat `key → string` map per locale) | [`core/i18n/translations/*.ts`](../../frontend/src/app/core/i18n/translations/) |
-| `I18nService` (active-locale signal, detection, persistence, `translate()`, formatters) | [`core/i18n/i18n.service.ts`](../../frontend/src/app/core/i18n/i18n.service.ts) |
-| `TranslatePipe` (`\| t`) — impure so it reacts to locale changes | [`core/i18n/translate.pipe.ts`](../../frontend/src/app/core/i18n/translate.pipe.ts) |
-| Locale-aware format pipes (`\| localeNumber`, `\| localeCost`, `\| localeDate`) | [`core/i18n/format.pipes.ts`](../../frontend/src/app/core/i18n/format.pipes.ts) |
+| Composant | Fichier |
+|-----------|---------|
+| Métadonnées de langue (codes, libellés natifs, tags BCP-47) | [`core/i18n/locale.ts`](../../frontend/src/app/core/i18n/locale.ts) |
+| Catalogues (une map plate `clé → chaîne` par langue) | [`core/i18n/translations/*.ts`](../../frontend/src/app/core/i18n/translations/) |
+| `I18nService` (signal de langue active, détection, persistance, `translate()`, formateurs) | [`core/i18n/i18n.service.ts`](../../frontend/src/app/core/i18n/i18n.service.ts) |
+| `TranslatePipe` (`\| t`) — impure, pour réagir aux changements de langue | [`core/i18n/translate.pipe.ts`](../../frontend/src/app/core/i18n/translate.pipe.ts) |
+| Pipes de formatage localisé (`\| localeNumber`, `\| localeCost`, `\| localeDate`) | [`core/i18n/format.pipes.ts`](../../frontend/src/app/core/i18n/format.pipes.ts) |
 
-Usage in a template:
+Utilisation dans un template :
 
 ```html
 {{ 'nav.chat' | t }}
-{{ 'lang.set' | t: { label: 'Français' } }}   <!-- {placeholders} filled from params -->
+{{ 'chat.providerSwitch' | t: { from: 'groq', to: 'ollama' } }}   <!-- les {placeholders} sont remplis depuis params -->
 {{ message.estimated_cost | localeCost:6 }}
 ```
 
-Resolution order for a key: **active-locale catalog → default-locale (`it`) catalog → the key string itself.** Adding a locale = add a catalog file, register it in `I18nService.CATALOGS`, and add an entry to `SUPPORTED_LOCALES`.
+Ordre de résolution d'une clé : **catalogue de la langue active → catalogue par défaut (`it`) → la clé elle-même.** Ajouter une langue = ajouter un fichier catalogue, l'enregistrer dans `I18nService.CATALOGS` et ajouter une entrée à `SUPPORTED_LOCALES`.
 
-### Locale-aware formatting
+### Formatage localisé
 
-Numbers, costs and dates render per the active locale via the `Intl` API keyed on the locale's BCP-47 tag:
+Nombres, coûts et dates sont rendus selon la langue active via l'API `Intl`, indexée sur le tag BCP-47 de la langue :
 
-- `localeNumber` → `Intl.NumberFormat` (grouping and decimal separators, e.g. `1.234` in de vs `1,234` in en)
-- `localeCost` → `Intl.NumberFormat` with `style: 'currency', currency: 'USD'` (symbol placement follows the locale: `$1.23` vs `1,23 $`)
+- `localeNumber` → `Intl.NumberFormat` (séparateurs de milliers et de décimales)
+- `localeCost` → `Intl.NumberFormat` avec `style: 'currency', currency: 'USD'` (position du symbole selon la langue : `$1.23` vs `1,23 $`)
 - `localeDate` → `Intl.DateTimeFormat`
 
-## Telegram bot
+## Bot Telegram
 
-- **Per-chat language.** `/lang` shows an inline keyboard with all five locales; `/lang en|fr|de|es|it` sets it directly. The choice persists in `telegram_prefs` and is warm-cached at boot.
-- **Catalog.** All command output, inline keyboards, quick actions, reminders and error messages live in [`backend/app/telegram/i18n.py`](../../backend/app/telegram/i18n.py) (`MESSAGES[locale][key]`), with a fallback chain `locale → default (it) → key`.
-- **Locale-aware confirmations.** Reminder times render with a locale-aware date order (English uses month/day, the others day/month) in the chat's `TIMEZONE`.
+- **Langue par chat.** `/lang` affiche un clavier inline avec les cinq langues ; `/lang en|fr|de|es|it` la définit directement. Le choix persiste dans `telegram_prefs` et est pré-chargé au démarrage.
+- **Catalogue.** Toute la sortie des commandes, les claviers inline, les actions rapides, les rappels et les messages d'erreur vivent dans [`backend/app/telegram/i18n.py`](../../backend/app/telegram/i18n.py) (`MESSAGES[locale][key]`), avec une chaîne de repli `locale → défaut (it) → clé`.
+- **Confirmations localisées.** Les heures des rappels utilisent un ordre de date localisé (l'anglais utilise mois/jour, les autres langues jour/mois) dans le `TIMEZONE` du chat.
 
-## Documentation & screenshots
+## Documentation et captures d'écran
 
-The feature docs and their screenshots are per-language: `docs/<lang>/*.md` +
-`docs/<lang>/screenshots/*.png` for each of `en`, `it`, `fr`, `de`, `es`. English
-and Italian are hand-written; `fr`/`de`/`es` currently ship as English scaffolds
-(🚧 banner in their README) pending translation, while the *app UI* is already
-fully localized in all five.
-
-- **In-app Help** (`/help`) loads the doc set matching the active UI language,
-  falling back to English if a set is missing; screenshots resolve to
-  `docs/<lang>/screenshots/`. Publishing is done at build time by
-  [`frontend/scripts/copy-docs.mjs`](../../frontend/scripts/copy-docs.mjs) (five languages).
-- **Screenshots are generated with Playwright** against a running instance by
-  [`frontend/scripts/screenshots.mjs`](../../frontend/scripts/screenshots.mjs): it logs in,
-  switches the UI language, and captures each page into `docs/<lang>/screenshots/`.
-
-  ```bash
-  # app must be running (default http://localhost:8888)
-  ADMIN_EMAIL=… ADMIN_PASSWORD=… node frontend/scripts/screenshots.mjs        # all 5 langs
-  node frontend/scripts/screenshots.mjs de es                                 # a subset
-  ```
+Les documents et leurs captures sont par langue : `docs/<lang>/*.md` + `docs/<lang>/screenshots/*.png` pour chacune de `en`, `it`, `fr`, `de`, `es`. La **Aide in-app** (`/help`) charge le jeu de documents correspondant à la langue active de l'UI, avec repli sur l'anglais si un jeu manque ; les captures pointent vers `docs/<lang>/screenshots/`. Les captures sont générées avec Playwright par [`frontend/scripts/screenshots.mjs`](../../frontend/scripts/screenshots.mjs).
 
 ## Configuration
 
-No configuration is required — all five locales ship in the app. The historical default locale is Italian; change it by editing `DEFAULT_LOCALE` in `core/i18n/locale.ts` (web) and `i18n.py` (Telegram).
+Aucune configuration n'est requise — les cinq langues sont incluses dans l'application. La langue par défaut historique est l'italien ; changez-la en modifiant `DEFAULT_LOCALE` dans `core/i18n/locale.ts` (web) et `i18n.py` (Telegram).

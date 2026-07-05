@@ -387,6 +387,15 @@ CREATE TABLE IF NOT EXISTS comments (
 
 CREATE INDEX IF NOT EXISTS idx_comments_conversation ON comments(conversation_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_comments_message ON comments(message_id);
+
+-- Phase 23: roaming preferences. A single JSON blob per owner, letting a user's
+-- UI/appearance settings (owner_key 'user:<uid>') and each profile's chat
+-- settings (owner_key 'profile:<pid>') follow the account across devices.
+CREATE TABLE IF NOT EXISTS preferences (
+    owner_key  TEXT    PRIMARY KEY,   -- 'user:<uid>' | 'profile:<pid>'
+    data       TEXT    NOT NULL,      -- JSON blob, shape owned by the frontend
+    updated_at INTEGER NOT NULL
+);
 """
 
 _MIGRATIONS = [

@@ -8,16 +8,24 @@ import { AppComponent } from './app/app.component';
 import { routes } from './app/app.routes';
 import { AppConfigService } from './app/core/config/app-config.service';
 import { AuthService } from './app/core/services/auth.service';
+import { SettingsSyncService } from './app/core/services/settings-sync.service';
 import { authInterceptor } from './app/core/interceptors/auth.interceptor';
 import { profileInterceptor } from './app/core/interceptors/profile.interceptor';
 import { errorInterceptor } from './app/core/interceptors/error.interceptor';
 
 // Load runtime config first, then restore any existing auth session so guards
 // see the user before the first protected route resolves.
-function initializeApp(configService: AppConfigService, auth: AuthService) {
+function initializeApp(
+  configService: AppConfigService,
+  auth: AuthService,
+  settingsSync: SettingsSyncService,
+) {
   return async () => {
     await configService.load();
     await auth.bootstrap();
+    // Restore the roaming profile (theme/locale + active profile's chat prefs)
+    // once the session is known. No-op when unauthenticated. Never blocks boot.
+    await settingsSync.hydrateUser();
   };
 }
 
@@ -31,7 +39,7 @@ bootstrapApplication(AppComponent, {
     {
       provide: APP_INITIALIZER,
       useFactory: initializeApp,
-      deps: [AppConfigService, AuthService],
+      deps: [AppConfigService, AuthService, SettingsSyncService],
       multi: true
     },
     // Service worker is only built in production (see angular.json); register it

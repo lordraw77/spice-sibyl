@@ -13,18 +13,18 @@ export const DEFAULT_LOCALE: Locale = 'it';
 
 export interface LocaleMeta {
   code: Locale;
-  /** Native display label with flag, shown in the switcher. */
-  label: string;
+  /** Native display name shown in the switcher (flag rendered separately). */
+  name: string;
   /** BCP-47 tag used for Intl date/number/currency formatting (Phase 22.c). */
   bcp47: string;
 }
 
 export const SUPPORTED_LOCALES: LocaleMeta[] = [
-  { code: 'it', label: '🇮🇹 Italiano', bcp47: 'it-IT' },
-  { code: 'en', label: '🇬🇧 English', bcp47: 'en-GB' },
-  { code: 'fr', label: '🇫🇷 Français', bcp47: 'fr-FR' },
-  { code: 'de', label: '🇩🇪 Deutsch', bcp47: 'de-DE' },
-  { code: 'es', label: '🇪🇸 Español', bcp47: 'es-ES' },
+  { code: 'it', name: 'Italiano', bcp47: 'it-IT' },
+  { code: 'en', name: 'English', bcp47: 'en-GB' },
+  { code: 'fr', name: 'Français', bcp47: 'fr-FR' },
+  { code: 'de', name: 'Deutsch', bcp47: 'de-DE' },
+  { code: 'es', name: 'Español', bcp47: 'es-ES' },
 ];
 
 export const LOCALE_CODES: Locale[] = SUPPORTED_LOCALES.map((l) => l.code);

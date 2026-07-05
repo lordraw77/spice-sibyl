@@ -8,16 +8,17 @@ import hljs from 'highlight.js';
 
 import { ConversationService } from '../../core/services/conversation.service';
 import { Conversation, ChatMessage } from '../../core/models/chat.models';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 @Component({
   selector: 'app-shared-view',
   standalone: true,
-  imports: [CommonModule, DatePipe],
+  imports: [CommonModule, DatePipe, TranslatePipe],
   template: `
     <div class="shared-shell">
       <header class="shared-header">
         <div class="shared-brand">SpiceSibyl</div>
-        <div class="shared-badge">Conversazione condivisa</div>
+        <div class="shared-badge">{{ 'shared.badge' | t }}</div>
       </header>
 
       <div class="shared-loading" *ngIf="loading()">
@@ -25,8 +26,8 @@ import { Conversation, ChatMessage } from '../../core/models/chat.models';
       </div>
 
       <div class="shared-error" *ngIf="error()">
-        <h2>Link non valido</h2>
-        <p>Questa conversazione condivisa non esiste o è stata rimossa.</p>
+        <h2>{{ 'shared.invalidLink' | t }}</h2>
+        <p>{{ 'shared.invalidBody' | t }}</p>
       </div>
 
       <ng-container *ngIf="conversation() as conv">

@@ -10,6 +10,8 @@ import {
 import { ChatService } from '../../core/services/chat.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { ToolDefinition } from '../../core/models/chat.models';
+import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 /** A group of available tools sharing an MCP server (or the built-in / custom bucket). */
 interface ToolGroup {
@@ -23,7 +25,7 @@ interface ToolGroup {
 @Component({
   selector: 'app-tools-page',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TranslatePipe],
   templateUrl: './tools-page.component.html',
   styleUrls: ['./tools-page.component.css'],
 })
@@ -31,6 +33,7 @@ export class ToolsPageComponent implements OnInit {
   private readonly toolsApi = inject(CustomToolsService);
   private readonly chatService = inject(ChatService);
   private readonly notify = inject(NotificationService);
+  private readonly i18n = inject(I18nService);
 
   readonly tools = signal<CustomTool[]>([]);
   readonly loading = signal(false);
@@ -151,7 +154,7 @@ export class ToolsPageComponent implements OnInit {
     try {
       parameters = JSON.parse(this.parametersJson || '{}');
     } catch {
-      this.notify.add('error', 'Tools', 'JSON schema dei parametri non valido');
+      this.notify.add('error', 'Tools', this.i18n.translate('tools.invalidSchema'));
       return;
     }
     const body: CustomToolIn = {
@@ -176,7 +179,7 @@ export class ToolsPageComponent implements OnInit {
       next: () => {
         this.saving.set(false);
         this.formOpen.set(false);
-        this.notify.add('success', 'Tools', `Tool "${body.name}" salvato`);
+        this.notify.add('success', 'Tools', this.i18n.translate('tools.saved', { name: body.name }));
         this.refresh();
       },
       error: () => this.saving.set(false),
@@ -191,11 +194,11 @@ export class ToolsPageComponent implements OnInit {
   }
 
   remove(tool: CustomTool): void {
-    if (!window.confirm(`Rimuovere il tool "${tool.name}"?`)) return;
+    if (!window.confirm(this.i18n.translate('tools.removeConfirm', { name: tool.name }))) return;
     this.toolsApi.remove(tool.id).subscribe({
       next: () => {
         this.tools.update((list) => list.filter((t) => t.id !== tool.id));
-        this.notify.add('success', 'Tools', `"${tool.name}" rimosso`);
+        this.notify.add('success', 'Tools', this.i18n.translate('tools.removed', { name: tool.name }));
       },
     });
   }
@@ -205,7 +208,7 @@ export class ToolsPageComponent implements OnInit {
     try {
       args = JSON.parse(this.testArgsJson || '{}');
     } catch {
-      this.notify.add('error', 'Tools', 'Argomenti di test non validi (JSON)');
+      this.notify.add('error', 'Tools', this.i18n.translate('tools.invalidTestArgs'));
       return;
     }
     this.testing.update((s) => new Set(s).add(tool.id));
@@ -214,7 +217,7 @@ export class ToolsPageComponent implements OnInit {
         this.testing.update((s) => { const n = new Set(s); n.delete(tool.id); return n; });
         this.testResults.update((r) => ({ ...r, [tool.id]: res.result }));
         this.notify.add(res.ok ? 'success' : 'error', 'Tools',
-          res.ok ? `"${tool.name}" ha risposto` : `"${tool.name}": errore`);
+          res.ok ? this.i18n.translate('tools.responded', { name: tool.name }) : this.i18n.translate('tools.errored', { name: tool.name }));
       },
       error: () => {
         this.testing.update((s) => { const n = new Set(s); n.delete(tool.id); return n; });

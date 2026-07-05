@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, signal } from '@angular/core';
 
 const STORAGE_KEY = 'spicesibyl_preferences';
 
@@ -16,6 +16,8 @@ export interface UserPreferences {
   hiddenModels: string[];
   /** Phase 19: false = incognito chat (no memory injection/extraction) */
   memoryEnabled: boolean;
+  /** Phase 23: chat system prompt (was the standalone 'spicesibyl_system_prompt' key). */
+  systemPrompt: string;
   sidebarOpen: boolean;
   sectionsOpen: {
     model: boolean;
@@ -36,6 +38,7 @@ const DEFAULTS: UserPreferences = {
   ragEnabled: false,
   hiddenModels: [],
   memoryEnabled: true,
+  systemPrompt: '',
   sidebarOpen: window.innerWidth >= 992,
   sectionsOpen: {
     model: true,
@@ -47,6 +50,14 @@ const DEFAULTS: UserPreferences = {
 @Injectable({ providedIn: 'root' })
 export class UserPreferencesService {
   private prefs: UserPreferences;
+
+  /**
+   * Bumped on every local mutation. SettingsSyncService observes this to persist
+   * the active profile's chat preferences to the backend (roaming profile,
+   * Phase 23). hydrate() deliberately does NOT bump it — restoring from the
+   * server must not echo straight back as a save.
+   */
+  readonly revision = signal(0);
 
   constructor() {
     this.prefs = this.load();
@@ -75,13 +86,39 @@ export class UserPreferencesService {
     return this.prefs;
   }
 
+  /** Deep-ish copy of the current preferences, for persisting to the backend. */
+  snapshot(): UserPreferences {
+    return { ...this.prefs, sectionsOpen: { ...this.prefs.sectionsOpen } };
+  }
+
   set<K extends keyof UserPreferences>(key: K, value: UserPreferences[K]): void {
     this.prefs[key] = value;
     this.persist();
+    this.revision.update((n) => n + 1);
   }
 
   setSection(section: keyof UserPreferences['sectionsOpen'], open: boolean): void {
     this.prefs.sectionsOpen[section] = open;
+    this.persist();
+    this.revision.update((n) => n + 1);
+  }
+
+  /**
+   * Replace preferences with a blob restored from the backend (roaming profile).
+   * Merged over defaults like load() so missing/newer keys stay sane. Does not
+   * bump `revision` — this is an inbound restore, not a user edit.
+   */
+  hydrate(data: Partial<UserPreferences>): void {
+    this.prefs = {
+      ...DEFAULTS,
+      ...this.prefs,
+      ...data,
+      sectionsOpen: {
+        ...DEFAULTS.sectionsOpen,
+        ...this.prefs.sectionsOpen,
+        ...(data.sectionsOpen ?? {}),
+      },
+    };
     this.persist();
   }
 }

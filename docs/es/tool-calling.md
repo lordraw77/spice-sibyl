@@ -1,60 +1,60 @@
-# Tool calling
+# Llamadas a herramientas (tool calling)
 
-## Server-side execution loop
+## Bucle de ejecución en el servidor
 
-**What it does.** With the **Tool calling ON** switch in the sidebar, the backend exposes the registered tools to the model and executes requested calls server-side, feeding results back to the model in a loop (max 5 iterations in chat, configurable via `CHAT_MAX_TOOL_ITERATIONS`; for longer loops see [workflows](mcp-and-agents.md#persistent-workflows)). Calls and results are streamed as SSE `tool_call` / `tool_result` events and rendered as dedicated bubbles in the conversation; pending calls show a spinner.
+**Qué hace.** Con el interruptor **Tool calling ON** de la barra lateral, el backend expone las herramientas registradas al modelo y ejecuta las llamadas solicitadas en el servidor, devolviendo los resultados al modelo en un bucle (máx. 5 iteraciones en el chat, configurable con `CHAT_MAX_TOOL_ITERATIONS`; para bucles más largos véanse los [workflows](mcp-and-agents.md#workflows-persistentes)). Llamadas y resultados se transmiten como eventos SSE `tool_call` / `tool_result` y se muestran como burbujas dedicadas en la conversación; las llamadas pendientes muestran un spinner.
 
-**List of available tools:** `GET /api/v1/tools` (union of built-ins + the profile's custom tools + MCP). The **Tool calling ON/OFF** switch lives in the sidebar **Funzioni** (Features) section; tool management and overview are on the **Tools** page (*Gestisci →* link).
+**Lista de herramientas disponibles:** `GET /api/v1/tools` (unión de integradas + herramientas personalizadas del perfil + MCP). El interruptor **Tool calling ON/OFF** vive en la sección **Funciones** de la barra lateral; la gestión y visión general están en la página **Herramientas** (enlace *Gestionar →*).
 
-## Built-in tools
+## Herramientas integradas
 
-| Tool | What it does |
-|------|--------------|
-| `get_datetime` | current date/time |
-| `calculator` | evaluates mathematical expressions |
-| `web_search` | web search via DuckDuckGo (HTML scraping for rich snippets, falling back to the instant-answer API) |
-| `read_url` | fetches a web page and returns its text (HTML stripped, max 4,000 characters) |
-| `python_exec` | sandboxed code interpreter (see below) |
-| `kb_search` | agentic RAG: queries the profile's knowledge base on the model's demand |
-| `search_conversations` | episodic memory: full-text (FTS5) search over past conversations |
-| `generate_image` | generates an image via the configured provider chain; the image is shown to the user |
-| `get_weather` | current weather + forecast via Open-Meteo (free, no API key) |
-| `fetch_rss` | latest N entries of an RSS 2.0 / Atom feed |
-| `create_reminder` | creates a Telegram reminder for the linked account ("remind me tomorrow at 9…") |
-| `extract_document` | downloads a PDF/DOCX/TXT/MD from a URL and returns its text, without KB ingestion |
-| `http_request` | generic GET/POST HTTP call to public APIs (optional `HTTP_REQUEST_ALLOWED_DOMAINS` allowlist) |
+| Herramienta | Qué hace |
+|-------------|----------|
+| `get_datetime` | fecha/hora actuales |
+| `calculator` | evalúa expresiones matemáticas |
+| `web_search` | búsqueda web vía DuckDuckGo (scraping HTML para fragmentos ricos, con repliegue a la API instant-answer) |
+| `read_url` | recupera una página web y devuelve su texto (HTML eliminado, máx. 4 000 caracteres) |
+| `python_exec` | intérprete de código en sandbox (véase abajo) |
+| `kb_search` | RAG agéntico: consulta la base de conocimiento del perfil a demanda del modelo |
+| `search_conversations` | memoria episódica: búsqueda de texto completo (FTS5) en conversaciones pasadas |
+| `generate_image` | genera una imagen mediante la cadena de proveedores configurada; la imagen se muestra al usuario |
+| `get_weather` | tiempo actual + previsión vía Open-Meteo (gratis, sin clave API) |
+| `fetch_rss` | las últimas N entradas de un feed RSS 2.0 / Atom |
+| `create_reminder` | crea un recordatorio de Telegram para la cuenta vinculada («recuérdame mañana a las 9…») |
+| `extract_document` | descarga un PDF/DOCX/TXT/MD desde una URL y devuelve su texto, sin ingesta en la KB |
+| `http_request` | llamada HTTP genérica GET/POST a APIs públicas (lista de permitidos opcional `HTTP_REQUEST_ALLOWED_DOMAINS`) |
 
-**SSRF hardening.** `read_url`, `fetch_rss`, `extract_document` and `http_request` refuse URLs whose host resolves to private/loopback/link-local addresses. `kb_search`, `search_conversations` and `create_reminder` automatically operate on the caller's profile.
+**Refuerzo anti-SSRF.** `read_url`, `fetch_rss`, `extract_document` y `http_request` rechazan URLs cuyo host resuelve a direcciones privadas/loopback/link-local. `kb_search`, `search_conversations` y `create_reminder` operan automáticamente sobre el perfil del llamante.
 
-## Custom tools (HTTP)
+## Herramientas personalizadas (HTTP)
 
-**What it does.** Register HTTP-backed tools from the UI, without touching the code: name, description, parameters (JSON Schema), URL/method/headers, authentication (none / bearer / custom header), timeout. They are stored per profile in the `custom_tools` table and injected into the chat loop under the `custom__<name>` namespace.
+**Qué hace.** Registra herramientas basadas en HTTP desde la interfaz, sin tocar el código: nombre, descripción, parámetros (JSON Schema), URL/método/cabeceras, autenticación (ninguna / bearer / cabecera personalizada), timeout. Se guardan por perfil en la tabla `custom_tools` y se inyectan en el bucle de chat bajo el espacio de nombres `custom__<nombre>`.
 
-![Tools page](screenshots/tools.png)
+![Página de herramientas](screenshots/tools.png)
 
-**How to use it.**
-1. **Tools** page → **Nuovo tool** (New tool).
-2. Fill in the form (name, description, parameter JSON schema, endpoint, auth, timeout) and save.
-3. Use the **inline test panel** for a trial call before enabling it.
-4. The enable toggle activates/deactivates the tool without deleting it.
+**Cómo se usa.**
+1. Página **Herramientas** → **Nueva herramienta**.
+2. Rellena el formulario (nombre, descripción, esquema JSON de parámetros, endpoint, auth, timeout) y guarda.
+3. Usa el **panel de prueba integrado** para una llamada de ensayo antes de activarla.
+4. El interruptor de activación habilita/deshabilita la herramienta sin borrarla.
 
-**Call semantics.** Arguments produced by the model are sent as the JSON body (POST/PUT/PATCH) or query string (GET); the response body is the tool result. API: CRUD + test under `/api/v1/tools/custom` (audited operations).
+**Semántica de la llamada.** Los argumentos producidos por el modelo se envían como body JSON (POST/PUT/PATCH) o query string (GET); el cuerpo de la respuesta es el resultado de la herramienta. API: CRUD + test bajo `/api/v1/tools/custom` (operaciones auditadas).
 
-## Available tools grouped by MCP server
+## Herramientas disponibles agrupadas por servidor MCP
 
-**What it does.** Below the custom-tools management, the **Tools** page lists **every tool exposed to the model** for the current profile, **grouped into a card per MCP server** (plus a *Built-in* and a *Custom* card).
+**Qué hace.** Bajo la gestión de herramientas personalizadas, la página **Herramientas** lista **todas las herramientas expuestas al modelo** para el perfil actual, **agrupadas en una tarjeta por servidor MCP** (más una tarjeta *Built-in* y otra *Custom*).
 
-**How to use it.** Each card shows the **MCP server name** as its title, a badge with the tool count, and below it the **list of tools** (name without the `mcp__<server>__` prefix, plus its description). Handy to see at a glance what each connected MCP server provides. The **Aggiorna** (Refresh) button reloads the list.
+**Cómo se usa.** Cada tarjeta muestra el **nombre del servidor MCP** como título, una insignia con el número de herramientas y debajo la **lista de herramientas** (nombre sin el prefijo `mcp__<servidor>__`, más su descripción). Práctico para ver de un vistazo qué aporta cada servidor MCP conectado. El botón **Actualizar** recarga la lista.
 
-## Sandboxed code interpreter (`python_exec`)
+## Intérprete de código en sandbox (`python_exec`)
 
-**What it does.** Runs Python code in an isolated `python -I` subprocess with:
+**Qué hace.** Ejecuta código Python en un subproceso aislado `python -I` con:
 
-- rlimits on CPU, memory (`CODE_INTERPRETER_MEMORY_MB`), file size, fd/process counts;
-- wall-clock timeout (`CODE_INTERPRETER_TIMEOUT`, kills the whole process group);
-- a minimal environment and **no network** (Python-level socket stubbing);
-- an ephemeral working directory with file in/out: input `files` are materialized before the run, created files are reported in the result (small text files inline) and everything is deleted afterwards.
+- rlimits de CPU, memoria (`CODE_INTERPRETER_MEMORY_MB`), tamaño de archivo, número de fd/procesos;
+- timeout de reloj de pared (`CODE_INTERPRETER_TIMEOUT`, mata todo el grupo de procesos);
+- un entorno mínimo y **sin red** (stub de sockets a nivel Python);
+- un directorio de trabajo efímero con archivos de entrada/salida: los `files` de entrada se materializan antes de la ejecución, los archivos creados se reportan en el resultado (archivos de texto pequeños en línea) y todo se borra después.
 
-**Configuration.** Enabled by default; opt out with `CODE_INTERPRETER_ENABLED=false`.
+**Configuración.** Activado por defecto; se desactiva con `CODE_INTERPRETER_ENABLED=false`.
 
-**How to use it.** With tool calling enabled, just ask the model something that requires computation/code ("run this script", "analyze these numbers"); the model invokes `python_exec` on its own.
+**Cómo se usa.** Con el tool calling activado, pide al modelo algo que requiera cálculo/código («ejecuta este script», «analiza estos números»); el modelo invoca `python_exec` por sí solo.

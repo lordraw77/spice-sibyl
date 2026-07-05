@@ -2,18 +2,18 @@
 
   <header class="page-header">
     <div>
-      <h1>Provider Management</h1>
-      <p class="subtitle">Monitor, configure, and test your AI provider connections.</p>
+      <h1>{{ 'prov.title' | t }}</h1>
+      <p class="subtitle">{{ 'prov.subtitle' | t }}</p>
     </div>
     <div class="summary-chips" *ngIf="!loading() && !error()">
-      <span class="chip chip-ok">{{ configuredCount() }} / {{ providers().length }} configured</span>
-      <span class="chip">{{ totalModels() }} models</span>
+      <span class="chip chip-ok">{{ 'prov.configuredChip' | t: { n: configuredCount(), total: providers().length } }}</span>
+      <span class="chip">{{ 'prov.modelCount' | t: { n: totalModels() } }}</span>
     </div>
   </header>
 
   <!-- Loading -->
   <div class="state-banner" *ngIf="loading()">
-    <span class="dot-spin"></span> Loading providers…
+    <span class="dot-spin"></span> {{ 'prov.loading' | t }}
   </div>
 
   <!-- Error -->
@@ -37,12 +37,12 @@
             <div class="status-row">
               <span class="status-dot" [class.dot-ok]="provider.configured" [class.dot-warn]="!provider.configured && provider.enabled" [class.dot-dim]="!provider.enabled"></span>
               <span class="status-text" [class.text-ok]="provider.configured" [class.text-warn]="!provider.configured && provider.enabled" [class.text-dim]="!provider.enabled">
-                {{ provider.configured ? 'configured' : 'not configured' }}
+                {{ (provider.configured ? 'prov.status.configured' : 'prov.status.notConfigured') | t }}
               </span>
-              <span class="badge-disabled" *ngIf="!provider.enabled">disabled</span>
+              <span class="badge-disabled" *ngIf="!provider.enabled">{{ 'prov.status.disabled' | t }}</span>
             </div>
             <!-- Enable/disable toggle -->
-            <label class="toggle" [title]="provider.enabled ? 'Disable provider' : 'Enable provider'">
+            <label class="toggle" [title]="(provider.enabled ? 'prov.toggle.disable' : 'prov.toggle.enable') | t">
               <input type="checkbox" [checked]="provider.enabled" (change)="toggleEnabled(provider)" />
               <span class="toggle-track">
                 <span class="toggle-thumb"></span>
@@ -52,7 +52,7 @@
         </div>
 
         <div class="card-stats">
-          <span class="stat-count">{{ provider.model_count }} model{{ provider.model_count !== 1 ? 's' : '' }}</span>
+          <span class="stat-count">{{ 'prov.modelCount' | t: { n: provider.model_count } }}</span>
           <ng-container *ngIf="provider.capabilities.length">
             <span class="stat-sep">·</span>
             <span class="cap-list">
@@ -65,10 +65,10 @@
       <!-- Key hint for unconfigured providers -->
       <div class="key-hint" *ngIf="!provider.configured && provider.key_hint">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        Set <code>{{ provider.key_hint }}</code> to enable.
-        <a *ngIf="provider.docs_url" [href]="provider.docs_url" target="_blank" rel="noopener noreferrer">Get key ↗</a>
+        {{ 'prov.keyHint.before' | t }} <code>{{ provider.key_hint }}</code> {{ 'prov.keyHint.after' | t }}
+        <a *ngIf="provider.docs_url" [href]="provider.docs_url" target="_blank" rel="noopener noreferrer">{{ 'prov.getKey' | t }}</a>
         <button class="btn-add-key" (click)="openKeyForm(provider.id)" *ngIf="!getKeyForm(provider.id).open">
-          Add key
+          {{ 'prov.addKey' | t }}
         </button>
       </div>
 
@@ -77,23 +77,23 @@
         <input
           class="key-input"
           type="password"
-          placeholder="Paste API key…"
+          [placeholder]="'prov.keyPlaceholder' | t"
           [value]="getKeyForm(provider.id).value"
           (input)="setKeyValue(provider.id, $any($event.target).value)"
           (keydown.enter)="saveKey(provider.id)"
         />
         <div class="key-form-actions">
           <button class="btn-save-key" (click)="saveKey(provider.id)" [disabled]="getKeyForm(provider.id).saving || !getKeyForm(provider.id).value.trim()">
-            {{ getKeyForm(provider.id).saving ? 'Saving…' : 'Save' }}
+            {{ (getKeyForm(provider.id).saving ? 'prov.saving' : 'common.save') | t }}
           </button>
-          <button class="btn-cancel-key" (click)="closeKeyForm(provider.id)">Cancel</button>
+          <button class="btn-cancel-key" (click)="closeKeyForm(provider.id)">{{ 'common.cancel' | t }}</button>
           <span class="key-form-error" *ngIf="getKeyForm(provider.id).error">{{ getKeyForm(provider.id).error }}</span>
         </div>
       </div>
 
       <!-- Update key for already-configured providers -->
       <div class="key-update" *ngIf="provider.configured && provider.key_hint && !getKeyForm(provider.id).open">
-        <button class="btn-update-key" (click)="openKeyForm(provider.id)">Update key</button>
+        <button class="btn-update-key" (click)="openKeyForm(provider.id)">{{ 'prov.updateKey' | t }}</button>
       </div>
 
       <!-- Card actions -->
@@ -104,7 +104,7 @@
           [disabled]="getTestState(provider.id).testing"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          {{ getTestState(provider.id).testing ? 'Testing…' : 'Test' }}
+          {{ getTestState(provider.id).testing ? ('prov.testing' | t) : 'Test' }}
         </button>
 
         <button
@@ -116,20 +116,20 @@
             <polyline *ngIf="isExpanded(provider.id)" points="18 15 12 9 6 15"></polyline>
             <polyline *ngIf="!isExpanded(provider.id)" points="6 9 12 15 18 9"></polyline>
           </svg>
-          {{ getModels(provider.id).length }} models
+          {{ 'prov.modelCount' | t: { n: getModels(provider.id).length } }}
         </button>
 
         <span class="hidden-badge" *ngIf="hiddenModelCount(provider.id) as h"
-              [title]="h + ' modelli nascosti dalla scelta del modello'">
+              [title]="'prov.hiddenTitle' | t: { n: h }">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-          {{ h }} nascost{{ h === 1 ? 'o' : 'i' }}
+          {{ (h === 1 ? 'prov.hiddenOne' : 'prov.hiddenMany') | t: { n: h } }}
         </span>
       </div>
 
       <!-- Test result inline -->
       <div class="test-result" *ngIf="getTestState(provider.id).result as res">
         <span [class.res-ok]="res.ok" [class.res-fail]="!res.ok">
-          {{ res.ok ? '✓ Connected' : '✗ ' + (res.error || 'Failed') }}
+          {{ res.ok ? ('prov.connected' | t) : '✗ ' + (res.error || ('prov.failed' | t)) }}
           <span *ngIf="res.latency_ms !== null"> · {{ res.latency_ms }}ms</span>
           <span *ngIf="res.model_count !== null"> · {{ res.model_count }} live</span>
         </span>
@@ -139,18 +139,18 @@
       <div class="model-list" *ngIf="isExpanded(provider.id)">
         <div class="model-list-head">
           <span class="model-list-hint">
-            {{ visibleModelCount(provider.id) }} visibili nella scelta del modello<ng-container *ngIf="hiddenModelCount(provider.id) as h"> · <span class="hidden-count">{{ h }} nascost{{ h === 1 ? 'o' : 'i' }}</span></ng-container>
+            {{ 'prov.visibleInPicker' | t: { n: visibleModelCount(provider.id) } }}<ng-container *ngIf="hiddenModelCount(provider.id) as h"> · <span class="hidden-count">{{ (h === 1 ? 'prov.hiddenOne' : 'prov.hiddenMany') | t: { n: h } }}</span></ng-container>
           </span>
           <div class="model-list-actions">
-            <button class="btn-mini" (click)="showAllModels(provider.id)">Mostra tutti</button>
-            <button class="btn-mini" (click)="hideAllModels(provider.id)">Nascondi tutti</button>
+            <button class="btn-mini" (click)="showAllModels(provider.id)">{{ 'prov.showAll' | t }}</button>
+            <button class="btn-mini" (click)="hideAllModels(provider.id)">{{ 'prov.hideAll' | t }}</button>
           </div>
         </div>
         <div class="model-row" *ngFor="let model of getModels(provider.id)" [class.model-hidden]="isModelHidden(model.id)">
           <button
             class="model-vis-toggle"
             (click)="toggleModelVisibility(model.id)"
-            [title]="isModelHidden(model.id) ? 'Nascosto — clicca per mostrare nella scelta del modello' : 'Visibile — clicca per nascondere'"
+            [title]="(isModelHidden(model.id) ? 'prov.visToggle.show' : 'prov.visToggle.hide') | t"
             [attr.aria-pressed]="!isModelHidden(model.id)"
           >
             <svg *ngIf="!isModelHidden(model.id)" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>

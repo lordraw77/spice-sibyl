@@ -4,14 +4,13 @@
     <div>
       <h1>Knowledge base</h1>
       <p class="subtitle">
-        Documenti indicizzati per il profilo <strong>{{ profileService.current()?.name || 'default' }}</strong>,
-        usati come contesto quando il RAG è attivo. Il toggle <strong>ON/OFF del RAG</strong> resta nella sidebar della chat.
+        {{ 'kb.subtitle.a' | t }} <strong>{{ profileService.current()?.name || 'default' }}</strong>{{ 'kb.subtitle.b' | t }}
       </p>
     </div>
     <div class="head-actions">
-      <button class="btn-ghost" (click)="load()" [disabled]="loading()">Aggiorna</button>
+      <button class="btn-ghost" (click)="load()" [disabled]="loading()">{{ 'common.refresh' | t }}</button>
       <label class="btn" [class.disabled]="kbUploading()">
-        {{ kbUploading() ? 'Caricamento…' : 'Carica documenti' }}
+        {{ (kbUploading() ? 'common.loading' : 'kb.upload') | t }}
         <input type="file" multiple accept=".pdf,.txt,.md,.markdown,.docx" (change)="onFileSelected($event)" hidden [disabled]="kbUploading()" />
       </label>
     </div>
@@ -19,17 +18,17 @@
 
   <!-- URL ingestion -->
   <section class="card">
-    <div class="card-head"><h2>Aggiungi una pagina web</h2></div>
+    <div class="card-head"><h2>{{ 'kb.addUrl' | t }}</h2></div>
     <div class="url-row">
       <input
         type="url"
         class="text-input"
-        placeholder="https://esempio.com/articolo"
+        [placeholder]="'kb.urlPlaceholder' | t"
         [value]="kbUrl()"
         (input)="kbUrl.set($any($event.target).value)"
         (keyup.enter)="ingestUrl()"
         [disabled]="kbUploading()" />
-      <button class="btn" (click)="ingestUrl()" [disabled]="kbUploading() || !kbUrl().trim()">Indicizza</button>
+      <button class="btn" (click)="ingestUrl()" [disabled]="kbUploading() || !kbUrl().trim()">{{ 'kb.index' | t }}</button>
     </div>
   </section>
 
@@ -39,18 +38,18 @@
       <div class="item-main doc-main">
         <span class="kb-status" [class.ready]="doc.status === 'ready'" [class.pending]="doc.status === 'pending'" [class.error]="doc.status === 'error'" [title]="doc.error || doc.status"></span>
         <span class="doc-name" [title]="doc.source_url || doc.filename">
-          <span *ngIf="doc.source_type === 'url'" class="kb-url-tag" title="Pagina web">🔗</span>{{ doc.filename }}
+          <span *ngIf="doc.source_type === 'url'" class="kb-url-tag" [title]="'kb.webPage' | t">🔗</span>{{ doc.filename }}
         </span>
-        <span class="doc-chunks" *ngIf="doc.status === 'ready'">{{ doc.chunk_count }} chunk</span>
+        <span class="doc-chunks" *ngIf="doc.status === 'ready'">{{ 'ws.chunks' | t: { n: doc.chunk_count } }}</span>
       </div>
       <div class="item-actions">
-        <button class="btn-ghost sm" (click)="reEmbed(doc.id, $event)" title="Re-indicizza">Re-embed</button>
-        <button class="btn-danger sm" (click)="deleteDoc(doc.id, $event)" title="Elimina">Elimina</button>
+        <button class="btn-ghost sm" (click)="reEmbed(doc.id, $event)" [title]="'kb.reindex' | t">Re-embed</button>
+        <button class="btn-danger sm" (click)="deleteDoc(doc.id, $event)" [title]="'common.delete' | t">{{ 'common.delete' | t }}</button>
       </div>
     </li>
   </ul>
   <ng-template #empty>
-    <p class="empty" *ngIf="!loading()">Nessun documento caricato.</p>
+    <p class="empty" *ngIf="!loading()">{{ 'kb.empty' | t }}</p>
   </ng-template>
 
 </div>

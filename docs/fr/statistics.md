@@ -1,20 +1,20 @@
-# Usage statistics
+# Statistiques d'utilisation
 
-**What it does.** Every stored message carries its telemetry (prompt/completion tokens, latency, provider-reported cost estimate). The **Stats** page aggregates this data per profile or globally.
+**Ce que ça fait.** Chaque message stocké porte sa télémétrie (tokens prompt/completion, latence, estimation de coût rapportée par le fournisseur). La page **Statistiques** agrège ces données par profil ou globalement.
 
-![Usage Statistics page](screenshots/stats.png)
+![Page Statistiques d'utilisation](screenshots/stats.png)
 
-## Page contents
+## Contenu de la page
 
-- **Summary cards**: total messages, total tokens (with prompt/completion breakdown), estimated cost.
-- **Trend** — daily time-series charts: token area chart and cost bar chart, with a switchable **7d / 30d / 90d** range (`GET /v1/stats/daily`, SQLite date aggregation).
-- **Per profile**: conversations/messages/tokens/cost table for each profile.
-- **Per provider and per model**: tables breaking usage down by provider and by individual model — useful to see where tokens go and what actually costs money.
+- **Cartes de synthèse** : messages totaux, tokens totaux (avec répartition prompt/completion), coût estimé.
+- **Tendance** — graphiques quotidiens : aire des tokens et barres des coûts, avec une plage commutable **7j / 30j / 90j** (`GET /v1/stats/daily`, agrégation par date SQLite).
+- **Par profil** : tableau conversations/messages/tokens/coût pour chaque profil.
+- **Par fournisseur et par modèle** : tableaux ventilant l'utilisation par fournisseur et par modèle — utiles pour voir où vont les tokens et ce qui coûte réellement.
 
-## How to use it
+## Comment l'utiliser
 
-Navigate to **Stats** from the navbar. Data covers the authenticated user (all their profiles); the counters at the top right show how many profiles and conversations are included.
+Accédez à **Statistiques** depuis la barre de navigation. Les données couvrent l'utilisateur authentifié (tous ses profils) ; les compteurs en haut à droite indiquent combien de profils et de conversations sont inclus.
 
-**API.** `GET /v1/stats` (per profile or global), `GET /v1/stats/daily` for daily series.
+**API.** `GET /v1/stats` (par profil ou global), `GET /v1/stats/daily` pour les séries quotidiennes.
 
-**Note on costs.** Cost is an estimate reported by providers: for local models (Ollama) or free tiers it stays at zero/—.
+**Remarque sur les coûts.** Le coût est une estimation rapportée par les fournisseurs : pour les modèles locaux (Ollama) ou les paliers gratuits il reste à zéro/—.

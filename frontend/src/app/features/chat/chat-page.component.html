@@ -11,13 +11,13 @@
 
       <div class="sidebar-head">
         <span class="sidebar-brand">SpiceSibyl</span>
-        <button class="btn-icon" (click)="toggleSidebar()" title="Chiudi sidebar" aria-label="Chiudi sidebar">
+        <button class="btn-icon" (click)="toggleSidebar()" [title]="'chat.sidebar.close' | t" [attr.aria-label]="'chat.sidebar.close' | t">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
 
       <!-- Profile switcher -->
-      <button class="profile-chip" (click)="switchProfile()" title="Cambia profilo">
+      <button class="profile-chip" (click)="switchProfile()" [title]="'chat.profile.switch' | t">
         <span class="profile-chip-avatar">{{ profileService.current()?.name?.charAt(0)?.toUpperCase() }}</span>
         <span class="profile-chip-name">{{ profileService.current()?.name }}</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="7 10 12 15 17 10"/></svg>
@@ -27,29 +27,29 @@
       <div class="telegram-link-section">
         <ng-container *ngIf="telegramLink().linked; else notLinked">
           <div class="telegram-linked">
-            <span class="telegram-badge">Telegram: {{ '@' + (telegramLink().username || 'collegato') }}</span>
-            <button class="telegram-unlink-btn" (click)="unlinkTelegram()" title="Scollega">
+            <span class="telegram-badge">Telegram: {{ '@' + (telegramLink().username || ('chat.telegram.linkedFallback' | t)) }}</span>
+            <button class="telegram-unlink-btn" (click)="unlinkTelegram()" [title]="'chat.telegram.unlink' | t">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
         </ng-container>
         <ng-template #notLinked>
           <div class="telegram-link-form">
-            <input class="template-form-input" type="text" placeholder="Codice /link da Telegram" [(ngModel)]="telegramLinkCode" style="font-size:.76rem" />
-            <button class="btn-system-save" style="font-size:.72rem;padding:.2rem .5rem" (click)="submitTelegramLink()" [disabled]="!telegramLinkCode.trim() || telegramLinkLoading">Collega</button>
+            <input class="template-form-input" type="text" [placeholder]="'chat.telegram.codePlaceholder' | t" [(ngModel)]="telegramLinkCode" style="font-size:.76rem" />
+            <button class="btn-system-save" style="font-size:.72rem;padding:.2rem .5rem" (click)="submitTelegramLink()" [disabled]="!telegramLinkCode.trim() || telegramLinkLoading">{{ 'chat.telegram.link' | t }}</button>
           </div>
         </ng-template>
       </div>
 
       <!-- Conversations: quick actions (full list opens in the picker overlay) -->
       <div class="conv-actions-row">
-        <button class="conv-open-btn" (click)="openConvPicker()" title="Apri elenco conversazioni">
+        <button class="conv-open-btn" (click)="openConvPicker()" [title]="'chat.conversations.open' | t">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          Conversazioni
+          {{ 'chat.conversations' | t }}
         </button>
-        <button class="btn-new-chat" (click)="newConversation()" title="Nuova chat">
+        <button class="btn-new-chat" (click)="newConversation()" [title]="'chat.newChat' | t">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Nuova
+          {{ 'chat.new' | t }}
         </button>
       </div>
 
@@ -57,20 +57,20 @@
       <div class="sidebar-section" data-tour="model">
         <div class="section-header">
           <button class="section-collapse-btn" (click)="toggleModel()" [attr.aria-expanded]="modelOpen()">
-            <span class="section-label">Modello</span>
+            <span class="section-label">{{ 'chat.section.model' | t }}</span>
             <svg class="section-chevron" [class.open]="modelOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
         </div>
         <ng-container *ngIf="modelOpen()">
           <select class="form-select mb-2" [ngModel]="capabilityFilter()" (ngModelChange)="setCapabilityFilter($event)">
             <option *ngFor="let capability of availableCapabilities()" [value]="capability">
-              {{ capability === 'all' ? 'Tutte le capacità' : capability }}
+              {{ capability === 'all' ? ('chat.model.allCapabilities' | t) : capability }}
             </option>
           </select>
           <input
             class="model-search-input mb-2"
             type="text"
-            placeholder="Cerca modello…"
+            [placeholder]="'chat.model.searchPlaceholder' | t"
             [ngModel]="modelSearchQuery()"
             (ngModelChange)="modelSearchQuery.set($event)"
           />
@@ -79,7 +79,7 @@
           </select>
           <div class="model-badges" *ngIf="selectedModelMeta() as selected">
             <span class="badge-chip provider">{{ selected.provider || 'provider' }}</span>
-            <span class="badge-chip ok" *ngIf="selected.configured">configurato</span>
+            <span class="badge-chip ok" *ngIf="selected.configured">{{ 'chat.model.configured' | t }}</span>
             <span class="badge-chip free" *ngIf="selected.free">free</span>
             <span class="badge-chip" *ngFor="let capability of selected.capabilities || []">{{ capability }}</span>
           </div>
@@ -87,8 +87,8 @@
           <!-- Provider filter: which providers' models appear in the picker -->
           <div class="provider-filter" *ngIf="selectableProviders().length">
             <div class="provider-filter-head">
-              <span class="provider-filter-label">Provider visibili</span>
-              <button class="provider-filter-all" (click)="setAllProviders(true)">Tutti</button>
+              <span class="provider-filter-label">{{ 'chat.model.visibleProviders' | t }}</span>
+              <button class="provider-filter-all" (click)="setAllProviders(true)">{{ 'chat.model.all' | t }}</button>
             </div>
             <div class="provider-chips">
               <button
@@ -97,7 +97,7 @@
                 class="provider-chip"
                 [class.on]="isProviderSelected(p.id)"
                 (click)="toggleProvider(p.id)"
-                [title]="p.label + ' — ' + p.model_count + ' modelli'"
+                [title]="p.label + ' — ' + p.model_count + ' ' + ('chat.model.models' | t)"
               >
                 <span class="provider-chip-check">{{ isProviderSelected(p.id) ? '✓' : '○' }}</span>
                 {{ p.label }}
@@ -112,7 +112,7 @@
       <div class="sidebar-section" data-tour="system-prompt">
         <div class="section-header">
           <button class="section-collapse-btn" (click)="toggleSystem()" [attr.aria-expanded]="systemOpen()">
-            <span class="section-label">Sistema</span>
+            <span class="section-label">{{ 'chat.section.system' | t }}</span>
             <svg class="section-chevron" [class.open]="systemOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
         </div>
@@ -120,12 +120,12 @@
           <textarea
             class="system-textarea"
             rows="4"
-            placeholder="Istruzioni persistenti per il modello (es: 'Rispondi sempre in italiano…')"
+            [placeholder]="'chat.system.placeholder' | t"
             [(ngModel)]="systemPrompt"
           ></textarea>
           <div class="system-actions">
-            <button class="btn-system-save" (click)="saveSystemPrompt()" [disabled]="!systemPrompt.trim()">Salva</button>
-            <button class="btn-system-clear" (click)="clearSystemPrompt()" [disabled]="!systemPrompt">Cancella</button>
+            <button class="btn-system-save" (click)="saveSystemPrompt()" [disabled]="!systemPrompt.trim()">{{ 'common.save' | t }}</button>
+            <button class="btn-system-clear" (click)="clearSystemPrompt()" [disabled]="!systemPrompt">{{ 'common.clear' | t }}</button>
           </div>
         </ng-container>
       </div>
@@ -134,7 +134,7 @@
       <div class="sidebar-section">
         <div class="section-header">
           <button class="section-collapse-btn" (click)="toggleParams()" [attr.aria-expanded]="paramsOpen()">
-            <span class="section-label">Parametri</span>
+            <span class="section-label">{{ 'chat.section.params' | t }}</span>
             <svg class="section-chevron" [class.open]="paramsOpen()" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
         </div>
@@ -145,16 +145,16 @@
           </div>
           <div class="param-row">
             <label class="param-label">Max tokens <span class="param-value">{{ maxTokens === 0 ? '∞' : maxTokens }}</span></label>
-            <input type="number" min="0" step="256" [ngModel]="maxTokens" (ngModelChange)="onMaxTokensChange($event)" class="param-input" placeholder="0 = illimitato" />
+            <input type="number" min="0" step="256" [ngModel]="maxTokens" (ngModelChange)="onMaxTokensChange($event)" class="param-input" [placeholder]="'chat.params.maxTokensPlaceholder' | t" />
           </div>
           <div class="param-row">
-            <label class="param-label" title="Numero massimo di chiamate tool consecutive in un singolo turno di chat">Max iterazioni tool <span class="param-value">{{ maxToolIterations }}</span></label>
+            <label class="param-label" [title]="'chat.params.maxToolIterationsTitle' | t">{{ 'chat.params.maxToolIterations' | t }} <span class="param-value">{{ maxToolIterations }}</span></label>
             <input type="number" min="1" max="50" step="1" [ngModel]="maxToolIterations" (ngModelChange)="onMaxToolIterationsChange($event)" class="param-input" />
           </div>
           <div class="param-row" *ngIf="pushNotify.supported">
-            <button class="tools-toggle notify-toggle" [class.enabled]="pushNotify.enabled()" (click)="pushNotify.toggle()" title="Notifica di sistema quando una generazione lunga termina con la scheda in background">
+            <button class="tools-toggle notify-toggle" [class.enabled]="pushNotify.enabled()" (click)="pushNotify.toggle()" [title]="'chat.params.notificationsTitle' | t">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-              Notifiche {{ pushNotify.enabled() ? 'ON' : 'OFF' }}
+              {{ 'chat.params.notifications' | t }} {{ pushNotify.enabled() ? 'ON' : 'OFF' }}
             </button>
           </div>
         </ng-container>
@@ -163,31 +163,31 @@
       <!-- Feature switches (ON/OFF). Management lives in dedicated pages. -->
       <div class="sidebar-section" data-tour="tools">
         <div class="section-header">
-          <span class="section-label">Funzioni</span>
+          <span class="section-label">{{ 'chat.section.features' | t }}</span>
         </div>
 
         <div class="switch-row" *ngIf="availableTools().length">
-          <button class="tools-toggle" [class.enabled]="toolsEnabled()" (click)="toggleTools()" title="Abilita / disabilita tool">
+          <button class="tools-toggle" [class.enabled]="toolsEnabled()" (click)="toggleTools()" [title]="'chat.features.toggleTools' | t">
             {{ toolsEnabled() ? 'ON' : 'OFF' }}
           </button>
           <span class="switch-name">Tool calling</span>
-          <a class="manage-link" routerLink="/tools" title="Gestisci i tool">Gestisci →</a>
+          <a class="manage-link" routerLink="/tools" [title]="'chat.features.manageTools' | t">{{ 'chat.features.manage' | t }}</a>
         </div>
 
         <div class="switch-row">
-          <button class="tools-toggle" [class.enabled]="ragEnabled()" (click)="toggleRag()" title="Abilita / disabilita RAG">
+          <button class="tools-toggle" [class.enabled]="ragEnabled()" (click)="toggleRag()" [title]="'chat.features.toggleRag' | t">
             {{ ragEnabled() ? 'ON' : 'OFF' }}
           </button>
           <span class="switch-name">Knowledge (RAG)</span>
-          <a class="manage-link" routerLink="/knowledge" title="Gestisci la knowledge base">Gestisci →</a>
+          <a class="manage-link" routerLink="/knowledge" [title]="'chat.features.manageKb' | t">{{ 'chat.features.manage' | t }}</a>
         </div>
 
         <div class="switch-row">
-          <button class="tools-toggle" [class.enabled]="memoryEnabled()" (click)="toggleMemory()" title="ON = ricordi usati nelle risposte; OFF = chat in incognito">
+          <button class="tools-toggle" [class.enabled]="memoryEnabled()" (click)="toggleMemory()" [title]="'chat.features.memoryTitle' | t">
             {{ memoryEnabled() ? 'ON' : 'OFF' }}
           </button>
-          <span class="switch-name">Memoria</span>
-          <a class="manage-link" routerLink="/memory" title="Gestisci la memoria">Gestisci →</a>
+          <span class="switch-name">{{ 'chat.features.memory' | t }}</span>
+          <a class="manage-link" routerLink="/memory" [title]="'chat.features.manageMemory' | t">{{ 'chat.features.manage' | t }}</a>
         </div>
       </div>
 
@@ -198,12 +198,12 @@
   <div class="conv-picker-backdrop" *ngIf="convPickerOpen()" (click)="closeConvPicker()"></div>
   <div class="conv-picker" *ngIf="convPickerOpen()" (click)="closeTagPopover()">
     <div class="conv-picker-head">
-      <span class="section-label">Conversazioni</span>
-      <button class="btn-new-chat" (click)="newConversation(); closeConvPicker()" title="Nuova chat">
+      <span class="section-label">{{ 'chat.conversations' | t }}</span>
+      <button class="btn-new-chat" (click)="newConversation(); closeConvPicker()" [title]="'chat.newChat' | t">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Nuova
+        {{ 'chat.new' | t }}
       </button>
-      <button class="btn-icon" (click)="closeConvPicker()" title="Chiudi" aria-label="Chiudi">
+      <button class="btn-icon" (click)="closeConvPicker()" [title]="'common.close' | t" [attr.aria-label]="'common.close' | t">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
@@ -216,19 +216,19 @@
           #searchInput
           class="search-input"
           type="text"
-          placeholder="Cerca nelle conversazioni… (Ctrl+K)"
+          [placeholder]="'chat.search.placeholder' | t"
           [value]="searchQuery()"
           (input)="onSearchInput($any($event.target).value)"
           (keydown.escape)="clearSearch()"
         />
-        <button class="search-clear" *ngIf="searchQuery()" (click)="clearSearch()" title="Cancella">
+        <button class="search-clear" *ngIf="searchQuery()" (click)="clearSearch()" [title]="'common.clear' | t">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
 
       <!-- Tag filter chips -->
       <div class="tag-filter-bar" *ngIf="tags().length">
-        <button class="tag-filter-chip" [class.active]="!selectedTagFilter()" (click)="setTagFilter(null)">Tutte</button>
+        <button class="tag-filter-chip" [class.active]="!selectedTagFilter()" (click)="setTagFilter(null)">{{ 'chat.tags.all' | t }}</button>
         <button
           *ngFor="let tag of tags()"
           class="tag-filter-chip"
@@ -256,7 +256,7 @@
           </li>
         </ul>
         <p class="no-convs" *ngIf="!isSearching() && !searchResults().length">
-          Nessun risultato.
+          {{ 'chat.search.noResults' | t }}
         </p>
       </ng-container>
 
@@ -279,14 +279,14 @@
               <button class="conv-action-btn" (click)="openTagAssign(conv.id, $event)" title="Tag">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
               </button>
-              <button class="conv-delete" (click)="deleteConversation(conv.id, $event)" title="Elimina">
+              <button class="conv-delete" (click)="deleteConversation(conv.id, $event)" [title]="'common.delete' | t">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
           </li>
         </ul>
         <ng-template #noConvs>
-          <p class="no-convs">Nessuna conversazione salvata.</p>
+          <p class="no-convs">{{ 'chat.conversations.none' | t }}</p>
         </ng-template>
       </ng-template>
 
@@ -302,7 +302,7 @@
           {{ tag.name }}
           <span class="tag-assign-check" *ngIf="convHasTag(tagAssignConvId, tag.id)">&#10003;</span>
         </button>
-        <p class="no-convs" *ngIf="!tags().length" style="padding: .3rem .5rem">Nessun tag creato.</p>
+        <p class="no-convs" *ngIf="!tags().length" style="padding: .3rem .5rem">{{ 'chat.tags.none' | t }}</p>
       </div>
     </div>
   </div>
@@ -312,26 +312,26 @@
 
     <header class="topbar">
       <div class="topbar-left">
-        <button class="btn-icon" (click)="toggleSidebar()" [attr.aria-expanded]="sidebarOpen" aria-label="Toggle sidebar">
+        <button class="btn-icon" (click)="toggleSidebar()" [attr.aria-expanded]="sidebarOpen" [attr.aria-label]="'chat.sidebar.toggle' | t">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
         <h1 class="topbar-title">Console</h1>
       </div>
       <div class="topbar-right">
-        <span class="status" [class.live]="!loading">{{ loading ? 'Thinking…' : 'Ready' }}</span>
-        <button class="btn-icon" (click)="onboarding.restart()" title="Rivedi il tour introduttivo" aria-label="Tour introduttivo">
+        <span class="status" [class.live]="!loading">{{ (loading ? 'chat.status.thinking' : 'chat.status.ready') | t }}</span>
+        <button class="btn-icon" (click)="onboarding.restart()" [title]="'onboarding.replay' | t" [attr.aria-label]="'onboarding.replay' | t">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         </button>
         <div class="export-menu" *ngIf="currentConversationId">
-          <button class="btn-export" title="Condividi conversazione" (click)="shareConversation()">
+          <button class="btn-export" [title]="'chat.share.title' | t" (click)="shareConversation()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-            Condividi
+            {{ 'chat.share' | t }}
           </button>
-          <button class="btn-export" title="Esporta conversazione" (click)="exportConversation('md')">
+          <button class="btn-export" [title]="'chat.export.title' | t" (click)="exportConversation('md')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             MD
           </button>
-          <button class="btn-export" title="Esporta come JSON" (click)="exportConversation('json')">
+          <button class="btn-export" [title]="'chat.export.jsonTitle' | t" (click)="exportConversation('json')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             JSON
           </button>
@@ -353,7 +353,7 @@
 
     <!-- Pinned messages bar -->
     <div class="pinned-bar" *ngIf="pinnedMessages().length">
-      <span class="pinned-bar-label">Fissati</span>
+      <span class="pinned-bar-label">{{ 'chat.pinned' | t }}</span>
       <button *ngFor="let pin of pinnedMessages()" class="pinned-bar-item" (click)="scrollToMessage(pin.id!)">
         {{ pinPreview(pin) }}
       </button>
@@ -364,7 +364,7 @@
          [class.drag-active]="dragActive">
       <div class="drop-overlay" *ngIf="dragActive">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-        <span>Trascina un'immagine qui</span>
+        <span>{{ 'chat.dropImage' | t }}</span>
       </div>
       <div
         class="message"
@@ -375,7 +375,7 @@
       >
         <div class="pin-indicator" *ngIf="message.pinned">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
-          Fissato
+          {{ 'chat.pinnedOne' | t }}
         </div>
         <div class="role">{{ roleLabel(message) }}</div>
 
@@ -397,30 +397,30 @@
 
         <!-- User-attached image (vision input) -->
         <div class="message-image" *ngIf="message.image_b64">
-          <img [src]="message.image_b64" alt="Immagine allegata" loading="lazy" />
+          <img [src]="message.image_b64" [alt]="'chat.image.attached' | t" loading="lazy" />
         </div>
 
         <!-- Generated image (text-to-image result) -->
         <div class="message-image generated" *ngIf="message.image_url">
-          <img [src]="message.image_url" alt="Immagine generata" loading="lazy" />
+          <img [src]="message.image_url" [alt]="'chat.image.generated' | t" loading="lazy" />
         </div>
 
         <div class="bubble markdown-body" *ngIf="message.content" [innerHTML]="renderedContent(message)"></div>
 
         <!-- Provider fallback notice: requested provider failed, gateway switched -->
         <div class="provider-switch" *ngIf="message.provider_switch">
-          ⚠️ {{ message.provider_switch.from }} non disponibile — passato a {{ message.provider_switch.to }}
+          ⚠️ {{ 'chat.providerSwitch' | t: { from: message.provider_switch.from, to: message.provider_switch.to } }}
         </div>
 
         <!-- Phase 19: memory-grounded / cached reply chips -->
         <div class="rag-sources" *ngIf="message.memory_used || message.cached">
-          <span class="rag-chip memory-chip" *ngIf="message.memory_used" title="Risposta personalizzata con la memoria del profilo">🧠 memoria</span>
-          <span class="rag-chip cache-chip" *ngIf="message.cached" title="Risposta servita dalla cache (nessuna chiamata al modello)">⚡ cache</span>
+          <span class="rag-chip memory-chip" *ngIf="message.memory_used" [title]="'chat.chip.memoryTitle' | t">🧠 {{ 'chat.chip.memory' | t }}</span>
+          <span class="rag-chip cache-chip" *ngIf="message.cached" [title]="'chat.chip.cacheTitle' | t">⚡ cache</span>
         </div>
 
         <!-- RAG citations: knowledge-base chunks used to ground this reply -->
         <div class="rag-sources" *ngIf="message.rag_sources?.length">
-          <span class="rag-sources-label">Fonti:</span>
+          <span class="rag-sources-label">{{ 'chat.sources' | t }}</span>
           <span class="rag-chip" *ngFor="let s of message.rag_sources" [title]="s.snippet">
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
             {{ s.filename }}<span class="rag-chip-idx">#{{ s.chunk_index }}</span>
@@ -447,28 +447,28 @@
 
         <!-- Message action buttons -->
         <div class="message-actions" *ngIf="!(streaming && last && message.role === 'assistant')">
-          <button class="msg-action-btn" (click)="copyMessage(message, i)" [title]="copiedMessageIdx === i ? 'Copiato!' : 'Copia'">
+          <button class="msg-action-btn" (click)="copyMessage(message, i)" [title]="(copiedMessageIdx === i ? 'common.copied' : 'common.copy') | t">
             <svg *ngIf="copiedMessageIdx !== i" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             <svg *ngIf="copiedMessageIdx === i" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           </button>
-          <button class="msg-action-btn" *ngIf="hasSpeechSynthesis && message.role === 'assistant' && message.content" (click)="speakingMessageIdx === i ? stopSpeaking() : speakMessage(message, i)" [title]="speakingMessageIdx === i ? 'Stop' : 'Leggi ad alta voce'">
+          <button class="msg-action-btn" *ngIf="hasSpeechSynthesis && message.role === 'assistant' && message.content" (click)="speakingMessageIdx === i ? stopSpeaking() : speakMessage(message, i)" [title]="(speakingMessageIdx === i ? 'common.stop' : 'chat.action.speak') | t">
             <svg *ngIf="speakingMessageIdx !== i" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
             <svg *ngIf="speakingMessageIdx === i" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
           </button>
-          <button class="msg-action-btn" *ngIf="message.id && currentConversationId" (click)="togglePin(message, i)" [title]="message.pinned ? 'Rimuovi pin' : 'Fissa messaggio'">
+          <button class="msg-action-btn" *ngIf="message.id && currentConversationId" (click)="togglePin(message, i)" [title]="(message.pinned ? 'chat.action.unpin' : 'chat.action.pin') | t">
             <svg width="13" height="13" viewBox="0 0 24 24" [attr.fill]="message.pinned ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
           </button>
-          <button class="msg-action-btn" *ngIf="message.role === 'assistant' && i === lastAssistantMessageIdx" (click)="regenerate()" title="Rigenera risposta">
+          <button class="msg-action-btn" *ngIf="message.role === 'assistant' && i === lastAssistantMessageIdx" (click)="regenerate()" [title]="'chat.action.regenerate' | t">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3"/></svg>
           </button>
-          <button class="msg-action-btn" *ngIf="message.role === 'user' && i === lastUserMessageIdx" (click)="editLastUserMessage()" title="Modifica messaggio">
+          <button class="msg-action-btn" *ngIf="message.role === 'user' && i === lastUserMessageIdx" (click)="editLastUserMessage()" [title]="'chat.action.edit' | t">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
           <!-- Phase 19: feedback 👍/👎 on persisted assistant messages -->
-          <button class="msg-action-btn feedback-btn" *ngIf="message.role === 'assistant' && message.id" [class.active-up]="message.rating === 1" (click)="rateMessage(message, i, 1)" title="Risposta utile">
+          <button class="msg-action-btn feedback-btn" *ngIf="message.role === 'assistant' && message.id" [class.active-up]="message.rating === 1" (click)="rateMessage(message, i, 1)" [title]="'chat.action.helpful' | t">
             <svg width="13" height="13" viewBox="0 0 24 24" [attr.fill]="message.rating === 1 ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
           </button>
-          <button class="msg-action-btn feedback-btn" *ngIf="message.role === 'assistant' && message.id" [class.active-down]="message.rating === -1" (click)="rateMessage(message, i, -1)" title="Risposta non utile">
+          <button class="msg-action-btn feedback-btn" *ngIf="message.role === 'assistant' && message.id" [class.active-down]="message.rating === -1" (click)="rateMessage(message, i, -1)" [title]="'chat.action.notHelpful' | t">
             <svg width="13" height="13" viewBox="0 0 24 24" [attr.fill]="message.rating === -1 ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg>
           </button>
         </div>
@@ -492,9 +492,9 @@
     <div class="composer" data-tour="composer">
       <!-- Image attachment preview -->
     <div class="attachment-preview" *ngIf="attachedImageB64">
-      <img [src]="attachedImageB64" alt="Anteprima" class="attachment-thumb" />
+      <img [src]="attachedImageB64" [alt]="'chat.composer.preview' | t" class="attachment-thumb" />
       <span class="attachment-name">{{ attachedImageName }}</span>
-      <button class="attachment-remove" (click)="removeAttachedImage()" title="Rimuovi">
+      <button class="attachment-remove" (click)="removeAttachedImage()" [title]="'common.remove' | t">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
@@ -510,7 +510,7 @@
         type="button"
       >
         <span class="slash-cmd">{{ cmd.cmd }}</span>
-        <span class="slash-desc">{{ cmd.desc }}</span>
+        <span class="slash-desc">{{ cmd.desc | t }}</span>
       </button>
     </div>
 
@@ -519,7 +519,7 @@
           class="composer-textarea"
           rows="2"
           [(ngModel)]="prompt"
-          placeholder="Scrivi il tuo prompt… (/ per i comandi)"
+          [placeholder]="'chat.composer.placeholder' | t"
           (keydown.enter)="onEnter($event)"
           (keydown)="onComposerKeydown($event)"
           (input)="onPromptInput()"
@@ -529,8 +529,8 @@
           *ngIf="!streaming"
           class="composer-attach"
           (click)="triggerImageUpload()"
-          title="Allega immagine (vision)"
-          aria-label="Allega immagine"
+          [title]="'chat.composer.attach' | t"
+          [attr.aria-label]="'chat.composer.attachAria' | t"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
@@ -541,8 +541,8 @@
           class="composer-mic"
           [class.listening]="isListening"
           (click)="startVoiceInput()"
-          title="Input vocale"
-          aria-label="Input vocale"
+          [title]="'chat.composer.voice' | t"
+          [attr.aria-label]="'chat.composer.voice' | t"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
@@ -555,8 +555,8 @@
           *ngIf="streaming"
           class="composer-cancel"
           (click)="cancelStream()"
-          title="Annulla risposta"
-          aria-label="Annulla risposta"
+          [title]="'chat.composer.cancel' | t"
+          [attr.aria-label]="'chat.composer.cancel' | t"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
             <rect x="5" y="5" width="14" height="14" rx="2"/>
@@ -567,7 +567,7 @@
           class="composer-send"
           [disabled]="loading || (!prompt.trim() && !attachedImageB64)"
           (click)="send()"
-          [title]="loading ? 'Invio in corso…' : 'Invia (Enter)'"
+          [title]="(loading ? 'chat.composer.sending' : 'chat.composer.send') | t"
         >
           <svg *ngIf="!loading" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
@@ -575,7 +575,7 @@
           <span *ngIf="loading" class="send-spinner"></span>
         </button>
       </div>
-      <p class="composer-hint">Enter per inviare · Shift+Enter per andare a capo · 📎 per vision · /imagine per generare · Ctrl+K cerca · Alt+N nuova chat</p>
+      <p class="composer-hint">{{ 'chat.composer.hint' | t }}</p>
     </div>
 
   </div>

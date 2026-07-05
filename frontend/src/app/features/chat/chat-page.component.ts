@@ -351,11 +351,11 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
 
   /** Slash command autocomplete */
   readonly slashCommands: { cmd: string; desc: string; insert: string }[] = [
-    { cmd: '/imagine', desc: 'Genera un\'immagine da un prompt', insert: '/imagine ' },
-    { cmd: '/new', desc: 'Nuova conversazione', insert: '/new' },
-    { cmd: '/model', desc: 'Mostra o cambia modello', insert: '/model ' },
-    { cmd: '/export md', desc: 'Esporta conversazione in Markdown', insert: '/export md' },
-    { cmd: '/export json', desc: 'Esporta conversazione in JSON', insert: '/export json' },
+    { cmd: '/imagine', desc: 'chat.slash.imagine', insert: '/imagine ' },
+    { cmd: '/new', desc: 'chat.slash.new', insert: '/new' },
+    { cmd: '/model', desc: 'chat.slash.model', insert: '/model ' },
+    { cmd: '/export md', desc: 'chat.slash.exportMd', insert: '/export md' },
+    { cmd: '/export json', desc: 'chat.slash.exportJson', insert: '/export json' },
   ];
   showSlashMenu = false;
   filteredSlashCommands: { cmd: string; desc: string; insert: string }[] = [];
@@ -442,7 +442,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   ngOnInit(): void {
-    this.systemPrompt = localStorage.getItem('spicesibyl_system_prompt') ?? '';
+    this.systemPrompt = this.userPrefs.get().systemPrompt ?? '';
 
     const renderer = new Renderer();
     // marked v12 still uses old positional signature: (code, lang, escaped)
@@ -509,7 +509,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
           ...items,
           {
             role: 'assistant',
-            content: 'Could not load models from the backend.',
+            content: this.i18n.translate('chat.err.loadModels'),
             model: 'system',
             created_at: Math.floor(Date.now() / 1000),
           },
@@ -605,7 +605,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
 
     const userMsg: ChatMessage = {
       role: 'user' as const,
-      content: text || (attachedImage ? 'Descrivi questa immagine.' : ''),
+      content: text || (attachedImage ? this.i18n.translate('chat.vision.describe') : ''),
       created_at: Math.floor(Date.now() / 1000),
       image_b64: attachedImage ?? undefined,
     };
@@ -790,8 +790,8 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
         }
       },
       error: (err: Error) => {
-        const detail = err?.message || 'Backend request failed.';
-        this.notifications.add('error', 'Chat request failed', detail);
+        const detail = err?.message || this.i18n.translate('chat.err.requestBody');
+        this.notifications.add('error', this.i18n.translate('chat.err.requestTitle'), detail);
         this.messages.update(items =>
           items.map((m, i) =>
             i === streamingIdx && !m.content
@@ -813,14 +813,14 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
           this.persistExchange(lastUserMsg, streamingIdx);
         }
         if (!this.router.url.startsWith('/chat')) {
-          this.notifications.add('success', 'Risposta ricevuta', 'Il modello ha terminato la risposta.', 6000, () => this.router.navigate(['/chat']));
+          this.notifications.add('success', this.i18n.translate('chat.notify.replyTitle'), this.i18n.translate('chat.notify.replyBody'), 6000, () => this.router.navigate(['/chat']));
         }
         // Background system notification for long-running generations (>10s)
         // when the tab is hidden — see PushNotifyService for the guards.
         if (Date.now() - streamStartedAt > 10_000) {
           const reply = this.messages()[streamingIdx]?.content ?? '';
-          const preview = reply.replace(/\s+/g, ' ').trim().slice(0, 120) || 'La risposta è pronta.';
-          this.pushNotify.notifyComplete('SpiceSibyl — risposta pronta', preview, () => {
+          const preview = reply.replace(/\s+/g, ' ').trim().slice(0, 120) || this.i18n.translate('chat.notify.replyReady');
+          this.pushNotify.notifyComplete(this.i18n.translate('chat.notify.pushTitle'), preview, () => {
             this.router.navigate(['/chat']).then(() => {
               if (targetConversationId && targetConversationId !== this.currentConversationId) {
                 this.selectConversation(targetConversationId);
@@ -853,12 +853,12 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     }
     let note: string | undefined;
     if (rating === -1) {
-      note = prompt('Cosa non va in questa risposta? (opzionale)') || undefined;
+      note = prompt(this.i18n.translate('chat.feedback.prompt')) || undefined;
     }
     this.feedbackService.rate(message.id, rating, note).subscribe({
       next: () => this.messages.update(items =>
         items.map((m, i) => i === idx ? { ...m, rating, feedback_note: note ?? null } : m)),
-      error: () => this.notifications.add('error', 'Feedback', 'Invio feedback fallito.'),
+      error: () => this.notifications.add('error', 'Feedback', this.i18n.translate('chat.feedback.sendFailed')),
     });
   }
 
@@ -902,7 +902,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
       : [...currentTags, tagId];
     this.tagService.setConversationTags(convId, newTags).subscribe({
       next: () => this.loadConversationList(),
-      error: () => this.notifications.add('error', 'Errore', 'Impossibile aggiornare i tag.'),
+      error: () => this.notifications.add('error', this.i18n.translate('common.error'), this.i18n.translate('chat.err.updateTags')),
     });
   }
 
@@ -933,11 +933,11 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
         this.telegramLink.set(data);
         this.telegramLinkCode = '';
         this.telegramLinkLoading = false;
-        this.notifications.add('success', 'Telegram collegato', `Utente @${data.username || 'sconosciuto'} collegato.`);
+        this.notifications.add('success', this.i18n.translate('chat.telegram.linkedTitle'), this.i18n.translate('chat.telegram.linkedBody', { user: data.username || this.i18n.translate('chat.telegram.unknown') }));
       })
       .catch(() => {
         this.telegramLinkLoading = false;
-        this.notifications.add('error', 'Errore', 'Codice non valido o scaduto.');
+        this.notifications.add('error', this.i18n.translate('common.error'), this.i18n.translate('chat.telegram.invalidCode'));
       });
   }
 
@@ -945,9 +945,9 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     fetch(`${this.appConfig.apiUrl}/telegram/link/${this.profileService.currentId}`, { method: 'DELETE', headers: this.authHeaders() })
       .then(() => {
         this.telegramLink.set({ linked: false });
-        this.notifications.add('success', 'Scollegato', 'Profilo Telegram scollegato.');
+        this.notifications.add('success', this.i18n.translate('chat.telegram.unlinkedTitle'), this.i18n.translate('chat.telegram.unlinkedBody'));
       })
-      .catch(() => this.notifications.add('error', 'Errore', 'Impossibile scollegare.'));
+      .catch(() => this.notifications.add('error', this.i18n.translate('common.error'), this.i18n.translate('chat.telegram.unlinkFailed')));
   }
 
   // ── TTS (Text-to-Speech) ───────────────────────────────────
@@ -999,7 +999,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
         );
         this.loadPinnedMessages();
       },
-      error: () => this.notifications.add('error', 'Errore', 'Impossibile aggiornare il pin.'),
+      error: () => this.notifications.add('error', this.i18n.translate('common.error'), this.i18n.translate('chat.err.updatePin')),
     });
   }
 
@@ -1032,13 +1032,13 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   saveSystemPrompt(): void {
-    localStorage.setItem('spicesibyl_system_prompt', this.systemPrompt);
-    this.notifications.add('success', 'Sistema salvato', 'Il system prompt è stato aggiornato.');
+    this.userPrefs.set('systemPrompt', this.systemPrompt);
+    this.notifications.add('success', this.i18n.translate('chat.system.savedTitle'), this.i18n.translate('chat.system.savedBody'));
   }
 
   clearSystemPrompt(): void {
     this.systemPrompt = '';
-    localStorage.removeItem('spicesibyl_system_prompt');
+    this.userPrefs.set('systemPrompt', '');
   }
 
   copyMessage(message: ChatMessage, idx: number): void {
@@ -1047,7 +1047,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
       this.copiedMessageIdx = idx;
       setTimeout(() => { this.copiedMessageIdx = null; }, 1800);
     }).catch(() => {
-      this.notifications.add('error', 'Copia fallita', 'Impossibile accedere agli appunti.');
+      this.notifications.add('error', this.i18n.translate('chat.err.copyTitle'), this.i18n.translate('chat.err.copyBody'));
     });
   }
 
@@ -1135,13 +1135,13 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
         const shareUrl = `${window.location.origin}/shared/${result.share_token}`;
         this.copyToClipboard(shareUrl).then(ok => {
           if (ok) {
-            this.notifications.add('success', 'Link copiato', 'Link di condivisione copiato negli appunti.');
+            this.notifications.add('success', this.i18n.translate('chat.share.copiedTitle'), this.i18n.translate('chat.share.copiedBody'));
           } else {
-            this.notifications.add('info', 'Link condivisione', shareUrl, 15000);
+            this.notifications.add('info', this.i18n.translate('chat.share.linkTitle'), shareUrl, 15000);
           }
         });
       },
-      error: () => this.notifications.add('error', 'Errore', 'Impossibile generare il link di condivisione.'),
+      error: () => this.notifications.add('error', this.i18n.translate('common.error'), this.i18n.translate('chat.share.failed')),
     });
   }
 
@@ -1182,7 +1182,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
         a.click();
         URL.revokeObjectURL(a.href);
       })
-      .catch(() => this.notifications.add('error', 'Esportazione fallita', 'Impossibile scaricare la conversazione.'));
+      .catch(() => this.notifications.add('error', this.i18n.translate('chat.export.failedTitle'), this.i18n.translate('chat.export.failedBody')));
   }
 
   startVoiceInput(): void {
@@ -1233,7 +1233,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
       const file = input.files?.[0];
       if (!file) return;
       if (file.size > 20 * 1024 * 1024) {
-        this.notifications.add('error', 'File troppo grande', 'Massimo 20 MB.');
+        this.notifications.add('error', this.i18n.translate('chat.err.fileTooBigTitle'), this.i18n.translate('chat.err.fileTooBigBody'));
         return;
       }
       const reader = new FileReader();
@@ -1270,11 +1270,11 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     this.dragActive = false;
     const file = event.dataTransfer?.files?.[0];
     if (!file || !file.type.startsWith('image/')) {
-      if (file) this.notifications.add('error', 'Tipo non supportato', 'Solo immagini (JPEG, PNG, WebP, GIF).');
+      if (file) this.notifications.add('error', this.i18n.translate('chat.err.fileTypeTitle'), this.i18n.translate('chat.err.fileTypeBody'));
       return;
     }
     if (file.size > 20 * 1024 * 1024) {
-      this.notifications.add('error', 'File troppo grande', 'Massimo 20 MB.');
+      this.notifications.add('error', this.i18n.translate('chat.err.fileTooBigTitle'), this.i18n.translate('chat.err.fileTooBigBody'));
       return;
     }
     const reader = new FileReader();
@@ -1347,7 +1347,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     this.messages.update(items => [
       ...items,
       { role: 'user' as const, content: `/imagine ${prompt}`, created_at: Math.floor(Date.now() / 1000) },
-      { role: 'assistant' as const, content: 'Generazione immagine in corso…', model: 'image-gen', created_at: Math.floor(Date.now() / 1000) },
+      { role: 'assistant' as const, content: this.i18n.translate('chat.imagine.generating'), model: 'image-gen', created_at: Math.floor(Date.now() / 1000) },
     ]);
     this.queueScrollToBottom();
 
@@ -1368,8 +1368,8 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
         this.queueScrollToBottom();
       },
       error: (err: Error) => {
-        const detail = err?.message || 'Generazione immagine fallita.';
-        this.notifications.add('error', 'Errore immagine', detail);
+        const detail = err?.message || this.i18n.translate('chat.imagine.failedBody');
+        this.notifications.add('error', this.i18n.translate('chat.imagine.failedTitle'), detail);
         this.messages.update(items =>
           items.map((m, i) =>
             i === assistantIdx ? { ...m, content: `⚠ ${detail}` } : m
@@ -1477,7 +1477,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     this.messages.set([
       {
         role: 'assistant',
-        content: 'Nuova conversazione. Seleziona un modello e inizia a chattare.',
+        content: this.i18n.translate('chat.welcome'),
         model: 'SpiceSibyl',
         created_at: Math.floor(Date.now() / 1000),
       },
@@ -1530,7 +1530,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
         this.messages.set(
           displayMessages.length ? displayMessages : [{
             role: 'assistant' as const,
-            content: 'Nessun messaggio in questa conversazione.',
+            content: this.i18n.translate('chat.conversation.empty'),
             model: 'SpiceSibyl',
             created_at: Math.floor(Date.now() / 1000),
           }]
@@ -1541,7 +1541,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
           this.sidebarOpen = false;
         }
       },
-      error: () => this.notifications.add('error', 'Errore', 'Impossibile caricare la conversazione.'),
+      error: () => this.notifications.add('error', this.i18n.translate('common.error'), this.i18n.translate('chat.err.loadConv')),
     });
   }
 
@@ -1555,7 +1555,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
         }
         this.loadConversationList();
       },
-      error: () => this.notifications.add('error', 'Errore', 'Impossibile eliminare la conversazione.'),
+      error: () => this.notifications.add('error', this.i18n.translate('common.error'), this.i18n.translate('chat.err.deleteConv')),
     });
   }
 

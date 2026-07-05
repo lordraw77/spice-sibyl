@@ -1,24 +1,24 @@
 <div class="compare-shell">
 
   <header class="compare-header">
-    <h1>Confronta modelli</h1>
-    <p class="subtitle">Invia lo stesso prompt a più modelli e confronta le risposte.</p>
+    <h1>{{ 'cmp.title' | t }}</h1>
+    <p class="subtitle">{{ 'cmp.subtitle' | t }}</p>
   </header>
 
   <!-- Model selectors -->
   <div class="model-selectors">
     <div class="model-selector" *ngFor="let m of selectedModels; let i = index; trackBy: trackByIndex">
       <select class="form-select" [ngModel]="m" (ngModelChange)="updateModel(i, $event)">
-        <option value="">— Seleziona modello —</option>
+        <option value="">{{ 'cmp.selectModel' | t }}</option>
         <option *ngFor="let model of models()" [value]="model.id">{{ model.label || model.id }}</option>
       </select>
-      <button class="remove-model-btn" *ngIf="selectedModels.length > 2" (click)="removeSlot(i)" title="Rimuovi">
+      <button class="remove-model-btn" *ngIf="selectedModels.length > 2" (click)="removeSlot(i)" [title]="'common.remove' | t">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
     <button class="add-model-btn" *ngIf="selectedModels.length < 4" (click)="addSlot()">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      Aggiungi modello
+      {{ 'cmp.addModel' | t }}
     </button>
   </div>
 
@@ -27,15 +27,15 @@
     <textarea
       class="compare-textarea"
       rows="3"
-      placeholder="Scrivi il prompt da confrontare…"
+      [placeholder]="'cmp.placeholder' | t"
       [(ngModel)]="prompt"
       (keydown.enter)="$event.shiftKey ? null : compare()"
     ></textarea>
     <div class="compare-actions">
       <button class="compare-send" [disabled]="loading || !prompt.trim()" (click)="compare()">
-        {{ loading ? 'In corso…' : 'Confronta' }}
+        {{ (loading ? 'cmp.running' : 'cmp.compare') | t }}
       </button>
-      <button class="compare-cancel" *ngIf="loading" (click)="cancelAll()">Stop</button>
+      <button class="compare-cancel" *ngIf="loading" (click)="cancelAll()">{{ 'common.stop' | t }}</button>
     </div>
   </div>
 

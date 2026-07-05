@@ -4,18 +4,19 @@ import { FormsModule } from '@angular/forms';
 
 import { ProfileService } from '../../core/services/profile.service';
 import { Profile } from '../../core/models/chat.models';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 @Component({
   selector: 'app-profile-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TranslatePipe],
   template: `
     <div class="modal-backdrop">
       <div class="modal-box">
         <div class="modal-header">
           <div class="modal-logo">S</div>
-          <h2>Chi sei?</h2>
-          <p class="modal-sub">Seleziona il tuo profilo per accedere alla tua cronologia chat.</p>
+          <h2>{{ 'profile.whoAreYou' | t }}</h2>
+          <p class="modal-sub">{{ 'profile.sub' | t }}</p>
         </div>
 
         <!-- Existing profiles -->
@@ -27,7 +28,7 @@ import { Profile } from '../../core/models/chat.models';
           >
             <span class="profile-avatar">{{ p.name.charAt(0).toUpperCase() }}</span>
             <span class="profile-name">{{ p.name }}</span>
-            <button class="profile-del" (click)="remove(p, $event)" title="Elimina">
+            <button class="profile-del" (click)="remove(p, $event)" [title]="'common.delete' | t">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
               </svg>
@@ -42,15 +43,15 @@ import { Profile } from '../../core/models/chat.models';
             class="profile-input"
             type="text"
             [(ngModel)]="newName"
-            placeholder="Il tuo nome…"
+            [placeholder]="'profile.namePlaceholder' | t"
             maxlength="40"
             (keydown.enter)="create()"
             (keydown.escape)="creating.set(false)"
             autofocus
           />
           <div class="form-actions">
-            <button class="btn-cancel" (click)="creating.set(false)">Annulla</button>
-            <button class="btn-create" [disabled]="!newName.trim()" (click)="create()">Crea</button>
+            <button class="btn-cancel" (click)="creating.set(false)">{{ 'common.cancel' | t }}</button>
+            <button class="btn-create" [disabled]="!newName.trim()" (click)="create()">{{ 'common.create' | t }}</button>
           </div>
         </div>
 
@@ -58,7 +59,7 @@ import { Profile } from '../../core/models/chat.models';
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
-          Nuovo profilo
+          {{ 'profile.new' | t }}
         </button>
       </div>
     </div>

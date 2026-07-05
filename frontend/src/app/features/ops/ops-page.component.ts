@@ -5,11 +5,13 @@ import { OpsService, ReadyStatus, BackupInfo } from '../../core/services/ops.ser
 import { ProfileService } from '../../core/services/profile.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { Profile } from '../../core/models/chat.models';
+import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 @Component({
   selector: 'app-ops-page',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, TranslatePipe],
   templateUrl: './ops-page.component.html',
   styleUrls: ['./ops-page.component.css'],
 })
@@ -17,6 +19,7 @@ export class OpsPageComponent implements OnInit {
   private readonly ops = inject(OpsService);
   private readonly profiles = inject(ProfileService);
   private readonly notify = inject(NotificationService);
+  private readonly i18n = inject(I18nService);
 
   // Readiness
   readonly ready = signal<ReadyStatus | null>(null);
@@ -83,7 +86,7 @@ export class OpsPageComponent implements OnInit {
   refreshBackups(): void {
     this.ops.listBackups().subscribe({
       next: (r) => this.backups.set(r.backups ?? []),
-      error: () => this.notify.add('error', 'Backup', 'Impossibile leggere la lista dei backup'),
+      error: () => this.notify.add('error', 'Backup', this.i18n.translate('ops.backupListFailed')),
     });
   }
 
@@ -91,12 +94,12 @@ export class OpsPageComponent implements OnInit {
     this.backupBusy.set(true);
     this.ops.createBackup().subscribe({
       next: (r) => {
-        this.notify.add('success', 'Backup creato', r.name);
+        this.notify.add('success', this.i18n.translate('ops.backupCreated'), r.name);
         this.refreshBackups();
         this.backupBusy.set(false);
       },
       error: () => {
-        this.notify.add('error', 'Backup fallito');
+        this.notify.add('error', this.i18n.translate('ops.backupFailed'));
         this.backupBusy.set(false);
       },
     });
@@ -104,14 +107,12 @@ export class OpsPageComponent implements OnInit {
 
   restoreBackup(b: BackupInfo): void {
     const ok = window.confirm(
-      `Ripristinare il database dallo snapshot "${b.name}"?\n\n` +
-      `Questa operazione sovrascrive i dati correnti. ` +
-      `È consigliato riavviare il servizio dopo il ripristino.`
+      this.i18n.translate('ops.restoreConfirm', { name: b.name })
     );
     if (!ok) return;
     this.ops.restoreBackup(b.name).subscribe({
-      next: (r) => this.notify.add('warning', 'Ripristino eseguito', r.note ?? r.name, 10000),
-      error: () => this.notify.add('error', 'Ripristino fallito'),
+      next: (r) => this.notify.add('warning', this.i18n.translate('ops.restoreDone'), r.note ?? r.name, 10000),
+      error: () => this.notify.add('error', this.i18n.translate('ops.restoreFailed')),
     });
   }
 
@@ -137,7 +138,7 @@ export class OpsPageComponent implements OnInit {
         a.click();
         URL.revokeObjectURL(url);
       },
-      error: () => this.notify.add('error', 'Export fallito'),
+      error: () => this.notify.add('error', this.i18n.translate('ops.exportFailed')),
     });
   }
 
@@ -149,12 +150,12 @@ export class OpsPageComponent implements OnInit {
     this.ops.importProfile(this.selectedProfile(), file).subscribe({
       next: (r) => {
         const total = Object.values(r.counts ?? {}).reduce((a, b) => a + b, 0);
-        this.notify.add('success', 'Import completato', `${total} righe importate`);
+        this.notify.add('success', this.i18n.translate('ops.importDone'), this.i18n.translate('ops.rowsImported', { n: total }));
         this.importBusy.set(false);
         input.value = '';
       },
       error: (err) => {
-        this.notify.add('error', 'Import fallito', err?.error?.detail);
+        this.notify.add('error', this.i18n.translate('mcp.importFailed'), err?.error?.detail);
         this.importBusy.set(false);
         input.value = '';
       },

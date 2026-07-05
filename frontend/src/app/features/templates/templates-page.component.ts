@@ -6,20 +6,25 @@ import { Router } from '@angular/router';
 import { PromptTemplate } from '../../core/models/chat.models';
 import { TemplateService } from '../../core/services/template.service';
 import { ProfileService } from '../../core/services/profile.service';
+import { UserPreferencesService } from '../../core/services/user-preferences.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 /** Prompt templates management (per profile). Promoted from the chat sidebar. */
 @Component({
   selector: 'app-templates-page',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TranslatePipe],
   templateUrl: './templates-page.component.html',
   styleUrls: ['./templates-page.component.css'],
 })
 export class TemplatesPageComponent implements OnInit {
   private readonly templateService = inject(TemplateService);
   readonly profileService = inject(ProfileService);
+  private readonly userPrefs = inject(UserPreferencesService);
   private readonly notifications = inject(NotificationService);
+  private readonly i18n = inject(I18nService);
   private readonly router = inject(Router);
 
   readonly templates = signal<PromptTemplate[]>([]);
@@ -79,12 +84,12 @@ export class TemplatesPageComponent implements OnInit {
     if (this.editId) {
       this.templateService.update(this.editId, { name, content }).subscribe({
         next: () => { this.cancelForm(); this.load(); },
-        error: () => this.notifications.add('error', 'Errore', 'Impossibile aggiornare il template.'),
+        error: () => this.notifications.add('error', this.i18n.translate('common.error'), this.i18n.translate('tpl.updateFailed')),
       });
     } else {
       this.templateService.create(name, content, this.profileService.currentId).subscribe({
         next: () => { this.cancelForm(); this.load(); },
-        error: () => this.notifications.add('error', 'Errore', 'Impossibile creare il template.'),
+        error: () => this.notifications.add('error', this.i18n.translate('common.error'), this.i18n.translate('tpl.createFailed')),
       });
     }
   }
@@ -93,14 +98,14 @@ export class TemplatesPageComponent implements OnInit {
     event.stopPropagation();
     this.templateService.delete(id).subscribe({
       next: () => this.load(),
-      error: () => this.notifications.add('error', 'Errore', 'Impossibile eliminare il template.'),
+      error: () => this.notifications.add('error', this.i18n.translate('common.error'), this.i18n.translate('tpl.deleteFailed')),
     });
   }
 
   /** Set this template as the persistent system prompt used by the chat. */
   apply(t: PromptTemplate): void {
-    localStorage.setItem('spicesibyl_system_prompt', t.content);
-    this.notifications.add('success', 'Template applicato', `"${t.name}" impostato come system prompt.`);
+    this.userPrefs.set('systemPrompt', t.content);
+    this.notifications.add('success', this.i18n.translate('tpl.applied'), this.i18n.translate('tpl.appliedBody', { name: t.name }));
     this.router.navigate(['/chat']);
   }
 }

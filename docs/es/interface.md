@@ -1,70 +1,70 @@
-# Interface and UX
+# Interfaz y UX
 
-## Navigation (navbar)
+## Navegación (barra superior)
 
-**What it does.** The top navigation bar uses **hierarchical menus**: items are grouped into macro-entries with dropdown submenus, so navigation stays tidy even with many pages.
+**Qué hace.** La barra de navegación superior usa **menús jerárquicos**: las entradas se agrupan en macro-entradas con submenús desplegables, para que la navegación siga ordenada incluso con muchas páginas.
 
-**Structure.**
+**Estructura.**
 
-| Macro-entry | Submenu |
-|-------------|---------|
-| **Chat** | (direct link) |
-| **Modelli** (Models) | Providers · Discovery · Compare · Stats |
-| **Tools** | Tools · Workflow · MCP *(admin)* · Workspace |
-| **Risorse** (Resources) | Template · Tag · Knowledge · Memoria |
-| **Info** | Guida (Help) · Info · Ops *(admin)* |
+| Macro-entrada | Submenú |
+|---------------|---------|
+| **Chat** | (enlace directo) |
+| **Modelos** | Proveedores · Descubrimiento · Comparar · Estadísticas |
+| **Herramientas** | Herramientas · Workflow · MCP *(admin)* · Espacio de trabajo |
+| **Recursos** | Plantillas · Etiquetas · Conocimiento · Memoria |
+| **Info** | Ayuda · Info · Ops *(admin)* |
 
-**How to use it.**
-- **Click** a macro-entry to open its submenu; a click outside closes it. The macro-entry is highlighted while one of its pages is active.
-- **Admin-only** items (MCP, Ops) appear only with the proper role; a group with no visible items is hidden.
-- On narrow screens (< 576 px) the navbar collapses into a hamburger menu and submenus become inline **accordions**.
+**Cómo se usa.**
+- **Haz clic** en una macro-entrada para abrir su submenú; un clic fuera lo cierra. La macro-entrada queda resaltada mientras una de sus páginas está activa.
+- Las entradas **solo admin** (MCP, Ops) aparecen únicamente con el rol adecuado; un grupo sin entradas visibles se oculta.
+- En pantallas estrechas (< 576 px) la barra se pliega en un menú hamburguesa y los submenús se vuelven **acordeones** en línea.
 
-On the right sit the **accent-color picker**, the **theme toggle** and the **user chip** with logout.
+A la derecha están el **selector de idioma 🌐**, el **selector de color de acento**, el **conmutador de tema** y el **chip de usuario** con cierre de sesión.
 
-## Dark/light theme and accent color
+## Tema oscuro/claro y color de acento
 
-**What it does.** A theming system based on CSS custom properties (`--bg-primary`, `--text-primary`, `--accent`, …) with dark / light / system modes and a customizable accent color.
+**Qué hace.** Un sistema de temas basado en propiedades CSS personalizadas (`--bg-primary`, `--text-primary`, `--accent`, …) con modos oscuro / claro / sistema y un color de acento personalizable.
 
-**How to use it.**
-- **Theme toggle**: sun/moon icon in the navbar; the preference is stored in localStorage (`spicesibyl_theme`) and applied via the `[data-theme]` attribute on `<html>`.
-- **Accent color**: navbar picker with 8 preset swatches + a free color input; dynamically updates all `--accent-*` variables and works in both themes (`spicesibyl_accent`).
+**Cómo se usa.**
+- **Conmutador de tema**: icono sol/luna en la barra; la preferencia se guarda en localStorage (`spicesibyl_theme`) y se aplica mediante el atributo `[data-theme]` en `<html>`.
+- **Color de acento**: selector en la barra con 8 muestras predefinidas + un campo de color libre; actualiza dinámicamente todas las variables `--accent-*` y funciona en ambos temas (`spicesibyl_accent`).
 
-## Guided onboarding
+## Onboarding guiado
 
-**What it does.** On first access a guided tour starts, with a spotlight overlay on the key elements (model selection, tools, system prompt, slash commands); on narrow viewports the card is centered instead.
+**Qué hace.** En el primer acceso arranca un recorrido guiado, con un foco sobre los elementos clave (selección de modelo, herramientas, prompt de sistema, comandos slash); en pantallas estrechas la tarjeta se centra.
 
-![Onboarding tour](screenshots/onboarding.png)
+![Recorrido de onboarding](screenshots/onboarding.png)
 
-**How to use it.** Follow the steps with **Avanti** (Next) or leave with **Salta** (Skip); completion is remembered in localStorage (`spicesibyl_onboarded`). The replay button in the chat topbar restarts it at any time.
+**Cómo se usa.** Sigue los pasos con **Siguiente** o sal con **Omitir**; la finalización se recuerda en localStorage (`spicesibyl_onboarded`). El botón de repetición en la barra del chat lo reinicia en cualquier momento.
 
-## Keyboard shortcuts
+## Atajos de teclado
 
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+K` | opens the **Conversations panel** and focuses the search bar |
-| `Alt+N` | new chat |
-| `Ctrl+Shift+S` | toggle the sidebar |
+| Atajo | Acción |
+|-------|--------|
+| `Ctrl+K` | abre el **panel de Conversaciones** y enfoca la búsqueda |
+| `Alt+N` | nuevo chat |
+| `Ctrl+Shift+S` | muestra/oculta la barra lateral |
 
-Shortcuts do not fire while typing in an input field (except `Ctrl+K`).
+Los atajos no se disparan mientras escribes en un campo (excepto `Ctrl+K`).
 
-## Mobile layout
+## Diseño móvil
 
-- Responsive media queries: sidebar as a fixed overlay with backdrop, chat and composer adapted to small screens.
-- **Edge swipe** to open/close the sidebar.
-- Touch targets ≥ 44 px; icon-only topbar export buttons; below 575 px the navbar collapses into a hamburger menu.
+- Media queries responsivas: barra lateral como superposición fija con fondo, chat y compositor adaptados a pantallas pequeñas.
+- **Deslizamiento desde el borde** para abrir/cerrar la barra lateral.
+- Objetivos táctiles ≥ 44 px; botones de exportación solo con icono; por debajo de 575 px la barra se pliega en hamburguesa.
 
 ## PWA (Progressive Web App)
 
-**What it does.** The app is installable (manifest with 192/512/maskable icons + apple-touch-icon) with the Angular service worker active in production only: the app shell works offline.
+**Qué hace.** La aplicación es instalable (manifest con iconos 192/512/maskable + apple-touch-icon) con el service worker de Angular activo solo en producción: el shell funciona sin conexión.
 
-**Completion notifications.** Opt-in in the **Parametri** panel: if a generation takes more than 10 seconds and the tab is in the background, a local system notification fires when it finishes (no push server/VAPID).
+**Notificaciones de finalización.** Opt-in en el panel **Parámetros**: si una generación tarda más de 10 segundos y la pestaña está en segundo plano, se dispara una notificación local del sistema al terminar (sin servidor push/VAPID).
 
-**How to install.** From Chrome/Edge: "install" icon in the address bar; on mobile: "Add to Home Screen".
+**Cómo instalar.** Desde Chrome/Edge: icono «instalar» en la barra de direcciones; en móvil: «Añadir a pantalla de inicio».
 
-## Loading indicators
+## Indicadores de carga
 
-An animated progress bar below the topbar during every request, with color/speed tied to the phase: waiting for the model (amber), tool execution (blue, faster), streaming (standard). Tool-call bubbles awaiting their result show a spinner instead of the ⚙ icon.
+Una barra de progreso animada bajo la barra superior durante cada petición, con color/velocidad según la fase: esperando el modelo (ámbar), ejecución de herramientas (azul, más rápida), streaming (estándar). Las burbujas de llamada a herramienta pendientes de resultado muestran un spinner en lugar del icono ⚙.
 
-## Error handling
+## Gestión de errores
 
-Global toast system (ErrorInterceptor + NotificationService): HTTP errors and backend SSE `event: error` frames become a toast + a bubble message; provider rate limits are mapped to HTTP 429.
+Sistema global de toasts (ErrorInterceptor + NotificationService): los errores HTTP y los frames SSE `event: error` del backend se convierten en toast + mensaje en burbuja; los límites de peticiones de los proveedores se mapean a HTTP 429.

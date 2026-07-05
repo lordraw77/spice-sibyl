@@ -10,6 +10,8 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 
 import { AppConfigService } from '../../core/config/app-config.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
+import { LocaleDatePipe } from '../../core/i18n/format.pipes';
 import packageJson from '../../../../package.json';
 
 interface BackendInfo {
@@ -34,23 +36,24 @@ interface ReadyStatus {
   checks: { db: boolean; providers: number };
 }
 
+// i18n catalog keys (translated by the `t` pipe at render time).
 const FEATURE_LABELS: Record<string, string> = {
-  memory: 'Memoria persistente',
-  auto_title: 'Auto-titling LLM',
-  response_cache: 'Response cache',
-  code_interpreter: 'Code interpreter (python_exec)',
-  telegram_bot: 'Bot Telegram',
-  backup: 'Backup schedulati',
-  rag_hybrid: 'RAG ibrido (FTS5 + vettori)',
-  discovery_refresh: 'Discovery automatica modelli',
-  chat_fallback_chain: 'Fallback chain chat',
-  orchestrator: 'Orchestratore Multi-MCP',
+  memory: 'info.feature.memory',
+  auto_title: 'info.feature.autoTitle',
+  response_cache: 'info.feature.responseCache',
+  code_interpreter: 'info.feature.codeInterpreter',
+  telegram_bot: 'info.feature.telegramBot',
+  backup: 'info.feature.backup',
+  rag_hybrid: 'info.feature.ragHybrid',
+  discovery_refresh: 'info.feature.discoveryRefresh',
+  chat_fallback_chain: 'info.feature.chatFallback',
+  orchestrator: 'info.feature.orchestrator',
 };
 
 @Component({
   selector: 'app-info-page',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, TranslatePipe, LocaleDatePipe],
   templateUrl: './info-page.component.html',
   styleUrl: './info-page.component.css',
 })

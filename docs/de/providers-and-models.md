@@ -1,66 +1,66 @@
-# Providers and models
+# Anbieter und Modelle
 
-## Providers page
+## Anbieter-Seite
 
-**What it does.** A dashboard of all supported providers: configuration status, number of catalogued models, aggregated capabilities (chat, vision, tools, json…), on/off toggle, connectivity test and API key management.
+**Was es macht.** Ein Dashboard aller unterstützten Anbieter: Konfigurationsstatus, Anzahl katalogisierter Modelle, aggregierte Fähigkeiten (chat, vision, tools, json…), Ein/Aus-Schalter, Verbindungstest und API-Schlüssel-Verwaltung.
 
-![Provider Management](screenshots/providers.png)
+![Anbieter-Verwaltung](screenshots/providers.png)
 
-**How to use it.**
-- **Add key / Update key**: stores or updates the provider's API key. The key goes into the **encrypted vault** (see below), not into a config file.
-- **Test**: `POST /providers/{id}/test` runs a real minimal completion request against the cloud provider (not just a key-presence check) and reports outcome/latency.
-- **Toggle**: enables/disables the provider **globally**, without removing the key.
-- **N models**: expands the provider's model catalog, with the visibility controls (see below).
+**So wird es benutzt.**
+- **Schlüssel hinzufügen / Schlüssel aktualisieren**: speichert oder aktualisiert den API-Schlüssel des Anbieters. Der Schlüssel landet im **verschlüsselten Tresor** (siehe unten), nicht in einer Konfigurationsdatei.
+- **Test**: `POST /providers/{id}/test` führt eine echte minimale Completion-Anfrage gegen den Cloud-Anbieter aus (nicht nur eine Schlüsselprüfung) und meldet Ergebnis/Latenz.
+- **Schalter**: aktiviert/deaktiviert den Anbieter **global**, ohne den Schlüssel zu entfernen.
+- **N Modelle**: klappt den Modellkatalog des Anbieters auf, mit den Sichtbarkeits-Steuerungen (siehe unten).
 
-The box at the top right summarizes how many providers are configured and the total number of available models.
+Der Kasten oben rechts fasst zusammen, wie viele Anbieter konfiguriert sind und wie viele Modelle insgesamt verfügbar sind.
 
-## Model visibility in the model picker
+## Modell-Sichtbarkeit in der Modellauswahl
 
-**What it does.** Some providers expose dozens or hundreds of models, making the chat model menu endless. From here you can **curate which models** appear in the model selector, per provider.
+**Was es macht.** Manche Anbieter bieten Dutzende oder Hunderte Modelle an, was das Modellmenü des Chats endlos macht. Hier kannst du pro Anbieter **kuratieren, welche Modelle** im Auswahlmenü erscheinen.
 
-**How to use it.** Expand a provider (**N models**): each model has an **eye** icon:
-- 👁 **visible** → shows up in the chat menu; click to hide it.
-- 👁‍🗨 **crossed out** → hidden (dimmed row); click to show it again.
+**So wird es benutzt.** Klappe einen Anbieter auf (**N Modelle**): jedes Modell hat ein **Augen**-Symbol:
+- 👁 **sichtbar** → erscheint im Chat-Menü; klicken zum Ausblenden.
+- 👁‍🗨 **durchgestrichen** → ausgeblendet (gedimmte Zeile); klicken, um es wieder anzuzeigen.
 
-At the top of the list: a **"N visible · M hidden"** counter and **Mostra tutti / Nascondi tutti** (Show all / Hide all) buttons to act on the whole provider at once. When a provider has hidden models, the card shows an always-visible **"N nascosti" (N hidden) badge** (even when the list is collapsed). The choice is **persisted** (`hiddenModels` preference) and hidden models are excluded from the chat menu in real time.
+Oben in der Liste: ein Zähler **„N sichtbar · M ausgeblendet"** und die Schaltflächen **Alle anzeigen / Alle ausblenden**, um den ganzen Anbieter auf einmal zu behandeln. Hat ein Anbieter ausgeblendete Modelle, zeigt die Karte ein stets sichtbares Badge **„N ausgeblendet"** (auch bei eingeklappter Liste). Die Wahl wird **persistiert** (`hiddenModels`-Präferenz) und ausgeblendete Modelle verschwinden in Echtzeit aus dem Chat-Menü.
 
-> **Two distinct filters.** This is a **per-model** filter. In the chat sidebar, under **Modello**, there is instead the **visible-providers** filter that acts on a whole provider. The two combine: first exclude entire providers, then refine individual models. Both are personal and do not touch the provider's global enablement.
+> **Zwei verschiedene Filter.** Dies ist ein **Pro-Modell**-Filter. In der Chat-Seitenleiste unter **Modell** gibt es dagegen den Filter der **sichtbaren Anbieter**, der auf einen ganzen Anbieter wirkt. Beide kombinieren sich: erst ganze Anbieter ausschließen, dann einzelne Modelle verfeinern. Beide sind persönlich und berühren die globale Aktivierung des Anbieters nicht.
 
-## API key vault
+## API-Schlüssel-Tresor
 
-**What it does.** Keys are encrypted with Fernet (AES-128-CBC + HMAC-SHA256) and stored in SQLite, with an in-memory cache. All providers fall back vault → environment variable: if the key is not in the vault, the one from `.env` is used.
+**Was es macht.** Schlüssel werden mit Fernet (AES-128-CBC + HMAC-SHA256) verschlüsselt und in SQLite gespeichert, mit In-Memory-Cache. Alle Anbieter fallen zurück Tresor → Umgebungsvariable: liegt der Schlüssel nicht im Tresor, wird der aus `.env` verwendet.
 
-**Configuration.** Set a strong `VAULT_SECRET_KEY` in production: a security warning is logged at startup if it is still the default placeholder. API: `PUT /providers/{id}/key`, `DELETE /providers/{id}/key`.
+**Konfiguration.** Setze in Produktion einen starken `VAULT_SECRET_KEY`: beim Start wird eine Sicherheitswarnung geloggt, wenn er noch der Standard-Platzhalter ist. API: `PUT /providers/{id}/key`, `DELETE /providers/{id}/key`.
 
-## Model discovery
+## Modell-Discovery
 
-**What it does.** Fetches the model catalog live from each provider's API (Cloudflare, OpenRouter, Gemini, Groq, Cerebras, Mistral, NVIDIA, Ollama, Agent) and saves it into the internal catalog — so the model list selectable in chat stays current without manual edits.
+**Was es macht.** Ruft den Modellkatalog live von der API jedes Anbieters ab (Cloudflare, OpenRouter, Gemini, Groq, Cerebras, Mistral, NVIDIA, Ollama, Agent) und speichert ihn in den internen Katalog — die im Chat wählbare Modellliste bleibt ohne manuelle Pflege aktuell.
 
-![Model Discovery](screenshots/discovery.png)
+![Modell-Discovery](screenshots/discovery.png)
 
-**How to use it.** **Discovery** page → pick the provider from the tab bar → **Esegui Discovery** (Run Discovery). Discovered models are listed and saved to the catalog.
+**So wird es benutzt.** Seite **Entdeckung** → Anbieter in der Tab-Leiste wählen → **Discovery ausführen**. Die entdeckten Modelle werden gelistet und im Katalog gespeichert.
 
-## Prefix-based routing
+## Präfix-basiertes Routing
 
-The gateway routes each request based on the model name prefix:
+Das Gateway routet jede Anfrage anhand des Modellnamen-Präfixes:
 
-| Prefix | Provider |
+| Präfix | Anbieter |
 |--------|----------|
 | `ollama/…`, `groq/…`, `mistral/…`, `together_ai/…`, `fireworks_ai/…`, `huggingface/…` | LiteLLM |
-| `gemini/…` | dedicated Google Generative AI adapter |
+| `gemini/…` | dedizierter Google-Generative-AI-Adapter |
 | `openrouter/…` | OpenRouter |
 | `cloudflare/…` | Cloudflare Workers AI |
-| `cerebras/…` | Cerebras (direct HTTP) |
-| `agent/…` | Multi-MCP orchestrator (see [MCP and agents](mcp-and-agents.md)) |
+| `cerebras/…` | Cerebras (direktes HTTP) |
+| `agent/…` | Multi-MCP-Orchestrator (siehe [MCP und Agenten](mcp-and-agents.md)) |
 
-## Automatic provider fallback
+## Automatischer Anbieter-Fallback
 
-**What it does.** If a provider fails or times out **before** emitting the first token, the gateway transparently retries the next provider in the `CHAT_FALLBACK_CHAIN` (`provider:model,provider:model,...` format). The switch is signalled with an SSE `provider_switch` frame, surfaced as a notice in the UI. Once tokens have started streaming, the error is propagated instead (no duplicate output).
+**Was es macht.** Fällt ein Anbieter aus oder läuft in einen Timeout, **bevor** der erste Token gesendet wurde, versucht das Gateway transparent den nächsten Anbieter der `CHAT_FALLBACK_CHAIN` (Format `provider:model,provider:model,...`). Der Wechsel wird mit einem SSE-Frame `provider_switch` signalisiert und in der UI als Hinweis angezeigt. Sobald Tokens streamen, wird der Fehler stattdessen weitergereicht (keine doppelte Ausgabe).
 
-**Configuration.** In `backend/.env`:
+**Konfiguration.** In `backend/.env`:
 
 ```env
 CHAT_FALLBACK_CHAIN=groq:llama-3.3-70b-versatile,ollama:qwen2.5:7b-instruct
 ```
 
-Analogous chains exist for images (`IMAGE_GENERATION_CHAIN`) and embeddings (`EMBEDDING_CHAIN`).
+Analoge Ketten existieren für Bilder (`IMAGE_GENERATION_CHAIN`) und Embeddings (`EMBEDDING_CHAIN`).

@@ -1,11 +1,11 @@
 <div class="comments">
   <div class="comment-compose">
     <textarea class="c-input" [(ngModel)]="newComment" rows="2"
-              placeholder="Aggiungi un commento…"></textarea>
-    <button class="btn" (click)="post()" [disabled]="!newComment.trim()">Commenta</button>
+              [placeholder]="'cmt.placeholder' | t"></textarea>
+    <button class="btn" (click)="post()" [disabled]="!newComment.trim()">{{ 'cmt.post' | t }}</button>
   </div>
 
-  <p class="muted" *ngIf="!loading() && !comments().length">Ancora nessun commento.</p>
+  <p class="muted" *ngIf="!loading() && !comments().length">{{ 'cmt.none' | t }}</p>
 
   <ul class="thread-list">
     <ng-container *ngFor="let node of tree()">
@@ -25,20 +25,20 @@
     <ng-container *ngIf="editingId() === c.id; else bodyView">
       <textarea class="c-input" [(ngModel)]="editBody" rows="2"></textarea>
       <div class="c-actions">
-        <button class="btn small" (click)="submitEdit(c)">Salva</button>
-        <button class="btn-ghost small" (click)="cancelInline()">Annulla</button>
+        <button class="btn small" (click)="submitEdit(c)">{{ 'common.save' | t }}</button>
+        <button class="btn-ghost small" (click)="cancelInline()">{{ 'common.cancel' | t }}</button>
       </div>
     </ng-container>
 
     <ng-template #bodyView>
       <p class="c-body" [class.deleted]="c.deleted">
-        {{ c.deleted ? '[commento eliminato]' : c.body }}
+        {{ c.deleted ? ('cmt.deleted' | t) : c.body }}
       </p>
       <div class="c-actions" *ngIf="!c.deleted">
-        <button class="link-btn" (click)="startReply(c.id)">Rispondi</button>
+        <button class="link-btn" (click)="startReply(c.id)">{{ 'cmt.reply' | t }}</button>
         <ng-container *ngIf="c.user_id === myId()">
-          <button class="link-btn" (click)="startEdit(c)">Modifica</button>
-          <button class="link-btn danger" (click)="remove(c)">Elimina</button>
+          <button class="link-btn" (click)="startEdit(c)">{{ 'common.edit' | t }}</button>
+          <button class="link-btn danger" (click)="remove(c)">{{ 'common.delete' | t }}</button>
         </ng-container>
       </div>
     </ng-template>
@@ -46,10 +46,10 @@
     <!-- inline reply box -->
     <div class="c-reply" *ngIf="replyingTo() === c.id">
       <textarea class="c-input" [(ngModel)]="replyBody" rows="2"
-                placeholder="Scrivi una risposta…"></textarea>
+                [placeholder]="'cmt.replyPlaceholder' | t"></textarea>
       <div class="c-actions">
-        <button class="btn small" (click)="submitReply(c.id)" [disabled]="!replyBody.trim()">Invia</button>
-        <button class="btn-ghost small" (click)="cancelInline()">Annulla</button>
+        <button class="btn small" (click)="submitReply(c.id)" [disabled]="!replyBody.trim()">{{ 'common.send' | t }}</button>
+        <button class="btn-ghost small" (click)="cancelInline()">{{ 'common.cancel' | t }}</button>
       </div>
     </div>
 

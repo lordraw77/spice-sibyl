@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 
 import { ChatService } from '../../core/services/chat.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import {
   AgentRun,
   AgentRunStatus,
@@ -15,7 +17,7 @@ import {
 @Component({
   selector: 'app-workflows-page',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TranslatePipe],
   templateUrl: './workflows-page.component.html',
   styleUrls: ['./workflows-page.component.css'],
 })
@@ -23,6 +25,7 @@ export class WorkflowsPageComponent implements OnInit, OnDestroy {
   private readonly workflows = inject(WorkflowService);
   private readonly chat = inject(ChatService);
   private readonly notify = inject(NotificationService);
+  private readonly i18n = inject(I18nService);
 
   readonly runs = signal<AgentRun[]>([]);
   readonly loading = signal(false);
@@ -93,7 +96,7 @@ export class WorkflowsPageComponent implements OnInit, OnDestroy {
         next: (run) => {
           this.creating.set(false);
           this.goal = '';
-          this.notify.add('success', 'Workflow', 'Run avviato');
+          this.notify.add('success', 'Workflow', this.i18n.translate('wf.started'));
           this.refresh();
           this.toggleExpand(run.id);
         },
@@ -136,12 +139,12 @@ export class WorkflowsPageComponent implements OnInit, OnDestroy {
   }
 
   cancel(run: AgentRun): void {
-    if (!window.confirm('Annullare definitivamente questo run?')) return;
+    if (!window.confirm(this.i18n.translate('wf.cancelConfirm'))) return;
     this.workflows.cancel(run.id).subscribe({ next: (r) => this.patch(r) });
   }
 
   remove(run: AgentRun): void {
-    if (!window.confirm('Eliminare il run e i suoi step?')) return;
+    if (!window.confirm(this.i18n.translate('wf.deleteConfirm'))) return;
     this.workflows.remove(run.id).subscribe({
       next: () => {
         this.runs.update((list) => list.filter((r) => r.id !== run.id));
@@ -154,25 +157,19 @@ export class WorkflowsPageComponent implements OnInit, OnDestroy {
   }
 
   statusLabel(status: AgentRunStatus): string {
-    switch (status) {
-      case 'pending': return 'In coda';
-      case 'running': return 'In esecuzione';
-      case 'paused': return 'In pausa';
-      case 'completed': return 'Completato';
-      case 'failed': return 'Fallito';
-      case 'cancelled': return 'Annullato';
-    }
+    const keys: Record<AgentRunStatus, string> = {
+      pending: 'wf.status.pending', running: 'wf.status.running', paused: 'wf.status.paused',
+      completed: 'wf.status.completed', failed: 'wf.status.failed', cancelled: 'wf.status.cancelled',
+    };
+    return this.i18n.translate(keys[status]);
   }
 
   kindLabel(kind: string): string {
-    switch (kind) {
-      case 'assistant': return '💭 ragionamento';
-      case 'tool_call': return '⚙ chiamata tool';
-      case 'tool_result': return '📄 risultato';
-      case 'final': return '✅ risposta finale';
-      case 'error': return '⚠️ errore';
-      default: return kind;
-    }
+    const keys: Record<string, string> = {
+      assistant: 'wf.kind.assistant', tool_call: 'wf.kind.toolCall', tool_result: 'wf.kind.toolResult',
+      final: 'wf.kind.final', error: 'wf.kind.error',
+    };
+    return keys[kind] ? this.i18n.translate(keys[kind]) : kind;
   }
 
   isActive(run: AgentRun): boolean {

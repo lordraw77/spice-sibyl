@@ -1,7 +1,7 @@
 <div class="help-shell">
   <aside class="help-sidebar">
-    <h2>Guida</h2>
-    <nav aria-label="Documenti della guida">
+    <h2>{{ 'help.title' | t }}</h2>
+    <nav [attr.aria-label]="'help.navAria' | t">
       <a
         *ngFor="let d of docs()"
         [routerLink]="['/help', d.slug]"
@@ -11,8 +11,8 @@
   </aside>
 
   <article class="help-content" (click)="onContentClick($event)">
-    <p *ngIf="loading()" class="muted">Caricamento…</p>
-    <p *ngIf="error()" class="muted">Impossibile caricare la guida.</p>
+    <p *ngIf="loading()" class="muted">{{ 'common.loading' | t }}</p>
+    <p *ngIf="error()" class="muted">{{ 'help.loadFailed' | t }}</p>
     <div *ngIf="!loading() && !error() && content() as html" [innerHTML]="html"></div>
   </article>
 </div>

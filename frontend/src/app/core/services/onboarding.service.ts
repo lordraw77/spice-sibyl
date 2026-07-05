@@ -12,7 +12,13 @@ export class OnboardingService {
   /** True while the tour overlay should be visible. */
   readonly active = signal<boolean>(false);
 
-  private seen(): boolean {
+  /**
+   * Whether the tour has been completed/skipped. A signal so the roaming-profile
+   * sync (SettingsSyncService) can observe and persist it to the backend.
+   */
+  readonly seen = signal<boolean>(this.loadSeen());
+
+  private loadSeen(): boolean {
     try {
       return localStorage.getItem(STORAGE_KEY) === 'true';
     } catch {
@@ -21,8 +27,22 @@ export class OnboardingService {
   }
 
   private markSeen(): void {
+    this.seen.set(true);
     try {
       localStorage.setItem(STORAGE_KEY, 'true');
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /**
+   * Apply a value restored from the backend (roaming profile). Updates the flag
+   * without any side effects on the live tour overlay.
+   */
+  hydrate(seen: boolean): void {
+    this.seen.set(seen);
+    try {
+      localStorage.setItem(STORAGE_KEY, String(seen));
     } catch {
       /* ignore */
     }

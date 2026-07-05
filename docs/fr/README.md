@@ -1,43 +1,42 @@
-# SpiceSibyl — Feature documentation
+# SpiceSibyl — Documentation des fonctionnalités
 
-> 🚧 **Traduction en cours.** Ces pages sont pour l'instant en anglais (base à traduire) ; l'interface de l'application est déjà entièrement localisée en français. Versions : [English](../en/README.md) · [Italiano](../it/README.md)
+Un guide fonctionnalité par fonctionnalité de SpiceSibyl : ce que fait chaque fonction, comment l'utiliser et comment la configurer. Les captures d'écran sont dans [`docs/fr/screenshots/`](screenshots/).
 
-A feature-by-feature guide to SpiceSibyl: what each feature does, how to use it, and how to configure it. Screenshots live in [`docs/fr/screenshots/`](screenshots/).
-
+> Versions : [English](../en/README.md) · [Italiano](../it/README.md)
 
 ## Index
 
-| Area | Document | Contents |
-|------|----------|----------|
-| 🔐 Access | [Authentication and profiles](authentication-and-profiles.md) | Login, roles, JWT, local profiles, audit log, rate limiting |
-| 💬 Chat | [Web chat](chat.md) | Streaming, message actions, branching, voice, TTS, images, templates, tags, search, export, sharing |
-| 🔌 Providers | [Providers and models](providers-and-models.md) | Provider management, API key vault, model discovery, automatic fallback |
-| 🛠 Tools | [Tool calling](tool-calling.md) | Built-in tools, custom HTTP tools, sandboxed code interpreter |
-| 🤖 Agents | [MCP and agents](mcp-and-agents.md) | MCP server management, Multi-MCP orchestrator, persistent workflows |
-| 📚 RAG | [Knowledge base and RAG](knowledge-rag.md) | Document/URL ingestion, hybrid search, reranking, citations |
-| ⚖️ Compare | [Model comparison](model-comparison.md) | Same prompt across 2–4 models in parallel |
-| 📊 Stats | [Usage statistics](statistics.md) | Tokens, latency, costs; daily charts |
-| ✈️ Telegram | [Telegram bot](telegram.md) | Commands, voice, photos, documents, knowledge base (RAG), memory, reminders, web profile linking |
-| 🧠 Memory | [Memory & personalization](memory-and-personalization.md) | Persistent memory, automatic titles, response cache, 👍/👎 feedback, Info page |
-| 👥 Collaboration | [Workspaces and collaboration](workspaces-and-collaboration.md) | Shared workspaces, role-based access, shared conversations/documents, threaded comments |
-| 🖥 UI | [Interface and UX](interface.md) | Themes, PWA, mobile, onboarding, keyboard shortcuts |
-| ⚙️ Ops | [Observability and operations](operations.md) | Health/readiness, Prometheus metrics, structured logging, backups |
-| 🌐 i18n | [Internationalization](internationalization.md) | 5-language web + Telegram UI, runtime switcher, locale-aware formatting |
+| Domaine | Document | Contenu |
+|---------|----------|---------|
+| 🔐 Accès | [Authentification et profils](authentication-and-profiles.md) | Connexion, rôles, JWT, profils locaux, journal d'audit, limitation de débit |
+| 💬 Chat | [Chat web](chat.md) | Streaming, actions sur les messages, branches, voix, TTS, images, modèles, étiquettes, recherche, export, partage |
+| 🔌 Fournisseurs | [Fournisseurs et modèles](providers-and-models.md) | Gestion des fournisseurs, coffre des clés API, découverte des modèles, repli automatique |
+| 🛠 Outils | [Appel d'outils](tool-calling.md) | Outils intégrés, outils HTTP personnalisés, interpréteur de code sandboxé |
+| 🤖 Agents | [MCP et agents](mcp-and-agents.md) | Gestion des serveurs MCP, orchestrateur Multi-MCP, workflows persistants |
+| 📚 RAG | [Base de connaissances et RAG](knowledge-rag.md) | Ingestion de documents/URL, recherche hybride, reranking, citations |
+| ⚖️ Comparaison | [Comparaison de modèles](model-comparison.md) | Le même prompt sur 2–4 modèles en parallèle |
+| 📊 Statistiques | [Statistiques d'utilisation](statistics.md) | Tokens, latence, coûts ; graphiques quotidiens |
+| ✈️ Telegram | [Bot Telegram](telegram.md) | Commandes, voix, photos, documents, base de connaissances (RAG), mémoire, rappels, liaison au profil web |
+| 🧠 Mémoire | [Mémoire et personnalisation](memory-and-personalization.md) | Mémoire persistante, titres automatiques, cache des réponses, feedback 👍/👎, page Info |
+| 👥 Collaboration | [Espaces de travail et collaboration](workspaces-and-collaboration.md) | Espaces partagés, accès par rôle, conversations/documents partagés, commentaires en fil |
+| 🖥 UI | [Interface et UX](interface.md) | Thèmes, PWA, mobile, onboarding, raccourcis clavier |
+| ⚙️ Ops | [Observabilité et opérations](operations.md) | Health/readiness, métriques Prometheus, logs structurés, sauvegardes |
+| 🌐 i18n | [Internationalisation](internationalization.md) | UI web + Telegram en 5 langues, sélecteur à runtime, formatage localisé |
 
-## Overview
+## Aperçu
 
-SpiceSibyl is an OpenAI-compatible multi-provider AI gateway with a built-in Angular web console. A single endpoint (`/api/v1/chat/completions`) routes requests to the right provider based on the model prefix (e.g. `ollama/...`, `groq/...`, `agent/...`), with no client-side changes.
+SpiceSibyl est une passerelle IA multi-fournisseurs compatible avec l'API OpenAI, avec une console web Angular intégrée. Un endpoint unique (`/api/v1/chat/completions`) route les requêtes vers le bon fournisseur selon le préfixe du modèle (ex. `ollama/...`, `groq/...`, `agent/...`), sans changement côté client.
 
-Supported providers: Ollama (local), Groq, OpenRouter, Cloudflare Workers AI, Google Gemini, Mistral, Cerebras, Together AI, Fireworks AI, HuggingFace, NVIDIA, plus the Multi-MCP orchestrator (`agent/*`).
+Fournisseurs pris en charge : Ollama (local), Groq, OpenRouter, Cloudflare Workers AI, Google Gemini, Mistral, Cerebras, Together AI, Fireworks AI, HuggingFace, NVIDIA, plus l'orchestrateur Multi-MCP (`agent/*`).
 
-![Main chat](screenshots/chat-conversazione.png)
+![Chat principal](screenshots/chat-conversazione.png)
 
-## Quick start
+## Démarrage rapide
 
 ```bash
-# development
+# développement
 docker compose up -d --build
-# web console: http://localhost:8888  ·  API: http://localhost:8800/api/v1
+# console web : http://localhost:8888  ·  API : http://localhost:8800/api/v1
 ```
 
-On first boot an admin user is created from the `ADMIN_EMAIL` / `ADMIN_PASSWORD` variables in `backend/.env`. For production deployment (nginx, TLS, PUBLIC_URL) see [deploy.md](../deploy.md).
+Au premier démarrage, un utilisateur admin est créé à partir des variables `ADMIN_EMAIL` / `ADMIN_PASSWORD` dans `backend/.env`. Pour le déploiement en production (nginx, TLS, PUBLIC_URL) voir [deploy.md](../deploy.md).

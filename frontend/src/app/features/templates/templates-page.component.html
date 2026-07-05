@@ -2,36 +2,36 @@
 
   <header class="page-header">
     <div>
-      <h1>Template</h1>
+      <h1>{{ 'tpl.title' | t }}</h1>
       <p class="subtitle">
-        Prompt riutilizzabili per il profilo <strong>{{ profileService.current()?.name || 'default' }}</strong>.
-        Applica un template per impostarlo come system prompt della chat.
+        {{ 'tpl.subtitle.a' | t }} <strong>{{ profileService.current()?.name || 'default' }}</strong>.
+        {{ 'tpl.subtitle.b' | t }}
       </p>
     </div>
     <div class="head-actions">
-      <button class="btn-ghost" (click)="load()" [disabled]="loading()">Aggiorna</button>
+      <button class="btn-ghost" (click)="load()" [disabled]="loading()">{{ 'common.refresh' | t }}</button>
       <button class="btn" (click)="formVisible ? cancelForm() : showForm()">
-        {{ formVisible ? 'Chiudi' : 'Nuovo template' }}
+        {{ (formVisible ? 'common.close' : 'tpl.new') | t }}
       </button>
     </div>
   </header>
 
   <!-- Create / edit form -->
   <section class="card" *ngIf="formVisible">
-    <div class="card-head"><h2>{{ editId ? 'Modifica template' : 'Nuovo template' }}</h2></div>
+    <div class="card-head"><h2>{{ (editId ? 'tpl.edit' : 'tpl.new') | t }}</h2></div>
     <div class="field">
-      <span class="field-label">Nome</span>
-      <input class="text-input" type="text" placeholder="Nome template" [(ngModel)]="formName" />
+      <span class="field-label">{{ 'common.name' | t }}</span>
+      <input class="text-input" type="text" [placeholder]="'tpl.namePlaceholder' | t" [(ngModel)]="formName" />
     </div>
     <div class="field">
-      <span class="field-label">Contenuto</span>
-      <textarea class="text-area" rows="6" placeholder="Contenuto del template…" [(ngModel)]="formContent"></textarea>
+      <span class="field-label">{{ 'tpl.content' | t }}</span>
+      <textarea class="text-area" rows="6" [placeholder]="'tpl.contentPlaceholder' | t" [(ngModel)]="formContent"></textarea>
     </div>
     <div class="form-actions">
       <button class="btn" (click)="save()" [disabled]="!formName.trim() || !formContent.trim()">
-        {{ editId ? 'Aggiorna' : 'Salva' }}
+        {{ (editId ? 'common.update' : 'common.save') | t }}
       </button>
-      <button class="btn-ghost" (click)="cancelForm()">Annulla</button>
+      <button class="btn-ghost" (click)="cancelForm()">{{ 'common.cancel' | t }}</button>
     </div>
   </section>
 
@@ -43,14 +43,14 @@
         <p class="item-preview">{{ t.content }}</p>
       </div>
       <div class="item-actions">
-        <button class="btn-ghost sm" (click)="apply(t)" title="Imposta come system prompt">Applica</button>
-        <button class="btn-ghost sm" (click)="showForm(t)" title="Modifica">Modifica</button>
-        <button class="btn-danger sm" (click)="delete(t.id, $event)" title="Elimina">Elimina</button>
+        <button class="btn-ghost sm" (click)="apply(t)" [title]="'tpl.applyTitle' | t">{{ 'common.apply' | t }}</button>
+        <button class="btn-ghost sm" (click)="showForm(t)" [title]="'common.edit' | t">{{ 'common.edit' | t }}</button>
+        <button class="btn-danger sm" (click)="delete(t.id, $event)" [title]="'common.delete' | t">{{ 'common.delete' | t }}</button>
       </div>
     </li>
   </ul>
   <ng-template #empty>
-    <p class="empty" *ngIf="!loading()">Nessun template salvato.</p>
+    <p class="empty" *ngIf="!loading()">{{ 'tpl.empty' | t }}</p>
   </ng-template>
 
 </div>

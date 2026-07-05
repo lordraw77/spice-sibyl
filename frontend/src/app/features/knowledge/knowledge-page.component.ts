@@ -7,12 +7,14 @@ import { KbDocument } from '../../core/models/chat.models';
 import { KnowledgeService } from '../../core/services/knowledge.service';
 import { ProfileService } from '../../core/services/profile.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 /** Knowledge base (RAG) document management. Promoted from the chat sidebar. */
 @Component({
   selector: 'app-knowledge-page',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TranslatePipe],
   templateUrl: './knowledge-page.component.html',
   styleUrls: ['./knowledge-page.component.css'],
 })
@@ -20,6 +22,7 @@ export class KnowledgePageComponent implements OnInit {
   private readonly knowledgeService = inject(KnowledgeService);
   readonly profileService = inject(ProfileService);
   private readonly notifications = inject(NotificationService);
+  private readonly i18n = inject(I18nService);
 
   readonly kbDocuments = signal<KbDocument[]>([]);
   readonly kbUploading = signal(false);
@@ -57,18 +60,18 @@ export class KnowledgePageComponent implements OnInit {
     const valid: File[] = [];
     for (const file of files) {
       if (!allowed.test(file.name)) {
-        this.notifications.add('error', 'Formato non supportato', `"${file.name}": usa PDF, TXT, DOCX o Markdown.`);
+        this.notifications.add('error', this.i18n.translate('kb.badFormatTitle'), this.i18n.translate('kb.badFormatBody', { name: file.name }));
         continue;
       }
       if (file.size > 20 * 1024 * 1024) {
-        this.notifications.add('error', 'File troppo grande', `"${file.name}": dimensione massima 20 MB.`);
+        this.notifications.add('error', this.i18n.translate('chat.err.fileTooBigTitle'), this.i18n.translate('kb.tooBigBody', { name: file.name }));
         continue;
       }
       const dup = this.kbDocuments().some(
         (d) => d.filename === file.name && d.size_bytes === file.size,
       );
       if (dup) {
-        this.notifications.add('info', 'Già presente', `"${file.name}" è già nella knowledge base.`);
+        this.notifications.add('info', this.i18n.translate('kb.dupTitle'), this.i18n.translate('kb.dupBody', { name: file.name }));
         continue;
       }
       valid.push(file);
@@ -95,14 +98,14 @@ export class KnowledgePageComponent implements OnInit {
       const failed = results.filter((r) => !r.ok && (r as { status?: number }).status !== 409).length;
 
       const parts: string[] = [];
-      if (added.length) parts.push(`${added.length} aggiunti`);
-      if (duplicates) parts.push(`${duplicates} duplicati ignorati`);
-      if (failed) parts.push(`${failed} falliti`);
+      if (added.length) parts.push(this.i18n.translate('kb.parts.added', { n: added.length }));
+      if (duplicates) parts.push(this.i18n.translate('kb.parts.dups', { n: duplicates }));
+      if (failed) parts.push(this.i18n.translate('kb.parts.failed', { n: failed }));
 
       if (added.length) {
-        this.notifications.add('success', 'Caricamento completato', parts.join(' · '));
+        this.notifications.add('success', this.i18n.translate('kb.uploadDone'), parts.join(' · '));
       } else if (duplicates && !failed) {
-        this.notifications.add('info', 'Nessun nuovo documento', `${duplicates} duplicati ignorati.`);
+        this.notifications.add('info', this.i18n.translate('kb.noNew'), this.i18n.translate('kb.dupIgnored', { n: duplicates }));
       }
     });
   }
@@ -111,7 +114,7 @@ export class KnowledgePageComponent implements OnInit {
     const url = this.kbUrl().trim();
     if (!url) return;
     if (!/^https?:\/\//i.test(url)) {
-      this.notifications.add('error', 'URL non valido', 'Inserisci un URL http(s) completo.');
+      this.notifications.add('error', this.i18n.translate('kb.badUrlTitle'), this.i18n.translate('kb.badUrlBody'));
       return;
     }
     this.kbUploading.set(true);
@@ -120,11 +123,11 @@ export class KnowledgePageComponent implements OnInit {
         this.kbDocuments.update((docs) => [doc, ...docs.filter((d) => d.id !== doc.id)]);
         this.kbUploading.set(false);
         this.kbUrl.set('');
-        this.notifications.add('success', 'Pagina aggiunta', `"${doc.filename}" indicizzata (${doc.chunk_count} chunk).`);
+        this.notifications.add('success', this.i18n.translate('kb.pageAdded'), this.i18n.translate('kb.pageAddedBody', { name: doc.filename, n: doc.chunk_count }));
       },
       error: (err: Error) => {
         this.kbUploading.set(false);
-        this.notifications.add('error', 'Ingest URL fallito', err?.message || 'Impossibile leggere la pagina.');
+        this.notifications.add('error', this.i18n.translate('kb.ingestFailed'), err?.message || this.i18n.translate('kb.ingestFailedBody'));
       },
     });
   }
@@ -142,10 +145,10 @@ export class KnowledgePageComponent implements OnInit {
     this.knowledgeService.reEmbed(id).subscribe({
       next: (doc) => {
         this.kbDocuments.update((docs) => docs.map((d) => (d.id === doc.id ? doc : d)));
-        this.notifications.add('success', 'Re-embed completato', `"${doc.filename}" re-indicizzato (${doc.chunk_count} chunk).`);
+        this.notifications.add('success', this.i18n.translate('kb.reembedDone'), this.i18n.translate('kb.reembedDoneBody', { name: doc.filename, n: doc.chunk_count }));
       },
       error: (err: Error) => {
-        this.notifications.add('error', 'Re-embed fallito', err?.message || 'Impossibile re-indicizzare.');
+        this.notifications.add('error', this.i18n.translate('kb.reembedFailed'), err?.message || this.i18n.translate('kb.reembedFailedBody'));
       },
     });
   }

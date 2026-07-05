@@ -2,38 +2,36 @@
 
   <header class="page-header">
     <div>
-      <h1>Custom tools</h1>
+      <h1>{{ 'tools.title' | t }}</h1>
       <p class="subtitle">
-        Registra tool HTTP personalizzati senza modifiche al codice: nome, parametri
-        (JSON schema) ed endpoint. I tool abilitati diventano disponibili nella chat
-        come <code>custom__&lt;nome&gt;</code>, per il profilo corrente.
+        {{ 'tools.subtitle.a' | t }} <code>{{ 'tools.subtitle.code' | t }}</code>{{ 'tools.subtitle.b' | t }}
       </p>
     </div>
     <div class="head-actions">
-      <button class="btn-ghost" (click)="refresh()" [disabled]="loading()">Aggiorna</button>
+      <button class="btn-ghost" (click)="refresh()" [disabled]="loading()">{{ 'common.refresh' | t }}</button>
       <button class="btn" (click)="formOpen() ? closeForm() : openForm()">
-        {{ formOpen() ? 'Chiudi' : 'Nuovo tool' }}
+        {{ (formOpen() ? 'common.close' : 'tools.new') | t }}
       </button>
     </div>
   </header>
 
   <!-- Create / edit form -->
   <section class="tools-card" *ngIf="formOpen()">
-    <div class="card-head"><h2>Definizione tool</h2></div>
+    <div class="card-head"><h2>{{ 'tools.definition' | t }}</h2></div>
 
     <div class="field-grid">
       <label class="field">
-        <span class="field-label">Nome</span>
+        <span class="field-label">{{ 'common.name' | t }}</span>
         <input class="tools-input" [(ngModel)]="name" placeholder="get_weather" spellcheck="false" />
       </label>
       <label class="field">
-        <span class="field-label">Descrizione (per il modello)</span>
-        <input class="tools-input" [(ngModel)]="description" placeholder="Meteo attuale per una città" />
+        <span class="field-label">{{ 'tools.description' | t }}</span>
+        <input class="tools-input" [(ngModel)]="description" [placeholder]="'tools.descPlaceholder' | t" />
       </label>
     </div>
 
     <label class="field">
-      <span class="field-label">Parametri (JSON schema, formato OpenAI)</span>
+      <span class="field-label">{{ 'tools.params' | t }}</span>
       <textarea class="tools-textarea" rows="7" [(ngModel)]="parametersJson" spellcheck="false"></textarea>
     </label>
 
@@ -43,7 +41,7 @@
         <input class="tools-input" [(ngModel)]="url" placeholder="https://api.example.com/weather" spellcheck="false" />
       </label>
       <label class="field">
-        <span class="field-label">Metodo</span>
+        <span class="field-label">{{ 'tools.method' | t }}</span>
         <select class="tools-input" [(ngModel)]="method">
           <option>POST</option><option>GET</option><option>PUT</option><option>PATCH</option><option>DELETE</option>
         </select>
@@ -56,11 +54,11 @@
 
     <div class="field-grid">
       <label class="field">
-        <span class="field-label">Autenticazione</span>
+        <span class="field-label">{{ 'tools.auth' | t }}</span>
         <select class="tools-input" [(ngModel)]="authType">
-          <option value="none">Nessuna</option>
+          <option value="none">{{ 'tools.auth.none' | t }}</option>
           <option value="bearer">Bearer token</option>
-          <option value="header">Header personalizzato</option>
+          <option value="header">{{ 'tools.auth.header' | t }}</option>
         </select>
       </label>
       <label class="field grow" *ngIf="authType === 'bearer'">
@@ -69,35 +67,33 @@
       </label>
       <ng-container *ngIf="authType === 'header'">
         <label class="field">
-          <span class="field-label">Nome header</span>
+          <span class="field-label">{{ 'tools.auth.headerName' | t }}</span>
           <input class="tools-input" [(ngModel)]="authHeaderName" placeholder="X-Api-Key" spellcheck="false" />
         </label>
         <label class="field grow">
-          <span class="field-label">Valore</span>
+          <span class="field-label">{{ 'tools.auth.value' | t }}</span>
           <input class="tools-input" type="password" [(ngModel)]="authHeaderValue" spellcheck="false" />
         </label>
       </ng-container>
     </div>
 
     <p class="muted">
-      Gli argomenti della chiamata vengono inviati come body JSON (POST/PUT/PATCH)
-      o query string (GET); la risposta è restituita al modello come risultato del tool.
-      Un tool con lo stesso nome viene sostituito.
+      {{ 'tools.note' | t }}
     </p>
 
     <div class="form-row">
-      <button class="btn-ghost" (click)="closeForm()">Annulla</button>
+      <button class="btn-ghost" (click)="closeForm()">{{ 'common.cancel' | t }}</button>
       <button class="btn" (click)="save()" [disabled]="saving() || !name.trim() || !url.trim()">
-        {{ saving() ? 'Salvataggio…' : 'Salva tool' }}
+        {{ (saving() ? 'prov.saving' : 'tools.saveTool') | t }}
       </button>
     </div>
   </section>
 
   <!-- Tool list -->
   <section class="tools-card">
-    <div class="card-head"><h2>Tool registrati ({{ tools().length }})</h2></div>
+    <div class="card-head"><h2>{{ 'tools.registered' | t: { n: tools().length } }}</h2></div>
 
-    <p class="muted" *ngIf="!tools().length">Nessun custom tool per questo profilo.</p>
+    <p class="muted" *ngIf="!tools().length">{{ 'tools.none' | t }}</p>
 
     <ul class="tool-list">
       <li class="tool" *ngFor="let t of tools()">
@@ -112,15 +108,15 @@
             </span>
           </div>
           <div class="tool-actions">
-            <button class="btn-ghost" (click)="openForm(t)">Modifica</button>
+            <button class="btn-ghost" (click)="openForm(t)">{{ 'common.edit' | t }}</button>
             <button class="btn-ghost" (click)="toggleExpand(t.id)">
-              {{ isExpanded(t.id) ? 'Nascondi' : 'Dettagli' }}
+              {{ (isExpanded(t.id) ? 'common.hide' : 'common.details') | t }}
             </button>
-            <label class="switch" [title]="t.enabled ? 'Abilitato' : 'Disabilitato'">
+            <label class="switch" [title]="(t.enabled ? 'common.enabled' : 'common.disabled') | t">
               <input type="checkbox" [checked]="t.enabled" (change)="toggle(t)" />
               <span class="slider"></span>
             </label>
-            <button class="btn-danger" (click)="remove(t)">Elimina</button>
+            <button class="btn-danger" (click)="remove(t)">{{ 'common.delete' | t }}</button>
           </div>
         </div>
 
@@ -129,7 +125,7 @@
 
         <div class="tool-detail" *ngIf="isExpanded(t.id)">
           <div class="detail-block">
-            <span class="detail-label">Parametri (JSON schema)</span>
+            <span class="detail-label">{{ 'tools.paramsSchema' | t }}</span>
             <pre class="config-json">{{ paramsJson(t) }}</pre>
           </div>
           <div class="detail-block">
@@ -139,7 +135,7 @@
             <div class="form-row">
               <span></span>
               <button class="btn" (click)="test(t)" [disabled]="isTesting(t.id)">
-                {{ isTesting(t.id) ? 'Test…' : 'Invoca' }}
+                {{ isTesting(t.id) ? 'Test…' : ('tools.invoke' | t) }}
               </button>
             </div>
             <pre class="config-json" *ngIf="testResults()[t.id]">{{ testResults()[t.id] }}</pre>
@@ -152,19 +148,18 @@
   <!-- Available tools grouped by MCP server -->
   <header class="page-header section-gap">
     <div>
-      <h2 class="section-title">Tool disponibili</h2>
+      <h2 class="section-title">{{ 'tools.available' | t }}</h2>
       <p class="subtitle">
-        Tutti i tool esposti al modello per il profilo corrente, raggruppati per
-        server MCP. Includono i tool built-in e i custom tool qui sopra.
+        {{ 'tools.availableSub' | t }}
       </p>
     </div>
     <div class="head-actions">
-      <button class="btn-ghost" (click)="loadAvailableTools()" [disabled]="availableLoading()">Aggiorna</button>
+      <button class="btn-ghost" (click)="loadAvailableTools()" [disabled]="availableLoading()">{{ 'common.refresh' | t }}</button>
     </div>
   </header>
 
-  <p class="muted" *ngIf="availableLoading()">Caricamento tool…</p>
-  <p class="muted" *ngIf="!availableLoading() && !toolGroups().length">Nessun tool disponibile.</p>
+  <p class="muted" *ngIf="availableLoading()">{{ 'tools.loadingTools' | t }}</p>
+  <p class="muted" *ngIf="!availableLoading() && !toolGroups().length">{{ 'tools.noneAvailable' | t }}</p>
 
   <div class="mcp-grid" *ngIf="!availableLoading() && toolGroups().length">
     <section class="mcp-card" *ngFor="let group of toolGroups()">

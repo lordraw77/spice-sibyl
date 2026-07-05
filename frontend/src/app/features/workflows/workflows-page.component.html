@@ -4,50 +4,48 @@
     <div>
       <h1>Workflow</h1>
       <p class="subtitle">
-        Run agentici persistenti: il modello lavora su un obiettivo con tutti i tool
-        disponibili (built-in, MCP, custom) per molti step, con stato durevole.
-        Puoi mettere in pausa, riprendere e ispezionare ogni step — anche dopo un riavvio.
+        {{ 'wf.subtitle' | t }}
       </p>
     </div>
     <div class="head-actions">
-      <button class="btn-ghost" (click)="refresh()" [disabled]="loading()">Aggiorna</button>
+      <button class="btn-ghost" (click)="refresh()" [disabled]="loading()">{{ 'common.refresh' | t }}</button>
     </div>
   </header>
 
   <!-- Create -->
   <section class="wf-card">
-    <div class="card-head"><h2>Nuovo run</h2></div>
+    <div class="card-head"><h2>{{ 'wf.newRun' | t }}</h2></div>
 
     <label class="field">
-      <span class="field-label">Obiettivo</span>
+      <span class="field-label">{{ 'wf.goal' | t }}</span>
       <textarea class="wf-textarea" rows="3" [(ngModel)]="goal"
-                placeholder="Es. Cerca le ultime notizie su X, riassumile e calcola…"></textarea>
+                [placeholder]="'wf.goalPlaceholder' | t"></textarea>
     </label>
 
     <div class="field-grid">
       <label class="field grow">
-        <span class="field-label">Modello</span>
+        <span class="field-label">{{ 'chat.section.model' | t }}</span>
         <select class="wf-input" [(ngModel)]="model">
-          <option value="" disabled>Seleziona un modello…</option>
+          <option value="" disabled>{{ 'wf.selectModel' | t }}</option>
           <option *ngFor="let m of models()" [value]="m">{{ m }}</option>
         </select>
       </label>
       <label class="field">
-        <span class="field-label">Max step</span>
+        <span class="field-label">{{ 'wf.maxSteps' | t }}</span>
         <input class="wf-input" type="number" min="1" max="100" [(ngModel)]="maxSteps" />
       </label>
     </div>
 
     <label class="field">
-      <span class="field-label">Istruzioni aggiuntive (opzionale)</span>
+      <span class="field-label">{{ 'wf.extraInstructions' | t }}</span>
       <textarea class="wf-textarea" rows="2" [(ngModel)]="systemPrompt"
-                placeholder="Vincoli o stile della risposta…"></textarea>
+                [placeholder]="'wf.extraPlaceholder' | t"></textarea>
     </label>
 
     <div class="form-row">
       <span></span>
       <button class="btn" (click)="create()" [disabled]="creating() || !goal.trim() || !model.trim()">
-        {{ creating() ? 'Avvio…' : 'Avvia run' }}
+        {{ (creating() ? 'wf.starting' : 'wf.start') | t }}
       </button>
     </div>
   </section>
@@ -56,7 +54,7 @@
   <section class="wf-card">
     <div class="card-head"><h2>Run ({{ runs().length }})</h2></div>
 
-    <p class="muted" *ngIf="!runs().length">Nessun workflow per questo profilo.</p>
+    <p class="muted" *ngIf="!runs().length">{{ 'wf.none' | t }}</p>
 
     <ul class="run-list">
       <li class="run" *ngFor="let r of runs()">
@@ -72,28 +70,28 @@
             <strong class="run-goal" [title]="r.goal">{{ r.goal }}</strong>
           </div>
           <div class="run-actions">
-            <button class="btn-ghost" *ngIf="isActive(r)" (click)="pause(r)">Pausa</button>
-            <button class="btn-ghost" *ngIf="r.status === 'paused'" (click)="resume(r)">Riprendi</button>
-            <button class="btn-ghost" *ngIf="isActive(r) || r.status === 'paused'" (click)="cancel(r)">Annulla</button>
+            <button class="btn-ghost" *ngIf="isActive(r)" (click)="pause(r)">{{ 'wf.pause' | t }}</button>
+            <button class="btn-ghost" *ngIf="r.status === 'paused'" (click)="resume(r)">{{ 'wf.resume' | t }}</button>
+            <button class="btn-ghost" *ngIf="isActive(r) || r.status === 'paused'" (click)="cancel(r)">{{ 'common.cancel' | t }}</button>
             <button class="btn-ghost" (click)="toggleExpand(r.id)">
-              {{ expanded() === r.id ? 'Nascondi' : 'Step' }}
+              {{ expanded() === r.id ? ('common.hide' | t) : 'Step' }}
             </button>
-            <button class="btn-danger" (click)="remove(r)">Elimina</button>
+            <button class="btn-danger" (click)="remove(r)">{{ 'common.delete' | t }}</button>
           </div>
         </div>
 
         <div class="run-meta">
           <span class="mono">{{ r.model }}</span>
-          <span>step {{ r.current_step }}/{{ r.max_steps }}</span>
+          <span>{{ 'wf.stepCount' | t: { a: r.current_step, b: r.max_steps } }}</span>
           <span>{{ r.updated_at * 1000 | date: 'dd/MM/yyyy HH:mm' }}</span>
         </div>
         <div class="run-error" *ngIf="r.error">⚠️ {{ r.error }}</div>
 
         <!-- Step timeline -->
         <div class="run-detail" *ngIf="expanded() === r.id">
-          <p class="muted" *ngIf="!detail()">Caricamento step…</p>
+          <p class="muted" *ngIf="!detail()">{{ 'wf.loadingSteps' | t }}</p>
           <ng-container *ngIf="detail() as d">
-            <p class="muted" *ngIf="!d.steps?.length">Nessuno step registrato (ancora).</p>
+            <p class="muted" *ngIf="!d.steps?.length">{{ 'wf.noSteps' | t }}</p>
             <ol class="step-list" *ngIf="d.steps?.length">
               <li class="step" *ngFor="let s of d.steps" [class.step-error]="s.kind === 'error'">
                 <div class="step-head">
@@ -105,7 +103,7 @@
               </li>
             </ol>
             <div class="detail-block" *ngIf="d.result">
-              <span class="detail-label">Risultato</span>
+              <span class="detail-label">{{ 'wf.result' | t }}</span>
               <pre class="step-content result">{{ d.result }}</pre>
             </div>
           </ng-container>

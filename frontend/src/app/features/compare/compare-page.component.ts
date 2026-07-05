@@ -8,6 +8,8 @@ import DOMPurify from 'dompurify';
 import hljs from 'highlight.js';
 
 import { ChatService } from '../../core/services/chat.service';
+import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { ChatModel, ProviderSummary } from '../../core/models/chat.models';
 
 interface CompareSlot {
@@ -28,12 +30,13 @@ interface CompareSlot {
 @Component({
   selector: 'app-compare-page',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TranslatePipe],
   templateUrl: './compare-page.component.html',
   styleUrl: './compare-page.component.css',
 })
 export class ComparePageComponent implements OnInit {
   private readonly chatService = inject(ChatService);
+  private readonly i18n = inject(I18nService);
   private readonly sanitizer = inject(DomSanitizer);
 
   readonly models = signal<ChatModel[]>([]);
@@ -126,7 +129,7 @@ export class ComparePageComponent implements OnInit {
           if (delta) slot.content += delta;
         },
         error: (err: Error) => {
-          slot.error = err?.message || 'Request failed';
+          slot.error = err?.message || this.i18n.translate('chat.err.requestBody');
           slot.streaming = false;
           slot.done = true;
           this.checkAllDone();

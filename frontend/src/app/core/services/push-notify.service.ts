@@ -54,6 +54,15 @@ export class PushNotifyService {
     }
   }
 
+  /**
+   * Apply the opt-in value restored from the backend (roaming profile). Unlike
+   * toggle() this never prompts for browser permission — notifyComplete() still
+   * checks the live permission at send time, so a stale opt-in is harmless.
+   */
+  hydrate(value: boolean): void {
+    this.setEnabled(value);
+  }
+
   /** Ask the browser for notification permission. Resolves to true if granted. */
   async requestPermission(): Promise<boolean> {
     if (!this.supported) return false;

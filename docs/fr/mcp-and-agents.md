@@ -1,19 +1,19 @@
-# MCP and agents
+# MCP et agents
 
-## MCP server management
+## Gestion des serveurs MCP
 
-**What it does.** Registers [MCP](https://modelcontextprotocol.io) (Model Context Protocol) servers in the standard `mcpServers` format (`command`/`args`/`env`/`cwd`), launches them over stdio with a minimal built-in JSON-RPC client (no SDK dependency), probes their health and injects the discovered tools into the chat loop under the `mcp__<server>__<tool>` namespace. **Admin-only** management, global configuration (`mcp_servers` table).
+**Ce que ça fait.** Enregistre des serveurs [MCP](https://modelcontextprotocol.io) (Model Context Protocol) au format standard `mcpServers` (`command`/`args`/`env`/`cwd`), les lance via stdio avec un client JSON-RPC minimal intégré (sans dépendance SDK), sonde leur santé et injecte les outils découverts dans la boucle de chat sous l'espace de noms `mcp__<serveur>__<outil>`. Gestion **admin uniquement**, configuration globale (table `mcp_servers`).
 
-![MCP servers page](screenshots/mcp.png)
+![Page des serveurs MCP](screenshots/mcp.png)
 
-**How to use it.**
-1. **MCP** page → **Aggiungi / Importa** (Add / Import) box: paste a JSON bundle `{ "mcpServers": { … } }` (one or more servers; same-name servers are replaced) and press **Importa**. The "Abilita all'import" checkbox enables them right away.
-2. In the **Server registrati** (Registered servers) list every server shows its status (OK/ERROR with message), the number of discovered tools and the **Test**, **Dettagli** (tool list), enable toggle and **Elimina** (Delete) buttons.
-3. **Reload & probe** re-runs discovery on all enabled servers; **Esporta mcp.json** downloads the configuration in the standard format.
+**Comment l'utiliser.**
+1. Page **MCP** → encart **Ajouter / Importer** : collez un bundle JSON `{ "mcpServers": { … } }` (un ou plusieurs serveurs ; ceux du même nom sont remplacés) et appuyez sur **Importer**. La case « Activer à l'import » les active immédiatement.
+2. Dans la liste **Serveurs enregistrés**, chaque serveur affiche son état (OK/ERREUR avec message), le nombre d'outils découverts et les boutons **Test**, **Détails** (liste des outils), l'interrupteur d'activation et **Supprimer**.
+3. **Reload & probe** relance la découverte sur tous les serveurs activés ; **Exporter mcp.json** télécharge la configuration au format standard.
 
-**API.** `GET/POST /v1/mcp/servers`, `PATCH`/`DELETE /v1/mcp/servers/{id}`, `POST /v1/mcp/servers/{id}/test`, `POST /v1/mcp/reload`, `GET /v1/mcp/config`, `POST /v1/mcp/import` (all audited).
+**API.** `GET/POST /v1/mcp/servers`, `PATCH`/`DELETE /v1/mcp/servers/{id}`, `POST /v1/mcp/servers/{id}/test`, `POST /v1/mcp/reload`, `GET /v1/mcp/config`, `POST /v1/mcp/import` (tous audités).
 
-**Bundle example:**
+**Exemple de bundle :**
 
 ```json
 {
@@ -26,21 +26,21 @@
 }
 ```
 
-## Multi-MCP orchestrator (agent mode)
+## Orchestrateur Multi-MCP (mode agent)
 
-**What it does.** Models with the `agent/*` prefix are routed by the `OrchestratorProvider` to an external sidecar that coordinates several specialized MCP agents (`ask_proxmox`, `ask_synology`, `ask_linux`, `ask_homeassistant`, `ask_watchyourlan`). Useful for home/lab infrastructure questions that require querying multiple systems.
+**Ce que ça fait.** Les modèles préfixés `agent/*` sont routés par l'`OrchestratorProvider` vers un sidecar externe qui coordonne plusieurs agents MCP spécialisés (`ask_proxmox`, `ask_synology`, `ask_linux`, `ask_homeassistant`, `ask_watchyourlan`). Utile pour les questions d'infrastructure maison/lab qui nécessitent d'interroger plusieurs systèmes.
 
-**How to use it.** In chat, select the `Agent · Multi-MCP Orchestrator` model; on Telegram the `/agent` and `/chat` commands switch between agent mode and normal chat.
+**Comment l'utiliser.** Dans le chat, sélectionnez le modèle `Agent · Multi-MCP Orchestrator` ; sur Telegram les commandes `/agent` et `/chat` basculent entre mode agent et chat normal.
 
-## Persistent workflows
+## Workflows persistants
 
-**What it does.** Durable, inspectable agent runs: a background server-side loop works towards a goal with the **full** tool registry (built-ins, custom, MCP) for many iterations (`WORKFLOW_DEFAULT_MAX_STEPS`, capped by `WORKFLOW_MAX_STEPS_LIMIT`), well beyond the chat loop's 5. Every assistant turn / tool call / tool result is persisted as a step (`agent_runs` + `agent_run_steps`) and the message history is checkpointed after each iteration: runs pause and resume losslessly — **even across restarts** (runs left `running` are reconciled to `paused`).
+**Ce que ça fait.** Des runs d'agent durables et inspectables : une boucle serveur en arrière-plan travaille sur un objectif avec le registre d'outils **complet** (intégrés, personnalisés, MCP) pendant de nombreuses itérations (`WORKFLOW_DEFAULT_MAX_STEPS`, plafonné par `WORKFLOW_MAX_STEPS_LIMIT`), bien au-delà des 5 de la boucle de chat. Chaque tour de l'assistant / appel d'outil / résultat est persisté comme étape (`agent_runs` + `agent_run_steps`) et l'historique des messages est sauvegardé après chaque itération : les runs se mettent en pause et reprennent sans perte — **même après un redémarrage** (les runs restés `running` sont ramenés à `paused`).
 
-![Workflow page](screenshots/workflows.png)
+![Page Workflow](screenshots/workflows.png)
 
-**How to use it.**
-1. **Workflow** page → **Nuovo run** (New run) form: goal, model, max steps, optional extra instructions → **Avvia run** (Start run).
-2. In the run list: status badges, pause/resume/cancel buttons and deletion.
-3. The detail view shows the **step timeline** with auto-refresh: every reasoning step and every tool call can be inspected.
+**Comment l'utiliser.**
+1. Page **Workflow** → formulaire **Nouveau run** : objectif, modèle, étapes max, instructions supplémentaires facultatives → **Lancer le run**.
+2. Dans la liste des runs : badges d'état, boutons pause/reprise/annulation et suppression.
+3. La vue détaillée montre la **chronologie des étapes** avec rafraîchissement automatique : chaque étape de raisonnement et chaque appel d'outil peut être inspecté.
 
-**API.** `POST/GET /v1/workflows`, detail, `pause`/`resume`/`cancel`/`delete` (audited).
+**API.** `POST/GET /v1/workflows`, détail, `pause`/`resume`/`cancel`/`delete` (audités).

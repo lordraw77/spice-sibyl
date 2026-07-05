@@ -8,7 +8,7 @@
  * XSS safety: markdown → HTML via marked, sanitized by DOMPurify, then
  * post-processed (image paths, cross-doc links) before being trusted.
  */
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -16,6 +16,7 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 interface HelpDoc {
   slug: string;
@@ -35,7 +36,7 @@ const FALLBACK_LANG = 'en';
 @Component({
   selector: 'app-help-page',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, TranslatePipe],
   templateUrl: './help-page.component.html',
   styleUrl: './help-page.component.css',
 })
@@ -46,27 +47,40 @@ export class HelpPageComponent implements OnInit {
   private readonly sanitizer = inject(DomSanitizer);
   private readonly i18n = inject(I18nService);
 
-  /** Doc language for this session: the active UI locale, or English fallback. */
-  private readonly lang = PUBLISHED_LANGS.includes(this.i18n.locale())
-    ? this.i18n.locale()
-    : FALLBACK_LANG;
-
   readonly docs = signal<HelpDoc[]>([]);
   readonly activeSlug = signal<string | null>(null);
   readonly content = signal<SafeHtml | null>(null);
   readonly loading = signal(true);
   readonly error = signal(false);
 
+  /** Slug requested by the route, tracked so a locale switch can reload it. */
+  private routeSlug: string | null = null;
+
+  constructor() {
+    // Reload the manifest + current doc whenever the UI locale changes, so
+    // switching language reflects on the Help page without a reload. Runs once
+    // on init too (effects fire immediately), which drives the first load.
+    effect(() => this.loadManifest(this.docLang()));
+  }
+
+  /** Doc language: the active UI locale, or English fallback. Reactive. */
+  private docLang(): string {
+    const locale = this.i18n.locale();
+    return PUBLISHED_LANGS.includes(locale) ? locale : FALLBACK_LANG;
+  }
+
   ngOnInit(): void {
-    this.http.get<HelpManifest>(`docs/${this.lang}/manifest.json`).subscribe({
+    this.route.paramMap.subscribe((params) => {
+      this.routeSlug = params.get('slug');
+      this.selectActiveDoc();
+    });
+  }
+
+  private loadManifest(lang: string): void {
+    this.http.get<HelpManifest>(`docs/${lang}/manifest.json`).subscribe({
       next: (manifest) => {
         this.docs.set(manifest.docs);
-        this.route.paramMap.subscribe((params) => {
-          const slug = params.get('slug');
-          const doc =
-            manifest.docs.find((d) => d.slug === slug) ?? manifest.docs[0];
-          if (doc) this.loadDoc(doc);
-        });
+        this.selectActiveDoc();
       },
       error: () => {
         this.loading.set(false);
@@ -75,12 +89,21 @@ export class HelpPageComponent implements OnInit {
     });
   }
 
+  /** Load the doc for the current route slug (or the active/first one). */
+  private selectActiveDoc(): void {
+    const docs = this.docs();
+    if (!docs.length) return;
+    const wanted = this.routeSlug ?? this.activeSlug();
+    const doc = docs.find((d) => d.slug === wanted) ?? docs[0];
+    if (doc) this.loadDoc(doc);
+  }
+
   private loadDoc(doc: HelpDoc): void {
     this.activeSlug.set(doc.slug);
     this.loading.set(true);
     this.error.set(false);
     this.http
-      .get(`docs/${this.lang}/${doc.file}`, { responseType: 'text' })
+      .get(`docs/${this.docLang()}/${doc.file}`, { responseType: 'text' })
       .subscribe({
         next: (md) => {
           this.content.set(this.render(md));
@@ -108,7 +131,7 @@ export class HelpPageComponent implements OnInit {
     el.querySelectorAll('img').forEach((img) => {
       const src = img.getAttribute('src') ?? '';
       const m = src.match(/(?:\.\.\/)?screenshots\/(.+)$/);
-      if (m) img.setAttribute('src', `docs/${this.lang}/screenshots/${m[1]}`);
+      if (m) img.setAttribute('src', `docs/${this.docLang()}/screenshots/${m[1]}`);
       img.setAttribute('loading', 'lazy');
     });
 

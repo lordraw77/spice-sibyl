@@ -4,6 +4,7 @@ import { Chart, registerables } from 'chart.js';
 
 import { StatsService } from '../../core/services/stats.service';
 import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { UsageStats, ProviderStats, ModelStats, DailyStats } from '../../core/models/chat.models';
 
 Chart.register(...registerables);
@@ -11,7 +12,7 @@ Chart.register(...registerables);
 @Component({
   selector: 'app-stats-page',
   standalone: true,
-  imports: [CommonModule, DecimalPipe],
+  imports: [CommonModule, DecimalPipe, TranslatePipe],
   templateUrl: './stats-page.component.html',
   styleUrl: './stats-page.component.css',
 })
@@ -40,7 +41,7 @@ export class StatsPageComponent implements OnInit, AfterViewInit, OnDestroy {
   ngOnInit(): void {
     this.statsService.getStats().subscribe({
       next: (data) => { this.stats.set(data); this.loading.set(false); },
-      error: () => { this.error.set('Impossibile caricare le statistiche.'); this.loading.set(false); },
+      error: () => { this.error.set(this.i18n.translate('stats.loadFailed')); this.loading.set(false); },
     });
     this.loadDailyStats();
   }
@@ -152,8 +153,8 @@ export class StatsPageComponent implements OnInit, AfterViewInit, OnDestroy {
   providerKey(p: ProviderStats): string { return p.provider ?? '__null__'; }
   modelKey(m: ModelStats): string { return `${m.model}|${m.provider}`; }
 
-  providerLabel(p: ProviderStats): string { return p.provider || 'Sconosciuto'; }
-  modelLabel(m: ModelStats): string { return (m.model || 'Sconosciuto').replace(/^.*\//, ''); }
+  providerLabel(p: ProviderStats): string { return p.provider || this.i18n.translate('stats.unknown'); }
+  modelLabel(m: ModelStats): string { return (m.model || this.i18n.translate('stats.unknown')).replace(/^.*\//, ''); }
 
   formatCost(value: number): string {
     if (value === 0) return '—';

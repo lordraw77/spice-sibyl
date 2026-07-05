@@ -1,15 +1,15 @@
-# Model comparison
+# Comparaison de modèles
 
-**What it does.** Sends the same prompt to 2–4 models simultaneously and streams the responses in side-by-side columns, each with its own telemetry (latency, tokens, cost). Useful for picking the right model for a use case or comparing quality/speed/cost.
+**Ce que ça fait.** Envoie le même prompt à 2–4 modèles simultanément et diffuse les réponses dans des colonnes côte à côte, chacune avec sa propre télémétrie (latence, tokens, coût). Utile pour choisir le bon modèle pour un cas d'usage ou comparer qualité/vitesse/coût.
 
-![Compare models page](screenshots/compare.png)
+![Page de comparaison des modèles](screenshots/compare.png)
 
-**How to use it.**
-1. Go to the **Compare** page.
-2. Select the models in the dropdowns (up to 4 with **+ Aggiungi modello**).
-3. Type the prompt in the text area and press **Confronta** (Compare).
-4. Responses stream in parallel, each in its own column; latency, token counts and estimated cost appear at the bottom of each.
+**Comment l'utiliser.**
+1. Allez sur la page **Comparer**.
+2. Sélectionnez les modèles dans les listes déroulantes (jusqu'à 4 avec **+ Ajouter un modèle**).
+3. Saisissez le prompt dans la zone de texte et appuyez sur **Comparer**.
+4. Les réponses arrivent en parallèle, chacune dans sa colonne ; la latence, le nombre de tokens et le coût estimé apparaissent en bas de chacune.
 
-**Notes.**
-- Requests really do run in parallel: the displayed timings are comparable with each other.
-- Every column gets the exact same prompt, without the chat's system prompt: it is a "cold" comparison.
+**Remarques.**
+- Les requêtes s'exécutent réellement en parallèle : les temps affichés sont comparables entre eux.
+- Chaque colonne reçoit exactement le même prompt, sans le prompt système du chat : c'est une comparaison « à froid ».

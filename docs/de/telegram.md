@@ -1,51 +1,51 @@
-# Telegram bot
+# Telegram-Bot
 
-**What it does.** A polling-based bot that exposes the gateway on Telegram: per-chat history, streaming replies with live message editing, model selection, vision, image generation, voice transcription, documents, personal memory, **knowledge base (RAG)**, reminders and web profile linking.
+**Was es macht.** Ein Polling-Bot, der das Gateway auf Telegram bereitstellt: Verlauf pro Chat, Streaming-Antworten mit Live-Bearbeitung der Nachricht, Modellauswahl, Vision, Bildgenerierung, Sprachtranskription, Dokumente, persönliches Gedächtnis, **Wissensdatenbank (RAG)**, Erinnerungen und Web-Profil-Verknüpfung.
 
-**Configuration.** `TELEGRAM_BOT_TOKEN` in `backend/.env`; optional allowlist with `TELEGRAM_ALLOWED_USERS` (comma-separated user ids). Reminder timezone with `TIMEZONE` (default `Europe/Rome`). Requires the `python-telegram-bot[job-queue]` extra for reminders.
+**Konfiguration.** `TELEGRAM_BOT_TOKEN` in `backend/.env`; optionale Allowlist mit `TELEGRAM_ALLOWED_USERS` (kommagetrennte User-Ids). Zeitzone der Erinnerungen mit `TIMEZONE` (Standard `Europe/Rome`). Benötigt das Extra `python-telegram-bot[job-queue]` für Erinnerungen.
 
-## Commands
+## Befehle
 
-| Command | What it does |
-|---------|--------------|
-| `/start` | welcome message |
-| `/new` | new conversation (resets the chat context) |
-| `/model` | model selection via a **two-step inline keyboard** (provider → model, with back navigation and ✅ on the current model) |
-| `/models` | lists available models |
-| `/agent` · `/chat` | switches between agent mode (Multi-MCP orchestrator) and normal chat |
-| `/imagine <prompt>` | generates an image (`IMAGE_GENERATION_CHAIN`) and sends it as a photo with a provider/model caption |
-| `/history` | last 20 messages of the current session |
-| `/search <query>` | full-text search (FTS5) across all saved conversations: titles + snippets |
-| `/link` · `/unlink` | generates the code to link/unlink the web profile (see [Authentication and profiles](authentication-and-profiles.md)) |
-| `/remind` | reminders: `/remind 15:50 Check backups` or relative `/remind +30m …`, `2h`, `1d` |
-| `/reminders` · `/unremind <id>` | lists / cancels pending reminders |
-| `/memory on\|off\|list\|del <id>` | personal memory over the linked profile (see [Memory and personalization](memory-and-personalization.md)) |
-| `/kb list\|del <id>` | manage the linked profile's knowledge base; to add a document send a file with a **`/kb` caption** (see below) |
-| `/rag on\|off` | toggle knowledge-base injection in this chat (per-chat, **OFF by default**) |
-| `/lang` · `/lang en\|it` | per-chat bot UI language (inline keyboard or direct); persisted in `telegram_prefs` |
+| Befehl | Was er macht |
+|--------|--------------|
+| `/start` | Begrüßungsnachricht |
+| `/new` | neue Unterhaltung (setzt den Chat-Kontext zurück) |
+| `/model` | Modellauswahl über eine **zweistufige Inline-Tastatur** (Anbieter → Modell, mit Zurück-Navigation und ✅ am aktuellen Modell) |
+| `/models` | listet verfügbare Modelle |
+| `/agent` · `/chat` | wechselt zwischen Agentenmodus (Multi-MCP-Orchestrator) und normalem Chat |
+| `/imagine <prompt>` | erzeugt ein Bild (`IMAGE_GENERATION_CHAIN`) und sendet es als Foto mit Anbieter/Modell-Beschriftung |
+| `/history` | die letzten 20 Nachrichten der aktuellen Sitzung |
+| `/search <suche>` | Volltextsuche (FTS5) über alle gespeicherten Unterhaltungen: Titel + Auszüge |
+| `/link` · `/unlink` | erzeugt den Code zum Verknüpfen/Trennen des Web-Profils (siehe [Authentifizierung und Profile](authentication-and-profiles.md)) |
+| `/remind` | Erinnerungen: `/remind 15:50 Backups prüfen` oder relativ `/remind +30m …`, `2h`, `1d` |
+| `/reminders` · `/unremind <id>` | listet / storniert ausstehende Erinnerungen |
+| `/memory on\|off\|list\|del <id>` | persönliches Gedächtnis über das verknüpfte Profil (siehe [Gedächtnis und Personalisierung](memory-and-personalization.md)) |
+| `/kb list\|del <id>` | verwaltet die Wissensdatenbank des verknüpften Profils; zum Hinzufügen eine Datei mit **`/kb`-Bildunterschrift** senden (siehe unten) |
+| `/rag on\|off` | schaltet die Wissensdatenbank-Injektion in diesem Chat um (pro Chat, **standardmäßig OFF**) |
+| `/lang` · `/lang en\|it\|fr\|de\|es` | Bot-Sprache pro Chat (Inline-Tastatur oder direkt); persistiert in `telegram_prefs` |
 
-## Media handling
+## Medien
 
-- **Photos** sent to the bot → automatically described by the active model via vision.
-- **Voice/audio messages** → transcribed with Groq Whisper (`whisper-large-v3`); the bot shows the transcription, then streams the reply to the transcribed text.
-- **Documents** PDF / TXT / DOCX / MD → text is extracted (truncated to 8,000 characters) and used as **one-shot** context for the model, together with any caption. With a `/kb` caption the document is instead **ingested into the knowledge base** (see below).
+- **Fotos** an den Bot → werden vom aktiven Modell automatisch per Vision beschrieben.
+- **Sprach-/Audionachrichten** → transkribiert mit Groq Whisper (`whisper-large-v3`); der Bot zeigt die Transkription und streamt dann die Antwort auf den transkribierten Text.
+- **Dokumente** PDF / TXT / DOCX / MD → der Text wird extrahiert (auf 8.000 Zeichen gekürzt) und als **einmaliger** Kontext fürs Modell verwendet, zusammen mit einer etwaigen Bildunterschrift. Mit einer `/kb`-Bildunterschrift wird das Dokument stattdessen **in die Wissensdatenbank aufgenommen** (siehe unten).
 
-## Knowledge base (RAG)
+## Wissensdatenbank (RAG)
 
-Extends the web profile's RAG (see [Knowledge base](knowledge-rag.md)) to the Telegram channel. Requires a **linked web profile** (`/link`): every `/kb`/`/rag` command and `/kb`-captioned upload prompts to link when no profile is connected.
+Erweitert das RAG des Web-Profils (siehe [Wissensdatenbank](knowledge-rag.md)) auf den Telegram-Kanal. Erfordert ein **verknüpftes Web-Profil** (`/link`): jeder `/kb`/`/rag`-Befehl und jeder Upload mit `/kb`-Bildunterschrift fordert zum Verknüpfen auf, wenn kein Profil verbunden ist.
 
-- **Ingestion** — send a **PDF / TXT / DOCX / MD** file with a `/kb` caption: it is added to the linked profile's knowledge base reusing the same pipeline as web uploads (`rag_service.ingest`: extraction → chunking → embedding), with sha256 byte-hash duplicate detection.
-- **Management** — `/kb list` shows documents with a status icon (✅ ready · ⏳ pending · ⚠️ error), 🔗 for URL-sourced documents, and chunk count; `/kb del <id>` removes a document by id prefix.
-- **Retrieval** — with `/rag on`, each message has `_stream_reply` retrieve the most relevant chunks (`rag_service.retrieve`, hybrid search + optional rerank) and fold them into the last user message; the reply gets a 📚 sources footer (deduplicated filenames). The toggle is **per-chat**, persisted in `telegram_prefs.rag` and reloaded on boot.
+- **Aufnahme** — sende eine **PDF / TXT / DOCX / MD**-Datei mit `/kb`-Bildunterschrift: sie wird der Wissensdatenbank des verknüpften Profils hinzugefügt, mit derselben Pipeline wie Web-Uploads (`rag_service.ingest`: Extraktion → Chunking → Embedding) und sha256-Duplikaterkennung.
+- **Verwaltung** — `/kb list` zeigt Dokumente mit Status-Icon (✅ bereit · ⏳ ausstehend · ⚠️ Fehler), 🔗 für URL-Dokumente und Chunk-Anzahl; `/kb del <id>` entfernt ein Dokument per Id-Präfix.
+- **Abruf** — mit `/rag on` lässt `_stream_reply` bei jeder Nachricht die relevantesten Chunks abrufen (`rag_service.retrieve`, hybride Suche + optionales Rerank) und in die letzte Benutzernachricht einfügen; die Antwort erhält eine 📚-Quellen-Fußzeile (deduplizierte Dateinamen). Der Schalter ist **pro Chat**, persistiert in `telegram_prefs.rag` und wird beim Start neu geladen.
 
-## Quick actions
+## Schnellaktionen
 
-Inline buttons after every reply: **Regenerate** (re-runs the last turn), **Translate** (IT↔EN), **Summarize** (key points), **Continue**.
+Inline-Buttons nach jeder Antwort: **Neu generieren** (wiederholt den letzten Zug), **Übersetzen** (IT↔EN), **Zusammenfassen** (Kernpunkte), **Fortsetzen**.
 
-## Inline mode
+## Inline-Modus
 
-`@bot_name question` in any Telegram chat: a direct non-streaming answer (max 300 tokens) as an `InlineQueryResultArticle`, with a 30-second cache.
+`@bot_name Frage` in jedem Telegram-Chat: eine direkte Antwort ohne Streaming (max. 300 Tokens) als `InlineQueryResultArticle`, mit 30-Sekunden-Cache.
 
-## Persistent reminders
+## Persistente Erinnerungen
 
-Reminders are stored in `telegram_reminders` and scheduled on the python-telegram-bot JobQueue: they **survive restarts** (reloaded on boot). Times use `TIMEZONE`, regardless of the container clock.
+Erinnerungen liegen in `telegram_reminders` und werden über die python-telegram-bot JobQueue geplant: sie **überleben Neustarts** (beim Boot neu geladen). Zeiten nutzen `TIMEZONE`, unabhängig von der Container-Uhr.

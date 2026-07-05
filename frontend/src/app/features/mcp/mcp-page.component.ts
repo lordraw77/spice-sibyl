@@ -4,17 +4,20 @@ import { FormsModule } from '@angular/forms';
 
 import { McpService, McpServer, McpConfigBundle } from '../../core/services/mcp.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 @Component({
   selector: 'app-mcp-page',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TranslatePipe],
   templateUrl: './mcp-page.component.html',
   styleUrls: ['./mcp-page.component.css'],
 })
 export class McpPageComponent implements OnInit {
   private readonly mcp = inject(McpService);
   private readonly notify = inject(NotificationService);
+  private readonly i18n = inject(I18nService);
 
   readonly servers = signal<McpServer[]>([]);
   readonly loading = signal(false);
@@ -44,7 +47,7 @@ export class McpPageComponent implements OnInit {
     this.mcp.list(probe).subscribe({
       next: (list) => { this.servers.set(list); this.loading.set(false); },
       error: () => {
-        this.notify.add('error', 'MCP', 'Impossibile leggere i server MCP');
+        this.notify.add('error', 'MCP', this.i18n.translate('mcp.readFailed'));
         this.loading.set(false);
       },
     });
@@ -56,10 +59,10 @@ export class McpPageComponent implements OnInit {
       next: (list) => {
         this.servers.set(list);
         this.loading.set(false);
-        this.notify.add('success', 'MCP', 'Server ricaricati e re-interrogati');
+        this.notify.add('success', 'MCP', this.i18n.translate('mcp.reloaded'));
       },
       error: () => {
-        this.notify.add('error', 'MCP', 'Reload fallito');
+        this.notify.add('error', 'MCP', this.i18n.translate('mcp.reloadFailed'));
         this.loading.set(false);
       },
     });
@@ -68,7 +71,7 @@ export class McpPageComponent implements OnInit {
   toggle(server: McpServer): void {
     this.mcp.setEnabled(server.id, !server.enabled).subscribe({
       next: (updated) => this.patchServer(updated),
-      error: (err) => this.notify.add('error', 'MCP', err?.error?.detail ?? 'Aggiornamento fallito'),
+      error: (err) => this.notify.add('error', 'MCP', err?.error?.detail ?? this.i18n.translate('mcp.updateFailed')),
     });
   }
 
@@ -79,26 +82,26 @@ export class McpPageComponent implements OnInit {
         this.patchServer(updated);
         this.testing.update((s) => { const n = new Set(s); n.delete(server.id); return n; });
         if (updated.status === 'ok') {
-          this.notify.add('success', 'MCP', `${updated.name}: ${updated.tools.length} tool rilevati`);
+          this.notify.add('success', 'MCP', this.i18n.translate('mcp.toolsDetected', { name: updated.name, n: updated.tools.length }));
         } else {
-          this.notify.add('error', 'MCP', `${updated.name}: ${updated.error ?? 'errore'}`);
+          this.notify.add('error', 'MCP', `${updated.name}: ${updated.error ?? this.i18n.translate('mcp.err')}`);
         }
       },
       error: () => {
         this.testing.update((s) => { const n = new Set(s); n.delete(server.id); return n; });
-        this.notify.add('error', 'MCP', 'Test fallito');
+        this.notify.add('error', 'MCP', this.i18n.translate('mcp.testFailed'));
       },
     });
   }
 
   remove(server: McpServer): void {
-    if (!window.confirm(`Rimuovere il server MCP "${server.name}"?`)) return;
+    if (!window.confirm(this.i18n.translate('mcp.removeConfirm', { name: server.name }))) return;
     this.mcp.remove(server.id).subscribe({
       next: () => {
         this.servers.update((list) => list.filter((s) => s.id !== server.id));
-        this.notify.add('success', 'MCP', `"${server.name}" rimosso`);
+        this.notify.add('success', 'MCP', this.i18n.translate('tools.removed', { name: server.name }));
       },
-      error: () => this.notify.add('error', 'MCP', 'Rimozione fallita'),
+      error: () => this.notify.add('error', 'MCP', this.i18n.translate('mcp.removeFailed')),
     });
   }
 
@@ -118,7 +121,7 @@ export class McpPageComponent implements OnInit {
     try {
       parsed = JSON.parse(this.importJson());
     } catch {
-      this.notify.add('error', 'MCP', 'JSON non valido');
+      this.notify.add('error', 'MCP', this.i18n.translate('mcp.invalidJson'));
       return;
     }
     // Accept either a full {"mcpServers": {...}} bundle or a bare {name: config} map.
@@ -129,7 +132,7 @@ export class McpPageComponent implements OnInit {
         : { mcpServers: obj as McpConfigBundle['mcpServers'] };
 
     if (!bundle.mcpServers || !Object.keys(bundle.mcpServers).length) {
-      this.notify.add('error', 'MCP', 'Nessun server in "mcpServers"');
+      this.notify.add('error', 'MCP', this.i18n.translate('mcp.noServers'));
       return;
     }
     this.importBusy.set(true);
@@ -137,12 +140,12 @@ export class McpPageComponent implements OnInit {
       next: (imported) => {
         this.importBusy.set(false);
         this.importJson.set('');
-        this.notify.add('success', 'MCP', `${imported.length} server importati`);
+        this.notify.add('success', 'MCP', this.i18n.translate('mcp.imported', { n: imported.length }));
         this.refresh(true);
       },
       error: (err) => {
         this.importBusy.set(false);
-        this.notify.add('error', 'MCP', err?.error?.detail ?? 'Import fallito');
+        this.notify.add('error', 'MCP', err?.error?.detail ?? this.i18n.translate('mcp.importFailed'));
       },
     });
   }

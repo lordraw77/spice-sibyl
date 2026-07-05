@@ -6,12 +6,14 @@ import { ProfileMemory } from '../../core/models/chat.models';
 import { MemoryService } from '../../core/services/memory.service';
 import { ProfileService } from '../../core/services/profile.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 /** Persistent memory management (Phase 19). Promoted from the chat sidebar. */
 @Component({
   selector: 'app-memory-page',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TranslatePipe],
   templateUrl: './memory-page.component.html',
   styleUrls: ['./memory-page.component.css'],
 })
@@ -19,6 +21,7 @@ export class MemoryPageComponent implements OnInit {
   private readonly memoryService = inject(MemoryService);
   readonly profileService = inject(ProfileService);
   private readonly notifications = inject(NotificationService);
+  private readonly i18n = inject(I18nService);
 
   readonly categoryIcons: Record<string, string> = {
     preference: '⭐', fact: '💡', project: '📁', instruction: '📌',
@@ -61,7 +64,7 @@ export class MemoryPageComponent implements OnInit {
     const next = !this.memoryProfileEnabled();
     this.memoryService.setSettings(next).subscribe({
       next: (s) => this.memoryProfileEnabled.set(s.memory_enabled),
-      error: () => this.notifications.add('error', 'Memoria', 'Aggiornamento impostazione fallito.'),
+      error: () => this.notifications.add('error', this.i18n.translate('chat.features.memory'), this.i18n.translate('mem.settingFailed')),
     });
   }
 
@@ -73,7 +76,7 @@ export class MemoryPageComponent implements OnInit {
         this.memories.update((items) => [mem, ...items]);
         this.formContent = '';
       },
-      error: () => this.notifications.add('error', 'Memoria', 'Salvataggio fallito.'),
+      error: () => this.notifications.add('error', this.i18n.translate('chat.features.memory'), this.i18n.translate('mem.saveFailed')),
     });
   }
 
@@ -93,13 +96,13 @@ export class MemoryPageComponent implements OnInit {
   }
 
   forgetAll(): void {
-    if (!confirm('Dimenticare tutti i ricordi di questo profilo?')) return;
+    if (!confirm(this.i18n.translate('mem.forgetAllConfirm'))) return;
     this.memoryService.forgetAll().subscribe({
       next: () => {
         this.memories.set([]);
-        this.notifications.add('success', 'Memoria', 'Tutti i ricordi sono stati eliminati.');
+        this.notifications.add('success', this.i18n.translate('chat.features.memory'), this.i18n.translate('mem.allDeleted'));
       },
-      error: () => this.notifications.add('error', 'Memoria', 'Eliminazione fallita.'),
+      error: () => this.notifications.add('error', this.i18n.translate('chat.features.memory'), this.i18n.translate('mem.deleteFailed')),
     });
   }
 }

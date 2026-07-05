@@ -1,45 +1,45 @@
-# Authentication and profiles
+# Authentification et profils
 
-## Login and user accounts
+## Connexion et comptes utilisateur
 
-**What it does.** Every `/api/v1` route requires authentication, except for the public allowlist (`/auth/*`, `/health`, `GET /shared/{token}`). Accounts have email + password (bcrypt hashing) and a role: `admin`, `user` or `read-only`. Sessions use JWT access tokens (30 minutes) and rotating refresh tokens (14 days) tracked in the `refresh_tokens` table, so they can be revoked.
+**Ce que ça fait.** Chaque route `/api/v1` exige une authentification, sauf la liste publique (`/auth/*`, `/health`, `GET /shared/{token}`). Les comptes ont e-mail + mot de passe (hachage bcrypt) et un rôle : `admin`, `user` ou `read-only`. Les sessions utilisent des jetons d'accès JWT (30 minutes) et des jetons de rafraîchissement rotatifs (14 jours) suivis dans la table `refresh_tokens`, donc révocables.
 
-**How to use it.**
-1. Open the web console: if you are not authenticated you are redirected to `/login`.
-2. Enter email and password and press **Accedi** (Sign in).
-3. The frontend silently refreshes expired tokens on its own (401 interceptor); log out from the user chip in the navbar.
+**Comment l'utiliser.**
+1. Ouvrez la console web : si vous n'êtes pas authentifié, vous êtes redirigé vers `/login`.
+2. Saisissez e-mail et mot de passe puis appuyez sur **Se connecter**.
+3. Le frontend rafraîchit silencieusement les jetons expirés (intercepteur 401) ; déconnectez-vous depuis la puce utilisateur dans la barre de navigation.
 
-![Login page](screenshots/login.png)
+![Page de connexion](screenshots/login.png)
 
-**Admin bootstrap.** On first boot the backend creates an administrator from `ADMIN_EMAIL` / `ADMIN_PASSWORD` (in `backend/.env`) and "adopts" any orphan profiles created before authentication was introduced.
+**Bootstrap admin.** Au premier démarrage, le backend crée un administrateur à partir de `ADMIN_EMAIL` / `ADMIN_PASSWORD` (dans `backend/.env`) et « adopte » les profils orphelins créés avant l'introduction de l'authentification.
 
-## Profiles
+## Profils
 
-**What it does.** Each user owns N profiles (named local identities, no passwords). Conversation history, knowledge base, templates, tags and statistics are scoped per profile. The active profile UUID is stored in `localStorage` (`spicesibyl_profile`).
+**Ce que ça fait.** Chaque utilisateur possède N profils (identités locales nommées, sans mot de passe). Historique des conversations, base de connaissances, modèles, étiquettes et statistiques sont limités à chaque profil. L'UUID du profil actif est stocké dans `localStorage` (`spicesibyl_profile`).
 
-**How to use it.**
-- On first visit (or whenever no profile is selected) the **"Chi sei?"** (Who are you?) modal appears: pick an existing profile or create one with **+ Nuovo profilo**.
-- You can switch profile at any time from the selector at the top of the chat sidebar.
+**Comment l'utiliser.**
+- À la première visite (ou dès qu'aucun profil n'est sélectionné) la fenêtre **« Qui êtes-vous ? »** apparaît : choisissez un profil existant ou créez-en un avec **+ Nouveau profil**.
+- Vous pouvez changer de profil à tout moment depuis le sélecteur en haut de la barre latérale du chat.
 
-![Profile selector](screenshots/profilo-selezione.png)
+![Sélecteur de profil](screenshots/profilo-selezione.png)
 
-**Data isolation.** Every profile-scoped endpoint validates ownership through the `resolve_profile` dependency: a user cannot read conversations or documents belonging to someone else's profiles.
+**Isolation des données.** Chaque endpoint lié à un profil valide la propriété via la dépendance `resolve_profile` : un utilisateur ne peut pas lire les conversations ou documents des profils d'autrui.
 
-## Telegram ↔ web linking
+## Liaison Telegram ↔ web
 
-**What it does.** Associates a Telegram user with a web profile, so conversations and statistics are shared across both channels.
+**Ce que ça fait.** Associe un utilisateur Telegram à un profil web, pour partager conversations et statistiques entre les deux canaux.
 
-**How to use it.**
-1. Send `/link` to the Telegram bot: you receive a 6-character code.
-2. Paste the code into the **"Codice /link da Telegram"** field in the web sidebar and press **Collega** (Link).
-3. `/unlink` on the bot disconnects the account.
+**Comment l'utiliser.**
+1. Envoyez `/link` au bot Telegram : vous recevez un code de 6 caractères.
+2. Collez le code dans le champ **« Code /link de Telegram »** de la barre latérale web et appuyez sur **Associer**.
+3. `/unlink` sur le bot déconnecte le compte.
 
-## Rate limiting
+## Limitation de débit
 
-Per-user sliding-window limit (`RATE_LIMIT_DEFAULT`, default `60/minute`), keyed by the authenticated user id (correct even behind the nginx proxy). When exceeded the server responds `429` with a `Retry-After` header. Note: the store is in-memory (single process).
+Limite à fenêtre glissante par utilisateur (`RATE_LIMIT_DEFAULT`, défaut `60/minute`), indexée sur l'id de l'utilisateur authentifié (correcte même derrière le proxy nginx). En cas de dépassement, le serveur répond `429` avec un en-tête `Retry-After`. Remarque : le stockage est en mémoire (processus unique).
 
-## Audit log
+## Journal d'audit
 
-The `audit_log` table records who did what and when, with the client IP: logins, conversation/profile deletions, provider key updates, user role/disable changes, backup/restore operations, custom tool and MCP server CRUD.
+La table `audit_log` enregistre qui a fait quoi et quand, avec l'IP du client : connexions, suppressions de conversations/profils, mises à jour des clés des fournisseurs, changements de rôle/désactivation des utilisateurs, opérations de sauvegarde/restauration, CRUD des outils personnalisés et des serveurs MCP.
 
-**How to view it.** Admin only: `GET /api/v1/auth/audit`.
+**Comment le consulter.** Admin uniquement : `GET /api/v1/auth/audit`.

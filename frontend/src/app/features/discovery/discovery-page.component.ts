@@ -9,18 +9,21 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DiscoveryService, DiscoveryModel } from '../../core/services/discovery.service';
+import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 type DiscoverySource = 'cloudflare' | 'openrouter' | 'gemini' | 'groq' | 'cerebras' | 'mistral' | 'nvidia' | 'ollama' | 'agent';
 
 @Component({
   selector: 'app-discovery-page',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TranslatePipe],
   templateUrl: './discovery-page.component.html',
   styleUrl: './discovery-page.component.css',
 })
 export class DiscoveryPageComponent {
   private readonly discoveryService = inject(DiscoveryService);
+  private readonly i18n = inject(I18nService);
 
   readonly sources: DiscoverySource[] = [
     'cloudflare', 'openrouter', 'gemini', 'groq', 'cerebras', 'mistral', 'nvidia', 'ollama', 'agent',
@@ -61,28 +64,7 @@ export class DiscoveryPageComponent {
     }
   });
 
-  pageSubtitle = computed(() => {
-    switch (this.activeSource()) {
-      case 'cloudflare':
-        return 'Recupera tutti i modelli Text Generation del tuo account Cloudflare Workers AI e li salva nel catalogo.';
-      case 'openrouter':
-        return 'Recupera i modelli chat disponibili via OpenRouter e li salva nel catalogo.';
-      case 'gemini':
-        return 'Recupera tutti i modelli generateContent della Google Generative AI API e li salva nel catalogo.';
-      case 'groq':
-        return 'Recupera tutti i modelli LLM della piattaforma Groq e li salva nel catalogo.';
-      case 'cerebras':
-        return 'Recupera tutti i modelli LLM della piattaforma Cerebras e li salva nel catalogo.';
-      case 'mistral':
-        return 'Recupera tutti i modelli chat di Mistral AI e li salva nel catalogo.';
-      case 'nvidia':
-        return 'Recupera tutti i modelli LLM di NVIDIA NIM (integrate.api.nvidia.com) e li salva nel catalogo.';
-      case 'ollama':
-        return 'Recupera tutti i modelli scaricati nell\'istanza Ollama locale e li salva nel catalogo.';
-      case 'agent':
-        return 'Recupera i modelli esposti dal sidecar Multi-MCP e li salva nel catalogo.';
-    }
-  });
+  pageSubtitle = computed(() => this.i18n.translate('disc.sub.' + this.activeSource()));
 
   freeModelCount = computed(() => this.models().filter((m) => m.free).length);
   uniqueCapabilityCount = computed(() => {
@@ -91,7 +73,7 @@ export class DiscoveryPageComponent {
   });
   savedAtLabel = computed(() => {
     const ts = this.savedAt();
-    return ts ? new Date(ts * 1000).toLocaleString() : '';
+    return ts ? this.i18n.formatDate(ts * 1000) : '';
   });
 
   /** Switch the active provider, resetting all state. */
@@ -117,7 +99,7 @@ export class DiscoveryPageComponent {
         this.loading.set(false);
       },
       error: (err) => {
-        this.errorMessage.set(err?.error?.detail ?? 'Discovery fallita. Riprova.');
+        this.errorMessage.set(err?.error?.detail ?? this.i18n.translate('disc.failed'));
         this.loading.set(false);
       },
     });

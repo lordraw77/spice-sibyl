@@ -1,70 +1,70 @@
-# Interface and UX
+# Oberfläche und UX
 
-## Navigation (navbar)
+## Navigation (Navbar)
 
-**What it does.** The top navigation bar uses **hierarchical menus**: items are grouped into macro-entries with dropdown submenus, so navigation stays tidy even with many pages.
+**Was es macht.** Die obere Navigationsleiste nutzt **hierarchische Menüs**: Einträge sind in Makro-Einträge mit Dropdown-Untermenüs gruppiert, sodass die Navigation auch mit vielen Seiten übersichtlich bleibt.
 
-**Structure.**
+**Struktur.**
 
-| Macro-entry | Submenu |
-|-------------|---------|
-| **Chat** | (direct link) |
-| **Modelli** (Models) | Providers · Discovery · Compare · Stats |
-| **Tools** | Tools · Workflow · MCP *(admin)* · Workspace |
-| **Risorse** (Resources) | Template · Tag · Knowledge · Memoria |
-| **Info** | Guida (Help) · Info · Ops *(admin)* |
+| Makro-Eintrag | Untermenü |
+|---------------|-----------|
+| **Chat** | (Direktlink) |
+| **Modelle** | Anbieter · Entdeckung · Vergleichen · Statistiken |
+| **Werkzeuge** | Werkzeuge · Workflow · MCP *(Admin)* · Arbeitsbereich |
+| **Ressourcen** | Vorlagen · Tags · Wissen · Gedächtnis |
+| **Info** | Hilfe · Info · Ops *(Admin)* |
 
-**How to use it.**
-- **Click** a macro-entry to open its submenu; a click outside closes it. The macro-entry is highlighted while one of its pages is active.
-- **Admin-only** items (MCP, Ops) appear only with the proper role; a group with no visible items is hidden.
-- On narrow screens (< 576 px) the navbar collapses into a hamburger menu and submenus become inline **accordions**.
+**So wird es benutzt.**
+- **Klicke** einen Makro-Eintrag, um sein Untermenü zu öffnen; ein Klick außerhalb schließt es. Der Makro-Eintrag ist hervorgehoben, solange eine seiner Seiten aktiv ist.
+- **Nur-Admin**-Einträge (MCP, Ops) erscheinen nur mit passender Rolle; eine Gruppe ohne sichtbare Einträge wird ausgeblendet.
+- Auf schmalen Bildschirmen (< 576 px) klappt die Navbar in ein Hamburger-Menü zusammen und Untermenüs werden zu Inline-**Akkordeons**.
 
-On the right sit the **accent-color picker**, the **theme toggle** and the **user chip** with logout.
+Rechts sitzen der **Sprachumschalter 🌐**, der **Akzentfarben-Wähler**, der **Design-Umschalter** und der **Benutzer-Chip** mit Abmeldung.
 
-## Dark/light theme and accent color
+## Dunkles/helles Design und Akzentfarbe
 
-**What it does.** A theming system based on CSS custom properties (`--bg-primary`, `--text-primary`, `--accent`, …) with dark / light / system modes and a customizable accent color.
+**Was es macht.** Ein Theming-System auf Basis von CSS Custom Properties (`--bg-primary`, `--text-primary`, `--accent`, …) mit Dunkel-/Hell-/System-Modus und anpassbarer Akzentfarbe.
 
-**How to use it.**
-- **Theme toggle**: sun/moon icon in the navbar; the preference is stored in localStorage (`spicesibyl_theme`) and applied via the `[data-theme]` attribute on `<html>`.
-- **Accent color**: navbar picker with 8 preset swatches + a free color input; dynamically updates all `--accent-*` variables and works in both themes (`spicesibyl_accent`).
+**So wird es benutzt.**
+- **Design-Umschalter**: Sonne/Mond-Symbol in der Navbar; die Präferenz liegt im localStorage (`spicesibyl_theme`) und wird über das Attribut `[data-theme]` auf `<html>` angewendet.
+- **Akzentfarbe**: Navbar-Wähler mit 8 Vorlagen + freier Farbeingabe; aktualisiert dynamisch alle `--accent-*`-Variablen und funktioniert in beiden Designs (`spicesibyl_accent`).
 
-## Guided onboarding
+## Geführtes Onboarding
 
-**What it does.** On first access a guided tour starts, with a spotlight overlay on the key elements (model selection, tools, system prompt, slash commands); on narrow viewports the card is centered instead.
+**Was es macht.** Beim ersten Zugriff startet eine geführte Tour mit Spotlight auf den Schlüsselelementen (Modellauswahl, Werkzeuge, System-Prompt, Slash-Befehle); auf schmalen Viewports wird die Karte zentriert.
 
-![Onboarding tour](screenshots/onboarding.png)
+![Onboarding-Tour](screenshots/onboarding.png)
 
-**How to use it.** Follow the steps with **Avanti** (Next) or leave with **Salta** (Skip); completion is remembered in localStorage (`spicesibyl_onboarded`). The replay button in the chat topbar restarts it at any time.
+**So wird es benutzt.** Folge den Schritten mit **Weiter** oder verlasse die Tour mit **Überspringen**; der Abschluss wird im localStorage gemerkt (`spicesibyl_onboarded`). Die Replay-Schaltfläche in der Chat-Topbar startet sie jederzeit neu.
 
-## Keyboard shortcuts
+## Tastenkürzel
 
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+K` | opens the **Conversations panel** and focuses the search bar |
-| `Alt+N` | new chat |
-| `Ctrl+Shift+S` | toggle the sidebar |
+| Kürzel | Aktion |
+|--------|--------|
+| `Strg+K` | öffnet das **Unterhaltungs-Panel** und fokussiert die Suche |
+| `Alt+N` | neuer Chat |
+| `Strg+Umschalt+S` | Seitenleiste ein/aus |
 
-Shortcuts do not fire while typing in an input field (except `Ctrl+K`).
+Kürzel feuern nicht beim Tippen in einem Eingabefeld (außer `Strg+K`).
 
-## Mobile layout
+## Mobiles Layout
 
-- Responsive media queries: sidebar as a fixed overlay with backdrop, chat and composer adapted to small screens.
-- **Edge swipe** to open/close the sidebar.
-- Touch targets ≥ 44 px; icon-only topbar export buttons; below 575 px the navbar collapses into a hamburger menu.
+- Responsive Media Queries: Seitenleiste als festes Overlay mit Backdrop, Chat und Composer für kleine Bildschirme angepasst.
+- **Kanten-Wisch** zum Öffnen/Schließen der Seitenleiste.
+- Touch-Ziele ≥ 44 px; Export-Buttons nur als Icons; unter 575 px klappt die Navbar ins Hamburger-Menü.
 
 ## PWA (Progressive Web App)
 
-**What it does.** The app is installable (manifest with 192/512/maskable icons + apple-touch-icon) with the Angular service worker active in production only: the app shell works offline.
+**Was es macht.** Die App ist installierbar (Manifest mit 192/512/maskable Icons + apple-touch-icon), der Angular Service Worker ist nur in Produktion aktiv: die App-Shell funktioniert offline.
 
-**Completion notifications.** Opt-in in the **Parametri** panel: if a generation takes more than 10 seconds and the tab is in the background, a local system notification fires when it finishes (no push server/VAPID).
+**Abschluss-Benachrichtigungen.** Opt-in im Panel **Parameter**: dauert eine Generierung länger als 10 Sekunden und ist der Tab im Hintergrund, feuert bei Fertigstellung eine lokale Systembenachrichtigung (kein Push-Server/VAPID).
 
-**How to install.** From Chrome/Edge: "install" icon in the address bar; on mobile: "Add to Home Screen".
+**Installation.** In Chrome/Edge: „Installieren"-Symbol in der Adressleiste; mobil: „Zum Startbildschirm hinzufügen".
 
-## Loading indicators
+## Ladeindikatoren
 
-An animated progress bar below the topbar during every request, with color/speed tied to the phase: waiting for the model (amber), tool execution (blue, faster), streaming (standard). Tool-call bubbles awaiting their result show a spinner instead of the ⚙ icon.
+Ein animierter Fortschrittsbalken unter der Topbar während jeder Anfrage, mit Farbe/Tempo je nach Phase: Warten auf das Modell (bernstein), Tool-Ausführung (blau, schneller), Streaming (standard). Tool-Aufruf-Blasen, die auf ihr Ergebnis warten, zeigen einen Spinner statt des ⚙-Symbols.
 
-## Error handling
+## Fehlerbehandlung
 
-Global toast system (ErrorInterceptor + NotificationService): HTTP errors and backend SSE `event: error` frames become a toast + a bubble message; provider rate limits are mapped to HTTP 429.
+Globales Toast-System (ErrorInterceptor + NotificationService): HTTP-Fehler und Backend-SSE-Frames `event: error` werden zu Toast + Blasen-Nachricht; Anbieter-Rate-Limits werden auf HTTP 429 abgebildet.

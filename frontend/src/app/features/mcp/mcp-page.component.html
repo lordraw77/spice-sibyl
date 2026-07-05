@@ -2,27 +2,26 @@
 
   <header class="page-header">
     <div>
-      <h1>Server MCP</h1>
+      <h1>{{ 'mcp.title' | t }}</h1>
       <p class="subtitle">
-        Configura i server MCP (formato standard <code>mcpServers</code>), avviati via stdio.
-        I tool rilevati diventano disponibili nella chat. Solo admin.
+        {{ 'mcp.subtitle' | t }}
       </p>
     </div>
     <div class="head-actions">
-      <button class="btn-ghost" (click)="refresh(true)" [disabled]="loading()">Aggiorna</button>
-      <button class="btn-ghost" (click)="exportConfig()">Esporta mcp.json</button>
+      <button class="btn-ghost" (click)="refresh(true)" [disabled]="loading()">{{ 'common.refresh' | t }}</button>
+      <button class="btn-ghost" (click)="exportConfig()">{{ 'mcp.export' | t }}</button>
       <button class="btn" (click)="reload()" [disabled]="loading()">
-        {{ loading() ? 'Caricamento…' : 'Reload &amp; probe' }}
+        {{ loading() ? ('common.loading' | t) : 'Reload & probe' }}
       </button>
     </div>
   </header>
 
   <!-- Add / import -->
   <section class="mcp-card">
-    <div class="card-head"><h2>Aggiungi / Importa</h2></div>
+    <div class="card-head"><h2>{{ 'mcp.addImport' | t }}</h2></div>
     <p class="muted">
-      Incolla un bundle <code>{{ '{' }} "mcpServers": {{ '{' }} … {{ '}' }} {{ '}' }}</code>
-      (uno o più server). I server con lo stesso nome vengono sostituiti.
+      {{ 'mcp.pasteHint.a' | t }} <code>{{ '{' }} "mcpServers": {{ '{' }} … {{ '}' }} {{ '}' }}</code>
+      {{ 'mcp.pasteHint.b' | t }}
     </p>
     <textarea
       class="mcp-textarea"
@@ -34,10 +33,10 @@
     <div class="form-row">
       <label class="check">
         <input type="checkbox" [ngModel]="importEnabled()" (ngModelChange)="importEnabled.set($event)" />
-        Abilita all'import
+        {{ 'mcp.enableOnImport' | t }}
       </label>
       <button class="btn" (click)="importConfig()" [disabled]="importBusy() || !importJson().trim()">
-        {{ importBusy() ? 'Import…' : 'Importa' }}
+        {{ importBusy() ? 'Import…' : ('mcp.import' | t) }}
       </button>
     </div>
   </section>
@@ -45,10 +44,10 @@
   <!-- Server list -->
   <section class="mcp-card">
     <div class="card-head">
-      <h2>Server registrati ({{ servers().length }})</h2>
+      <h2>{{ 'mcp.registered' | t: { n: servers().length } }}</h2>
     </div>
 
-    <p class="muted" *ngIf="!servers().length">Nessun server MCP configurato.</p>
+    <p class="muted" *ngIf="!servers().length">{{ 'mcp.none' | t }}</p>
 
     <ul class="server-list">
       <li class="server" *ngFor="let s of servers()">
@@ -58,23 +57,23 @@
                   [class.ok]="s.status === 'ok'"
                   [class.bad]="s.status === 'error'"
                   [class.off]="s.status === 'disabled' || s.status === 'unknown'">
-              {{ s.status === 'ok' ? 'OK' : s.status === 'error' ? 'ERRORE' : s.status === 'disabled' ? 'OFF' : '—' }}
+              {{ s.status === 'ok' ? 'OK' : s.status === 'error' ? ('mcp.errorBadge' | t) : s.status === 'disabled' ? 'OFF' : '—' }}
             </span>
             <strong>{{ s.name }}</strong>
-            <span class="tool-count" *ngIf="s.status === 'ok'">{{ s.tools.length }} tool</span>
+            <span class="tool-count" *ngIf="s.status === 'ok'">{{ 'mcp.toolCount' | t: { n: s.tools.length } }}</span>
           </div>
           <div class="server-actions">
             <button class="btn-ghost" (click)="test(s)" [disabled]="isTesting(s.id)">
               {{ isTesting(s.id) ? 'Test…' : 'Test' }}
             </button>
             <button class="btn-ghost" (click)="toggleExpand(s.id)">
-              {{ isExpanded(s.id) ? 'Nascondi' : 'Dettagli' }}
+              {{ (isExpanded(s.id) ? 'common.hide' : 'common.details') | t }}
             </button>
-            <label class="switch" [title]="s.enabled ? 'Abilitato' : 'Disabilitato'">
+            <label class="switch" [title]="(s.enabled ? 'common.enabled' : 'common.disabled') | t">
               <input type="checkbox" [checked]="s.enabled" (change)="toggle(s)" />
               <span class="slider"></span>
             </label>
-            <button class="btn-danger" (click)="remove(s)">Elimina</button>
+            <button class="btn-danger" (click)="remove(s)">{{ 'common.delete' | t }}</button>
           </div>
         </div>
 
@@ -83,7 +82,7 @@
 
         <div class="server-detail" *ngIf="isExpanded(s.id)">
           <div class="detail-block" *ngIf="s.tools.length">
-            <span class="detail-label">Tool ({{ s.tools.length }})</span>
+            <span class="detail-label">{{ 'mcp.toolsLabel' | t: { n: s.tools.length } }}</span>
             <div class="tool-chips">
               <span class="tool-chip" *ngFor="let t of s.tools" [title]="t.description">{{ t.name }}</span>
             </div>

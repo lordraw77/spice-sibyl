@@ -6,12 +6,14 @@ import { Tag } from '../../core/models/chat.models';
 import { TagService } from '../../core/services/tag.service';
 import { ProfileService } from '../../core/services/profile.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 /** Tag management (per profile). Promoted from the chat sidebar. */
 @Component({
   selector: 'app-tags-page',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TranslatePipe],
   templateUrl: './tags-page.component.html',
   styleUrls: ['./tags-page.component.css'],
 })
@@ -19,6 +21,7 @@ export class TagsPageComponent implements OnInit {
   private readonly tagService = inject(TagService);
   readonly profileService = inject(ProfileService);
   private readonly notifications = inject(NotificationService);
+  private readonly i18n = inject(I18nService);
 
   readonly TAG_COLORS = ['#d6b279', '#e07070', '#89d39a', '#8ed0ff', '#c89aff', '#ff9a5c', '#5ac8c8', '#ff7eb3'];
 
@@ -77,12 +80,12 @@ export class TagsPageComponent implements OnInit {
     if (this.editId) {
       this.tagService.update(this.editId, { name, color: this.formColor }).subscribe({
         next: () => { this.cancelForm(); this.load(); },
-        error: () => this.notifications.add('error', 'Errore', 'Impossibile aggiornare il tag.'),
+        error: () => this.notifications.add('error', this.i18n.translate('common.error'), this.i18n.translate('tags.updateFailed')),
       });
     } else {
       this.tagService.create(name, this.formColor, this.profileService.currentId).subscribe({
         next: () => { this.cancelForm(); this.load(); },
-        error: () => this.notifications.add('error', 'Errore', 'Impossibile creare il tag.'),
+        error: () => this.notifications.add('error', this.i18n.translate('common.error'), this.i18n.translate('tags.createFailed')),
       });
     }
   }
@@ -91,7 +94,7 @@ export class TagsPageComponent implements OnInit {
     event.stopPropagation();
     this.tagService.delete(id).subscribe({
       next: () => this.load(),
-      error: () => this.notifications.add('error', 'Errore', 'Impossibile eliminare il tag.'),
+      error: () => this.notifications.add('error', this.i18n.translate('common.error'), this.i18n.translate('tags.deleteFailed')),
     });
   }
 }

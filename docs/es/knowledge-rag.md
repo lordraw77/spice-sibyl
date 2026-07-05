@@ -1,48 +1,48 @@
-# Knowledge base and RAG
+# Base de conocimiento y RAG
 
-## Document ingestion
+## Ingesta de documentos
 
-**What it does.** Uploads documents (PDF, TXT, DOCX, Markdown) into a per-profile knowledge base. Text is extracted, split into chunks (800 characters, 120 overlap), embedded through the `EMBEDDING_CHAIN` fallback chain (default: Ollama `nomic-embed-text` → Gemini → Mistral) and stored as float32 BLOB vectors in SQLite (`kb_documents` / `kb_chunks`).
+**Qué hace.** Sube documentos (PDF, TXT, DOCX, Markdown) a una base de conocimiento por perfil. El texto se extrae, se divide en chunks (800 caracteres, 120 de solape), se vectoriza mediante la cadena de respaldo `EMBEDDING_CHAIN` (por defecto: Ollama `nomic-embed-text` → Gemini → Mistral) y se almacena como vectores BLOB float32 en SQLite (`kb_documents` / `kb_chunks`).
 
-**How to use it.** Dedicated **Knowledge** page (`/knowledge`, **Risorse → Knowledge** in the navbar, or the *Gestisci →* link next to the RAG switch in the sidebar): upload one or more files, browse the document list, re-index or delete what you no longer need. API: `GET/POST/DELETE /v1/knowledge/documents`, `POST /v1/knowledge/search`.
+**Cómo se usa.** Página dedicada **Conocimiento** (`/knowledge`, **Recursos → Conocimiento** en la barra de navegación, o el enlace *Gestionar →* junto al interruptor RAG de la barra lateral): sube uno o varios archivos, examina la lista de documentos, reindexa o elimina lo que ya no necesites. API: `GET/POST/DELETE /v1/knowledge/documents`, `POST /v1/knowledge/search`.
 
-## URL ingestion
+## Ingesta de URL
 
-**What it does.** `POST /v1/knowledge/urls` fetches a web page (full-text HTML extraction, same approach as the `read_url` tool) and indexes it like an upload. Web-sourced documents carry `source_type`/`source_url` and are flagged 🔗 in the UI.
+**Qué hace.** `POST /v1/knowledge/urls` recupera una página web (extracción de texto completo del HTML, mismo enfoque que la herramienta `read_url`) y la indexa como una subida. Los documentos de origen web llevan `source_type`/`source_url` y se marcan con 🔗 en la interfaz.
 
-**How to use it.** URL field on the Knowledge page → submit → the document appears in the list.
+**Cómo se usa.** Campo URL en la página Conocimiento → enviar → el documento aparece en la lista.
 
-## RAG in conversation
+## RAG en conversación
 
-**What it does.** With the **RAG ON** toggle, on every question the most relevant chunks (top-k) are folded into the last user message before it is sent to the model; the sources come back to the client as an SSE `rag_context` frame and appear as **citation chips** under the response.
+**Qué hace.** Con el interruptor **RAG ON**, en cada pregunta los chunks más relevantes (top-k) se incorporan al último mensaje del usuario antes de enviarlo al modelo; las fuentes vuelven al cliente como un frame SSE `rag_context` y aparecen como **chips de cita** bajo la respuesta.
 
-**How to use it.** Enable the **Knowledge (RAG)** toggle in the sidebar **Funzioni** section; ask questions normally. Clicking a citation deep-links to the exact passage in the document (every chunk stores its `char_start`/`char_end` offsets within the source text, exposed by `GET /v1/knowledge/documents/{id}/source`).
+**Cómo se usa.** Activa el interruptor **Knowledge (RAG)** en la sección **Funciones** de la barra lateral; haz preguntas con normalidad. Al hacer clic en una cita se abre el pasaje exacto del documento (cada chunk guarda sus offsets `char_start`/`char_end` dentro del texto fuente, expuestos por `GET /v1/knowledge/documents/{id}/source`).
 
-**Per-conversation scoping.** Retrieval can be restricted to specific documents: `document_ids` on `/knowledge/search` and `rag_document_ids` on chat completions.
+**Alcance por conversación.** La recuperación puede restringirse a documentos concretos: `document_ids` en `/knowledge/search` y `rag_document_ids` en las chat completions.
 
-**Also from Telegram.** Users with a linked profile (`/link`) can ingest documents (`/kb`), manage them (`/kb list|del`) and enable retrieval (`/rag on`) straight from the bot — see [Telegram bot](telegram.md#knowledge-base-rag).
+**También desde Telegram.** Los usuarios con perfil vinculado (`/link`) pueden ingerir documentos (`/kb`), gestionarlos (`/kb list|del`) y activar la recuperación (`/rag on`) directamente desde el bot — véase [Bot de Telegram](telegram.md#knowledge-base-rag).
 
-## Hybrid search and reranking
+## Búsqueda híbrida y reranking
 
-**What it does.** Retrieval fuses two arms:
+**Qué hace.** La recuperación fusiona dos ramas:
 
-1. **lexical** — FTS5 (`kb_chunks_fts`) with bm25 ranking;
-2. **vector** — cosine similarity (numpy) over the embeddings;
+1. **léxica** — FTS5 (`kb_chunks_fts`) con ranking bm25;
+2. **vectorial** — similitud coseno (numpy) sobre los embeddings;
 
-combined with Reciprocal Rank Fusion. Optionally an **LLM reranker** reorders the candidate pool before context injection, degrading gracefully to the fused order on any error.
+combinadas mediante Reciprocal Rank Fusion. Opcionalmente un **reranker LLM** reordena el pool de candidatos antes de inyectar el contexto, degradando con gracia al orden fusionado ante cualquier error.
 
-**Configuration.**
+**Configuración.**
 
 ```env
-RAG_HYBRID=true            # hybrid search on/off
-RAG_CANDIDATE_POOL=20      # candidate pool size
-RAG_RERANK=llm             # enable the LLM reranker (opt-in)
+RAG_HYBRID=true            # búsqueda híbrida on/off
+RAG_CANDIDATE_POOL=20      # tamaño del pool de candidatos
+RAG_RERANK=llm             # activa el reranker LLM (opt-in)
 RAG_RERANK_MODEL=groq/llama-3.3-70b-versatile
 EMBEDDING_CHAIN=ollama:nomic-embed-text,gemini:text-embedding-004
 ```
 
-## KB maintenance
+## Mantenimiento de la KB
 
-- **Chunk preview**: `GET /documents/{id}/chunks` shows how a document was split.
-- **Re-embed**: button in the UI (`POST /documents/{id}/reembed`) to redo chunking + embedding from the stored source text — useful after changing `EMBEDDING_CHAIN`.
-- **Dedicated vector store**: deferred; for very large corpora the documented upgrade path is `sqlite-vec`.
+- **Vista previa de chunks**: `GET /documents/{id}/chunks` muestra cómo se dividió un documento.
+- **Re-embed**: botón en la interfaz (`POST /documents/{id}/reembed`) para rehacer división + embedding desde el texto fuente guardado — útil tras cambiar `EMBEDDING_CHAIN`.
+- **Almacén vectorial dedicado**: aplazado; para corpus muy grandes la vía de mejora documentada es `sqlite-vec`.

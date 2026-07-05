@@ -19,8 +19,8 @@
 
     <div class="header-actions">
       <button class="btn-run" [disabled]="loading()" (click)="run()">
-        <span *ngIf="!loading()">▶ Esegui Discovery</span>
-        <span *ngIf="loading()" class="spin">⟳ Elaborazione...</span>
+        <span *ngIf="!loading()">▶ {{ 'disc.run' | t }}</span>
+        <span *ngIf="loading()" class="spin">⟳ {{ 'disc.running' | t }}</span>
       </button>
     </div>
   </div>
@@ -30,26 +30,26 @@
   </div>
 
   <div class="save-banner ok" *ngIf="modelCount() !== null">
-    ✓ {{ modelCount() }} modelli salvati nel catalogo ({{ savedAtLabel() }})
+    ✓ {{ 'disc.saved' | t: { n: modelCount(), at: savedAtLabel() } }}
   </div>
 
   <div class="result-row" *ngIf="modelCount() !== null">
     <div class="stat-card">
       <span class="stat-num">{{ modelCount() }}</span>
-      <span class="stat-label">modelli scoperti</span>
+      <span class="stat-label">{{ 'disc.stat.discovered' | t }}</span>
     </div>
     <div class="stat-card">
       <span class="stat-num">{{ freeModelCount() }}</span>
-      <span class="stat-label">modelli free</span>
+      <span class="stat-label">{{ 'disc.stat.free' | t }}</span>
     </div>
     <div class="stat-card">
       <span class="stat-num">{{ uniqueCapabilityCount() }}</span>
-      <span class="stat-label">capability uniche</span>
+      <span class="stat-label">{{ 'disc.stat.caps' | t }}</span>
     </div>
   </div>
 
   <div class="models-section" *ngIf="models().length > 0">
-    <h3 class="section-title">Modelli nel catalogo</h3>
+    <h3 class="section-title">{{ 'disc.catalog' | t }}</h3>
     <div class="models-grid">
       <div class="model-card" *ngFor="let m of models(); trackBy: trackByModelId">
         <div class="model-name">{{ m.label }}</div>

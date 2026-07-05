@@ -2,17 +2,17 @@
 
   <header class="page-header">
     <div>
-      <h1>Usage Statistics</h1>
-      <p class="subtitle">Token consumption, latency and cost across providers and models.</p>
+      <h1>{{ 'stats.title' | t }}</h1>
+      <p class="subtitle">{{ 'stats.subtitle' | t }}</p>
     </div>
     <div class="header-badges" *ngIf="!loading() && stats() as s">
-      <span class="chip">{{ s.by_profile.length }} profil{{ s.by_profile.length === 1 ? 'o' : 'i' }}</span>
-      <span class="chip">{{ s.global_stats.total_conversations }} conversazioni</span>
+      <span class="chip">{{ (s.by_profile.length === 1 ? 'stats.profilesOne' : 'stats.profilesMany') | t: { n: s.by_profile.length } }}</span>
+      <span class="chip">{{ 'stats.conversationsChip' | t: { n: s.global_stats.total_conversations } }}</span>
     </div>
   </header>
 
   <div class="state-banner" *ngIf="loading()">
-    <span class="dot-spin"></span> Loading stats…
+    <span class="dot-spin"></span> {{ 'stats.loading' | t }}
   </div>
 
   <div class="state-banner error" *ngIf="error()">{{ error() }}</div>
@@ -22,16 +22,16 @@
     <!-- Summary cards -->
     <div class="summary-grid">
       <div class="stat-card">
-        <span class="stat-label">Messaggi</span>
+        <span class="stat-label">{{ 'stats.messages' | t }}</span>
         <span class="stat-value">{{ s.global_stats.total_messages | number }}</span>
       </div>
       <div class="stat-card">
-        <span class="stat-label">Token totali</span>
+        <span class="stat-label">{{ 'stats.totalTokens' | t }}</span>
         <span class="stat-value">{{ s.global_stats.total_tokens | number }}</span>
         <span class="stat-sub">{{ s.global_stats.total_prompt_tokens | number }} prompt · {{ s.global_stats.total_completion_tokens | number }} completion</span>
       </div>
       <div class="stat-card accent">
-        <span class="stat-label">Costo stimato</span>
+        <span class="stat-label">{{ 'stats.estimatedCost' | t }}</span>
         <span class="stat-value">{{ formatCost(s.global_stats.total_cost) }}</span>
       </div>
     </div>
@@ -39,44 +39,44 @@
     <!-- Usage charts -->
     <section class="charts-section">
       <div class="charts-header">
-        <h2>Andamento</h2>
+        <h2>{{ 'stats.trend' | t }}</h2>
         <div class="chart-range-btns">
-          <button [class.active]="chartDays() === 7" (click)="setChartDays(7)">7g</button>
-          <button [class.active]="chartDays() === 30" (click)="setChartDays(30)">30g</button>
-          <button [class.active]="chartDays() === 90" (click)="setChartDays(90)">90g</button>
+          <button [class.active]="chartDays() === 7" (click)="setChartDays(7)">{{ 'stats.days' | t: { n: 7 } }}</button>
+          <button [class.active]="chartDays() === 30" (click)="setChartDays(30)">{{ 'stats.days' | t: { n: 30 } }}</button>
+          <button [class.active]="chartDays() === 90" (click)="setChartDays(90)">{{ 'stats.days' | t: { n: 90 } }}</button>
         </div>
       </div>
       <div class="charts-grid">
         <div class="chart-card">
-          <span class="chart-title">Token per giorno</span>
+          <span class="chart-title">{{ 'stats.tokensPerDay' | t }}</span>
           <div class="chart-container">
             <canvas #tokensChart></canvas>
           </div>
         </div>
         <div class="chart-card">
-          <span class="chart-title">Costo per giorno</span>
+          <span class="chart-title">{{ 'stats.costPerDay' | t }}</span>
           <div class="chart-container">
             <canvas #costChart></canvas>
           </div>
         </div>
       </div>
-      <p class="no-data-msg" *ngIf="!dailyStats().length">Nessun dato disponibile per il periodo selezionato.</p>
+      <p class="no-data-msg" *ngIf="!dailyStats().length">{{ 'stats.noData' | t }}</p>
     </section>
 
     <!-- By profile -->
     <section class="table-section" *ngIf="s.by_profile.length">
-      <h2>Per profilo</h2>
+      <h2>{{ 'stats.byProfile' | t }}</h2>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Profilo</th>
-              <th class="num">Conversazioni</th>
-              <th class="num">Messaggi</th>
+              <th>{{ 'stats.profile' | t }}</th>
+              <th class="num">{{ 'stats.conversations' | t }}</th>
+              <th class="num">{{ 'stats.messages' | t }}</th>
               <th class="num">Prompt tkn</th>
               <th class="num">Completion tkn</th>
-              <th class="num">Totale tkn</th>
-              <th class="num">Costo stimato</th>
+              <th class="num">{{ 'stats.totalTkn' | t }}</th>
+              <th class="num">{{ 'stats.estimatedCost' | t }}</th>
             </tr>
           </thead>
           <tbody>
@@ -96,20 +96,20 @@
 
     <!-- By provider -->
     <section class="table-section" *ngIf="s.by_provider.length">
-      <h2>Per provider</h2>
+      <h2>{{ 'stats.byProvider' | t }}</h2>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
               <th></th>
               <th>Provider</th>
-              <th class="num">Risposte</th>
+              <th class="num">{{ 'stats.replies' | t }}</th>
               <th class="num">Prompt tkn</th>
               <th class="num">Completion tkn</th>
-              <th class="num">Totale tkn</th>
-              <th class="num">Costo stimato</th>
-              <th class="num">Lat. media</th>
-              <th class="num">t/s medio</th>
+              <th class="num">{{ 'stats.totalTkn' | t }}</th>
+              <th class="num">{{ 'stats.estimatedCost' | t }}</th>
+              <th class="num">{{ 'stats.avgLatency' | t }}</th>
+              <th class="num">{{ 'stats.avgTps' | t }}</th>
             </tr>
           </thead>
           <tbody>
@@ -154,21 +154,21 @@
 
     <!-- By model -->
     <section class="table-section" *ngIf="s.by_model.length">
-      <h2>Per modello</h2>
+      <h2>{{ 'stats.byModel' | t }}</h2>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
               <th></th>
-              <th>Modello</th>
+              <th>{{ 'chat.section.model' | t }}</th>
               <th>Provider</th>
-              <th class="num">Risposte</th>
+              <th class="num">{{ 'stats.replies' | t }}</th>
               <th class="num">Prompt tkn</th>
               <th class="num">Completion tkn</th>
-              <th class="num">Totale tkn</th>
-              <th class="num">Costo stimato</th>
-              <th class="num">Lat. media</th>
-              <th class="num">t/s medio</th>
+              <th class="num">{{ 'stats.totalTkn' | t }}</th>
+              <th class="num">{{ 'stats.estimatedCost' | t }}</th>
+              <th class="num">{{ 'stats.avgLatency' | t }}</th>
+              <th class="num">{{ 'stats.avgTps' | t }}</th>
             </tr>
           </thead>
           <tbody>
@@ -214,7 +214,7 @@
     </section>
 
     <div class="empty" *ngIf="!s.by_provider.length">
-      <p>Nessun dato disponibile. Inizia una conversazione per raccogliere statistiche.</p>
+      <p>{{ 'stats.empty' | t }}</p>
     </div>
 
     <!-- Telegram -->
@@ -223,28 +223,28 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.44 14.08l-2.961-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.71.479z"/></svg>
         Telegram Bot
         <span class="tg-badge" [class.tg-on]="s.telegram.enabled" [class.tg-off]="!s.telegram.enabled">
-          {{ s.telegram.enabled ? 'attivo' : 'disabilitato' }}
+          {{ (s.telegram.enabled ? 'stats.tg.active' : 'stats.tg.disabled') | t }}
         </span>
       </h2>
       <div class="tg-grid" *ngIf="s.telegram.enabled">
         <div class="stat-card">
-          <span class="stat-label">Chat attive</span>
+          <span class="stat-label">{{ 'stats.tg.activeChats' | t }}</span>
           <span class="stat-value">{{ s.telegram.active_chats | number }}</span>
         </div>
         <div class="stat-card">
-          <span class="stat-label">Messaggi ricevuti</span>
+          <span class="stat-label">{{ 'stats.tg.received' | t }}</span>
           <span class="stat-value">{{ s.telegram.messages_received | number }}</span>
         </div>
         <div class="stat-card">
-          <span class="stat-label">Risposte inviate</span>
+          <span class="stat-label">{{ 'stats.tg.sent' | t }}</span>
           <span class="stat-value">{{ s.telegram.messages_sent | number }}</span>
         </div>
         <div class="stat-card" [class.accent-warn]="s.telegram.errors > 0">
-          <span class="stat-label">Errori</span>
+          <span class="stat-label">{{ 'stats.tg.errors' | t }}</span>
           <span class="stat-value">{{ s.telegram.errors | number }}</span>
         </div>
       </div>
-      <p class="tg-note" *ngIf="s.telegram.enabled">I contatori si azzerano al riavvio del backend.</p>
+      <p class="tg-note" *ngIf="s.telegram.enabled">{{ 'stats.tg.note' | t }}</p>
     </section>
 
   </ng-container>

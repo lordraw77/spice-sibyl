@@ -1,15 +1,15 @@
-# Model comparison
+# Modellvergleich
 
-**What it does.** Sends the same prompt to 2–4 models simultaneously and streams the responses in side-by-side columns, each with its own telemetry (latency, tokens, cost). Useful for picking the right model for a use case or comparing quality/speed/cost.
+**Was es macht.** Sendet denselben Prompt gleichzeitig an 2–4 Modelle und streamt die Antworten in nebeneinanderliegenden Spalten, jede mit eigener Telemetrie (Latenz, Tokens, Kosten). Nützlich, um das richtige Modell für einen Anwendungsfall zu wählen oder Qualität/Geschwindigkeit/Kosten zu vergleichen.
 
-![Compare models page](screenshots/compare.png)
+![Seite Modellvergleich](screenshots/compare.png)
 
-**How to use it.**
-1. Go to the **Compare** page.
-2. Select the models in the dropdowns (up to 4 with **+ Aggiungi modello**).
-3. Type the prompt in the text area and press **Confronta** (Compare).
-4. Responses stream in parallel, each in its own column; latency, token counts and estimated cost appear at the bottom of each.
+**So wird es benutzt.**
+1. Gehe zur Seite **Vergleichen**.
+2. Wähle die Modelle in den Dropdowns (bis zu 4 mit **+ Modell hinzufügen**).
+3. Gib den Prompt in das Textfeld ein und drücke **Vergleichen**.
+4. Die Antworten streamen parallel, jede in ihrer eigenen Spalte; Latenz, Token-Zahlen und geschätzte Kosten erscheinen unten in jeder Spalte.
 
-**Notes.**
-- Requests really do run in parallel: the displayed timings are comparable with each other.
-- Every column gets the exact same prompt, without the chat's system prompt: it is a "cold" comparison.
+**Hinweise.**
+- Die Anfragen laufen tatsächlich parallel: die angezeigten Zeiten sind untereinander vergleichbar.
+- Jede Spalte erhält exakt denselben Prompt, ohne den System-Prompt des Chats: es ist ein „kalter" Vergleich.

@@ -7,6 +7,7 @@ import { AuthService } from '../core/services/auth.service';
 import { I18nService } from '../core/i18n/i18n.service';
 import { TranslatePipe } from '../core/i18n/translate.pipe';
 import { Locale } from '../core/i18n/locale';
+import { FlagComponent } from '../core/i18n/flag.component';
 import { ProfileService } from '../core/services/profile.service';
 
 interface NavItem {
@@ -51,7 +52,7 @@ const ICONS = {
 @Component({
   selector: 'app-navbar',
   standalone: true,
-  imports: [CommonModule, RouterLink, RouterLinkActive, TranslatePipe],
+  imports: [CommonModule, RouterLink, RouterLinkActive, TranslatePipe, FlagComponent],
   template: `
     <nav class="navbar">
       <div class="brand">
@@ -114,7 +115,7 @@ const ICONS = {
       <div class="navbar-actions">
         <div class="lang-picker-wrapper">
           <button class="lang-toggle" (click)="toggleLangPicker($event)" [title]="'navbar.language' | t" [attr.aria-label]="'navbar.language' | t">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            <app-flag [code]="i18n.locale()" [size]="14" />
             <span class="lang-code">{{ i18n.locale() }}</span>
           </button>
           <div class="lang-popover" *ngIf="langPickerOpen()" (click)="$event.stopPropagation()">
@@ -123,7 +124,7 @@ const ICONS = {
               class="lang-option"
               [class.active]="i18n.locale() === l.code"
               (click)="setLocale(l.code)"
-            >{{ l.label }}</button>
+            ><app-flag [code]="l.code" [size]="15" /><span>{{ l.name }}</span></button>
           </div>
         </div>
         <div class="accent-picker-wrapper">
@@ -344,6 +345,7 @@ const ICONS = {
     .lang-option {
       display: flex;
       align-items: center;
+      gap: .5rem;
       padding: .45rem .6rem;
       border-radius: .45rem;
       border: none;

@@ -31,6 +31,7 @@ from app.api.v1.endpoints import (
     models,
     profiles,
     providers,
+    settings,
     sharing,
     stats,
     tags,
@@ -69,6 +70,7 @@ api_router.include_router(conversations.router, prefix="/conversations", tags=["
 # workspace/ownership check inside the endpoint (not the profile scope).
 api_router.include_router(comments.router, prefix="/conversations", tags=["comments"], dependencies=_protected)
 api_router.include_router(profiles.router, prefix="/profiles", tags=["profiles"], dependencies=_protected)
+api_router.include_router(settings.router, prefix="/settings", tags=["settings"], dependencies=_protected)
 api_router.include_router(stats.router, prefix="/stats", tags=["stats"], dependencies=_protected)
 api_router.include_router(tools.router, prefix="/tools", tags=["tools"], dependencies=_protected)
 api_router.include_router(knowledge.router, prefix="/knowledge", tags=["knowledge"], dependencies=_protected)

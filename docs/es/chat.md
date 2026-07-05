@@ -1,84 +1,84 @@
-# Web chat
+# Chat web
 
-The console's main page. On the left a **lightweight sidebar** with only the current-chat controls (profile, **Modello**, **Sistema**, **Parametri**) and the feature **ON/OFF switches**; the conversation sits in the middle with the composer at the bottom. The conversation list opens as a dedicated **panel** (the *Conversazioni* button or `Ctrl+K`).
+La página principal de la consola. A la izquierda una **barra lateral ligera** con solo los controles del chat actual (perfil, **Modelo**, **Sistema**, **Parámetros**) y los **interruptores ON/OFF** de las funciones; la conversación está en el centro con el compositor abajo. La lista de conversaciones se abre como un **panel** dedicado (botón *Conversaciones* o `Ctrl+K`).
 
-![Conversation with telemetry](screenshots/chat-conversazione.png)
+![Conversación con telemetría](screenshots/chat-conversazione.png)
 
-## Conversations and streaming
+## Conversaciones y streaming
 
-**What it does.** Every exchange is stored in SQLite (per profile) with full telemetry: provider, latency, time to first token, prompt/completion tokens, speed (tok/s) — shown in the footer of each response. Responses stream in via SSE.
+**Qué hace.** Cada intercambio se guarda en SQLite (por perfil) con su telemetría completa: proveedor, latencia, tiempo hasta el primer token, tokens prompt/completion, velocidad (tok/s) — mostrados al pie de cada respuesta. Las respuestas llegan por streaming vía SSE.
 
-**How to use it.**
-- **New conversation**: **+ Nuova** button in the sidebar or in the Conversations panel (or `Alt+N`).
-- **Open/select a conversation**: **Conversazioni** button in the sidebar (or `Ctrl+K`) → opens the **panel** with search, tag filtering, selection and deletion; picking one loads the conversation and closes the panel.
-- **Model selection**: **Modello** section of the sidebar — filter by capability (chat, vision, tools, free…), text search, a **visible-providers** filter (see below), then pick from the menu. Badges under the selector show provider, configuration status and capabilities.
-- **Send**: type in the composer and hit enter; while generating, the send button turns into **Stop** and aborts the stream.
-- **Delete**: trash icon on the conversation entry, in the Conversations panel.
+**Cómo se usa.**
+- **Nueva conversación**: botón **+ Nueva** en la barra lateral o en el panel de Conversaciones (o `Alt+N`).
+- **Abrir/seleccionar una conversación**: botón **Conversaciones** en la barra lateral (o `Ctrl+K`) → abre el **panel** con búsqueda, filtro por etiqueta, selección y borrado; elegir una carga la conversación y cierra el panel.
+- **Selección de modelo**: sección **Modelo** de la barra lateral — filtro por capacidad (chat, vision, tools, free…), búsqueda de texto, un filtro de **proveedores visibles** (véase abajo), luego elige del menú. Las insignias bajo el selector muestran proveedor, estado de configuración y capacidades.
+- **Enviar**: escribe en el compositor y pulsa Enter; durante la generación, el botón de envío se convierte en **Detener** y aborta el stream.
+- **Eliminar**: icono de papelera en la entrada de conversación, en el panel de Conversaciones.
 
-**Visible-providers filter.** Below the model selector, a row of chips (one per enabled provider) lets you choose **which providers** appear in the model picker; the choice is persisted. To instead curate **which individual models** of a provider show up in the menu, use the [Providers](providers-and-models.md) page.
+**Filtro de proveedores visibles.** Bajo el selector de modelo, una fila de chips (uno por proveedor activado) permite elegir **qué proveedores** aparecen en el selector; la elección se persiste. Para elegir en cambio **qué modelos individuales** de un proveedor aparecen, usa la página [Proveedores](providers-and-models.md).
 
-**Loading indicators.** An animated bar below the topbar shows the current phase: amber while waiting for the model ("In attesa del modello…"), blue during tool execution ("Esecuzione tool…"), standard pace while streaming ("Generazione in corso…").
+**Indicadores de carga.** Una barra animada bajo la barra superior muestra la fase actual: ámbar mientras se espera el modelo («Esperando el modelo…»), azul durante la ejecución de herramientas («Ejecutando herramientas…»), ritmo estándar durante el streaming («Generando…»).
 
-## Message actions
+## Acciones sobre los mensajes
 
-Hover-to-reveal buttons on every message:
+Botones que aparecen al pasar el ratón en cada mensaje:
 
-| Action | Where | Effect |
+| Acción | Dónde | Efecto |
 |--------|-------|--------|
-| 📋 Copy | all | copies the text to the clipboard |
-| 🔊 TTS | responses | reads the message aloud (Web Speech API, Italian default); press again to stop |
-| 🔁 Regenerate | last response | requests a new response **creating a branch** (see below) |
-| ✏️ Edit | last user message | edit and resend |
-| 📌 Pin | all | adds/removes the message from the pinned bar above the chat (click to jump to the message) |
+| 📋 Copiar | todos | copia el texto al portapapeles |
+| 🔊 TTS | respuestas | lee el mensaje en voz alta (Web Speech API, en el idioma activo); vuelve a pulsar para detener |
+| 🔁 Regenerar | última respuesta | pide una nueva respuesta **creando una rama** (véase abajo) |
+| ✏️ Editar | último mensaje del usuario | editar y reenviar |
+| 📌 Fijar | todos | añade/quita el mensaje de la barra de fijados sobre el chat (clic para saltar al mensaje) |
 
-## Response branching
+## Ramas de respuesta
 
-**What it does.** Regenerating does not overwrite: both responses are kept as parallel branches (persisted in SQLite with `parent_id` + `branch_index`).
+**Qué hace.** Regenerar no sobrescribe: ambas respuestas se conservan como ramas paralelas (persistidas en SQLite con `parent_id` + `branch_index`).
 
-**How to use it.** Responses with alternatives show `< 1/3 >` arrows to navigate between branches; the conversation continues from the selected branch.
+**Cómo se usa.** Las respuestas con alternativas muestran flechas `< 1/3 >` para navegar entre ramas; la conversación continúa desde la rama seleccionada.
 
-## System prompt, templates and parameters
+## Prompt de sistema, plantillas y parámetros
 
-- **Sistema** (sidebar): persistent system instructions (localStorage), with save/clear actions.
-- **Template** (dedicated `/templates` page, **Risorse → Template** in the navbar): library of reusable system prompts ("Code review", "ELI5"…). Create/edit/delete templates; **Applica** (Apply) sets the template as the system prompt and returns you to the chat.
-- **Parametri** (sidebar): **temperature** slider (0–2) and **max tokens** field, sent with every request. The completion-notification opt-in also lives here (see [Interface](interface.md)).
+- **Sistema** (barra lateral): instrucciones de sistema persistentes (localStorage), con acciones guardar/borrar.
+- **Plantillas** (página dedicada `/templates`, **Recursos → Plantillas** en la barra de navegación): biblioteca de prompts de sistema reutilizables («Code review», «ELI5»…). Crea/edita/elimina; **Aplicar** establece la plantilla como prompt de sistema y te devuelve al chat.
+- **Parámetros** (barra lateral): control deslizante de **temperatura** (0–2) y campo **max tokens**, enviados con cada petición. El opt-in de notificaciones de finalización también vive aquí (véase [Interfaz](interface.md)).
 
-## Tool calling in chat
+## Tool calling en el chat
 
-**Tool calling ON/OFF** switch in the sidebar. When enabled, the model can invoke registered tools (built-in, custom, MCP); calls and results appear as dedicated bubbles in the conversation — with a spinner on calls still awaiting their result. Details in [Tool calling](tool-calling.md).
+Interruptor **Tool calling ON/OFF** en la barra lateral. Activado, el modelo puede invocar herramientas registradas (integradas, personalizadas, MCP); llamadas y resultados aparecen como burbujas dedicadas — con un spinner en las llamadas aún pendientes de resultado. Detalles en [Llamadas a herramientas](tool-calling.md).
 
-## Images and image generation
+## Imágenes y generación de imágenes
 
-- **Vision (image → text)**: attach images with the composer's 🖼 button, by drag & drop onto the chat area (visual overlay, `image/*` only, 20 MB max) or by pasting from the clipboard. Images are sent base64-encoded to vision-capable models (Gemini, Llama-4-Scout on Groq, …).
-- **Generation (text → image)**: `/imagine <prompt>` command in the composer. Uses the `IMAGE_GENERATION_CHAIN` fallback chain (`provider:model,...` format; supported providers: Gemini/Imagen, HuggingFace FLUX.1-schnell, Cloudflare SDXL, Together FLUX.1-schnell-Free). Direct endpoint: `POST /api/v1/images/generations`.
+- **Visión (imagen → texto)**: adjunta imágenes con el botón 🖼 del compositor, por arrastrar y soltar sobre el área de chat (superposición visual, solo `image/*`, máx. 20 MB) o pegando desde el portapapeles. Las imágenes se envían codificadas en base64 a modelos con visión (Gemini, Llama-4-Scout en Groq, …).
+- **Generación (texto → imagen)**: comando `/imagine <prompt>` en el compositor. Usa la cadena de respaldo `IMAGE_GENERATION_CHAIN` (formato `provider:model,...`; proveedores compatibles: Gemini/Imagen, HuggingFace FLUX.1-schnell, Cloudflare SDXL, Together FLUX.1-schnell-Free). Endpoint directo: `POST /api/v1/images/generations`.
 
-## Voice input
+## Entrada de voz
 
-🎤 button in the composer (Web Speech API): the button pulses while listening and the transcribed text lands in the composer.
+Botón 🎤 en el compositor (Web Speech API): el botón pulsa mientras escucha y el texto transcrito aterriza en el compositor.
 
-## Feature ON/OFF switches in chat
+## Interruptores ON/OFF de funciones en el chat
 
-The sidebar **Funzioni** (Features) section has three switches, each with a **Gestisci →** (Manage) link to its page:
+La sección **Funciones** de la barra lateral tiene tres interruptores, cada uno con un enlace **Gestionar →** a su página:
 
-- **Tool calling ON/OFF** — enables tool use for the chat turn (management on `/tools`).
-- **Knowledge (RAG) ON/OFF** — when enabled, the most relevant chunks are injected into the message and the sources appear as citation chips under the response (documents on `/knowledge`). Details in [Knowledge base and RAG](knowledge-rag.md).
-- **Memoria ON/OFF** — ON = the profile's memories are used; OFF = incognito chat (memories on `/memory`). Details in [Memory and personalization](memory-and-personalization.md).
+- **Tool calling ON/OFF** — activa el uso de herramientas para el turno de chat (gestión en `/tools`).
+- **Knowledge (RAG) ON/OFF** — activado, los chunks más relevantes se inyectan en el mensaje y las fuentes aparecen como chips de cita bajo la respuesta (documentos en `/knowledge`). Detalles en [Base de conocimiento y RAG](knowledge-rag.md).
+- **Memoria ON/OFF** — ON = se usan los recuerdos del perfil; OFF = chat de incógnito (recuerdos en `/memory`). Detalles en [Memoria y personalización](memory-and-personalization.md).
 
-## Conversation search
+## Búsqueda en conversaciones
 
-**What it does.** Full-text search (SQLite FTS5, index kept in sync via triggers) across all the profile's conversations.
+**Qué hace.** Búsqueda de texto completo (SQLite FTS5, índice sincronizado por triggers) en todas las conversaciones del perfil.
 
-**How to use it.** Open the **Conversations** panel (sidebar button or `Ctrl+K`) and use the "Cerca nelle conversazioni…" bar; results appear inline with highlighted snippets; `Escape` clears the search. Endpoint: `GET /api/v1/conversations/search?q=...`.
+**Cómo se usa.** Abre el panel **Conversaciones** (botón de la barra lateral o `Ctrl+K`) y usa la barra «Buscar en las conversaciones…»; los resultados aparecen en línea con fragmentos resaltados; `Escape` limpia la búsqueda. Endpoint: `GET /api/v1/conversations/search?q=...`.
 
-## Organization: tags
+## Organización: etiquetas
 
-Color-coded tags assignable to conversations via popover, with a **tag filter bar** in the Conversations panel. **Tag management** (create/edit/delete with color choice) lives on the dedicated `/tags` page (**Risorse → Tag** in the navbar).
+Etiquetas de colores asignables a conversaciones mediante popover, con una **barra de filtro** en el panel de Conversaciones. La **gestión de etiquetas** (crear/editar/eliminar con elección de color) vive en la página dedicada `/tags` (**Recursos → Etiquetas** en la barra de navegación).
 
-## Export and sharing
+## Exportación y compartir
 
-- **Export**: **MD** and **JSON** buttons in the topbar download the current conversation (`GET /conversations/{id}/export?format=md|json`).
-- **Sharing**: the **Condividi** (Share) button generates a public read-only link (`POST /conversations/{id}/share` → unique token; `/shared/{token}` page with markdown rendering and syntax highlighting, accessible without login). The link is copied to the clipboard.
+- **Exportación**: los botones **MD** y **JSON** de la barra superior descargan la conversación actual (`GET /conversations/{id}/export?format=md|json`).
+- **Compartir**: el botón **Compartir** genera un enlace público de solo lectura (`POST /conversations/{id}/share` → token único; página `/shared/{token}` con renderizado markdown y resaltado de sintaxis, accesible sin iniciar sesión). El enlace se copia al portapapeles.
 
-## Rendering
+## Renderizado
 
-Markdown via `marked` with DOMPurify sanitization; code blocks with language-aware `highlight.js` syntax highlighting.
+Markdown vía `marked` con saneamiento DOMPurify; bloques de código con resaltado de sintaxis `highlight.js` según el lenguaje.

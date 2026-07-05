@@ -1,74 +1,74 @@
-# Workspaces and collaboration
+# Espaces de travail et collaboration
 
-Team features built on the Phase 13 accounts and Phase 17 knowledge base scoping: shared workspaces with role-based access, and threaded comments on shared conversations.
+Fonctionnalités d'équipe bâties sur les comptes de la phase 13 et le cloisonnement de la base de connaissances de la phase 17 : espaces partagés avec accès par rôle, et commentaires en fil sur les conversations partagées.
 
-## Shared workspaces
+## Espaces de travail partagés
 
-**What it does.** A workspace is a team container owned by a user. Other accounts join as **members** with a role, and the owner shares individual conversations and knowledge base documents *into* the workspace, making them visible to every member. Resources keep their original owner — sharing is a join relationship (`workspace_conversations` / `workspace_documents`), not a copy — so unsharing simply removes the link.
+**Ce que ça fait.** Un espace de travail est un conteneur d'équipe possédé par un utilisateur. D'autres comptes le rejoignent comme **membres** avec un rôle, et le propriétaire partage des conversations et des documents de la base de connaissances *dans* l'espace, les rendant visibles à chaque membre. Les ressources gardent leur propriétaire d'origine — le partage est une relation de jointure (`workspace_conversations` / `workspace_documents`), pas une copie — donc retirer le partage supprime simplement le lien.
 
-**Roles.** Four levels, in descending order of privilege:
+**Rôles.** Quatre niveaux, par ordre décroissant de privilège :
 
-| Role | Can do |
-|------|--------|
-| **owner** | Everything, plus rename/delete the workspace and manage every member. Created the workspace; exactly one per workspace. |
-| **admin** | Manage members (add/change role/remove, except the owner) and share/unshare resources. |
-| **editor** | Share/unshare their own resources and comment. |
-| **viewer** | Read shared resources and comment. |
+| Rôle | Peut faire |
+|------|------------|
+| **owner** | Tout, plus renommer/supprimer l'espace et gérer chaque membre. A créé l'espace ; exactement un par espace. |
+| **admin** | Gérer les membres (ajouter/changer de rôle/retirer, sauf le propriétaire) et partager/retirer des ressources. |
+| **editor** | Partager/retirer ses propres ressources et commenter. |
+| **viewer** | Lire les ressources partagées et commenter. |
 
-Any member (including a viewer) can **leave** a workspace themselves; only admin+ can remove *other* members. Sharing a conversation or document requires editor+ **and** ownership of that resource — you cannot share something that is not yours.
+Tout membre (y compris un viewer) peut **quitter** un espace lui-même ; seuls admin+ peuvent retirer *d'autres* membres. Partager une conversation ou un document exige editor+ **et** la propriété de cette ressource — vous ne pouvez pas partager ce qui n'est pas à vous.
 
-**How to use it.** Open the **Workspace** page from the navbar:
+**Comment l'utiliser.** Ouvrez la page **Espace de travail** depuis la navbar :
 
-- The left sidebar lists the workspaces you belong to (with your role and member count) and a field to create a new one — creating it makes you the owner.
-- Selecting a workspace opens the detail pane with three cards: **Members**, **Shared conversations** and **Shared documents**.
-- **Members** — invite by email (the account must already exist), change a member's role inline, or remove them. Management controls appear only for admin+; the owner row is not editable.
-- **Shared conversations / documents** — pick one of your own conversations or KB documents from the dropdown and share it; every member then sees it in the list. The **✕** unshares it (editor+).
+- La barre latérale gauche liste les espaces auxquels vous appartenez (avec votre rôle et le nombre de membres) et un champ pour en créer un nouveau — le créer fait de vous le propriétaire.
+- Sélectionner un espace ouvre le panneau de détail avec trois cartes : **Membres**, **Conversations partagées** et **Documents partagés**.
+- **Membres** — invitez par e-mail (le compte doit déjà exister), changez le rôle d'un membre en ligne, ou retirez-le. Les contrôles de gestion n'apparaissent que pour admin+ ; la ligne du propriétaire n'est pas modifiable.
+- **Conversations / documents partagés** — choisissez une de vos conversations ou documents KB dans la liste déroulante et partagez ; chaque membre le voit alors dans la liste. Le **✕** retire le partage (editor+).
 
-![Workspace management](screenshots/workspace.png)
+![Gestion des espaces de travail](screenshots/workspace.png)
 
 **API.**
 
-| Method & path | Purpose | Minimum role |
-|---------------|---------|--------------|
-| `GET /v1/workspaces` | Workspaces the caller belongs to | member |
-| `POST /v1/workspaces` | Create (caller becomes owner) | — |
-| `PATCH /v1/workspaces/{ws}` | Rename | admin |
-| `DELETE /v1/workspaces/{ws}` | Delete | owner |
-| `GET/POST /v1/workspaces/{ws}/members` | List / invite by email | view / admin |
-| `PATCH/DELETE /v1/workspaces/{ws}/members/{uid}` | Change role / remove (or self-leave) | admin |
-| `GET/POST /v1/workspaces/{ws}/conversations` | List / share a conversation | view / editor |
-| `DELETE /v1/workspaces/{ws}/conversations/{cid}` | Unshare a conversation | editor |
-| `GET/POST /v1/workspaces/{ws}/documents` | List / share a KB document | view / editor |
-| `DELETE /v1/workspaces/{ws}/documents/{did}` | Unshare a KB document | editor |
+| Méthode et chemin | But | Rôle minimum |
+|-------------------|-----|--------------|
+| `GET /v1/workspaces` | Espaces auxquels l'appelant appartient | membre |
+| `POST /v1/workspaces` | Créer (l'appelant devient propriétaire) | — |
+| `PATCH /v1/workspaces/{ws}` | Renommer | admin |
+| `DELETE /v1/workspaces/{ws}` | Supprimer | owner |
+| `GET/POST /v1/workspaces/{ws}/members` | Lister / inviter par e-mail | view / admin |
+| `PATCH/DELETE /v1/workspaces/{ws}/members/{uid}` | Changer de rôle / retirer (ou se retirer) | admin |
+| `GET/POST /v1/workspaces/{ws}/conversations` | Lister / partager une conversation | view / editor |
+| `DELETE /v1/workspaces/{ws}/conversations/{cid}` | Retirer le partage d'une conversation | editor |
+| `GET/POST /v1/workspaces/{ws}/documents` | Lister / partager un document KB | view / editor |
+| `DELETE /v1/workspaces/{ws}/documents/{did}` | Retirer le partage d'un document KB | editor |
 
-## Annotations & comments
+## Annotations et commentaires
 
-**What it does.** Threaded comments on a shared conversation. A comment can be a top-level thread or a reply (`parent_id`), and can optionally be anchored to a specific message (`message_id`). Comments are **soft-deleted** — a removed comment is blanked and flagged rather than dropped, so replies underneath it keep their place in the thread.
+**Ce que ça fait.** Commentaires en fil sur une conversation partagée. Un commentaire peut être un fil de premier niveau ou une réponse (`parent_id`), et peut être facultativement ancré à un message précis (`message_id`). Les commentaires sont **soft-deleted** — un commentaire retiré est vidé et marqué plutôt que supprimé, pour que les réponses en dessous gardent leur place dans le fil.
 
-**Who can see them.** Access mirrors the conversation's reach: its owner, or any member of a workspace it has been shared into, can read and post. Editing and deleting are restricted to the comment's **author** — no one else can alter your text, regardless of workspace role.
+**Qui peut les voir.** L'accès reflète la portée de la conversation : son propriétaire, ou tout membre d'un espace où elle a été partagée, peut lire et poster. La modification et la suppression sont réservées à l'**auteur** du commentaire — personne d'autre ne peut altérer votre texte, quel que soit le rôle dans l'espace.
 
-**How to use it.** In the Workspace page, each shared conversation has a **Commenti / Comments** toggle that opens a threaded panel beneath it. Write a top-level comment in the box, use **Rispondi / Reply** to nest a response, and **Modifica / Elimina** (edit / delete) on your own comments. Threads nest visually by indentation.
+**Comment l'utiliser.** Dans la page Espace de travail, chaque conversation partagée a un bouton **Commentaires** qui ouvre un panneau en fil en dessous. Écrivez un commentaire de premier niveau dans le champ, utilisez **Répondre** pour imbriquer une réponse, et **Modifier / Supprimer** sur vos propres commentaires. Les fils s'imbriquent visuellement par indentation.
 
-![Threaded comments on a shared conversation](screenshots/workspace-commenti.png)
+![Commentaires en fil sur une conversation partagée](screenshots/workspace-commenti.png)
 
-**API** (under `/v1/conversations/{id}/comments`):
+**API** (sous `/v1/conversations/{id}/comments`) :
 
-| Method & path | Purpose |
-|---------------|---------|
-| `GET /` | List every comment on the conversation (threaded client-side by `parent_id`) |
-| `POST /` | Add a comment (`body`, optional `message_id`, optional `parent_id`) |
-| `PATCH /{comment_id}` | Edit your comment |
-| `DELETE /{comment_id}` | Soft-delete your comment |
+| Méthode et chemin | But |
+|-------------------|-----|
+| `GET /` | Lister tous les commentaires de la conversation (mis en fil côté client par `parent_id`) |
+| `POST /` | Ajouter un commentaire (`body`, `message_id` facultatif, `parent_id` facultatif) |
+| `PATCH /{comment_id}` | Modifier votre commentaire |
+| `DELETE /{comment_id}` | Soft-delete de votre commentaire |
 
-A caller with no relationship to the conversation gets a `404` (rather than `403`) so the existence of private conversations is never leaked.
+Un appelant sans relation avec la conversation obtient un `404` (plutôt qu'un `403`) pour ne jamais divulguer l'existence de conversations privées.
 
-## Data model
+## Modèle de données
 
-- `workspaces` — `id`, `name`, `owner_id`, timestamps.
-- `workspace_members` — `(workspace_id, user_id)` with `role`; the owner is stored as a member row (`role='owner'`) so membership queries are uniform.
-- `workspace_conversations` / `workspace_documents` — join tables linking a workspace to shared conversations / KB documents, with `shared_by` and `shared_at`.
-- `comments` — `id`, `conversation_id`, nullable `message_id`, nullable `parent_id`, `user_id`, `body`, `deleted`, timestamps.
+- `workspaces` — `id`, `name`, `owner_id`, horodatages.
+- `workspace_members` — `(workspace_id, user_id)` avec `role` ; le propriétaire est stocké comme ligne membre (`role='owner'`) pour uniformiser les requêtes d'appartenance.
+- `workspace_conversations` / `workspace_documents` — tables de jointure liant un espace aux conversations / documents KB partagés, avec `shared_by` et `shared_at`.
+- `comments` — `id`, `conversation_id`, `message_id` nullable, `parent_id` nullable, `user_id`, `body`, `deleted`, horodatages.
 
-All tables cascade on delete via foreign keys, so removing a workspace, conversation or user cleans up the dependent rows automatically.
+Toutes les tables cascadent à la suppression via des clés étrangères, donc supprimer un espace, une conversation ou un utilisateur nettoie automatiquement les lignes dépendantes.
 
-> Real-time collaboration (multiple users live in one conversation over WebSocket, with presence indicators) is planned as Phase 20.c and is not yet implemented.
+> La collaboration en temps réel (plusieurs utilisateurs en direct dans une conversation via WebSocket, avec indicateurs de présence) est prévue comme phase 20.c et n'est pas encore implémentée.

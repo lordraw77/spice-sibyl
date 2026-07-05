@@ -2,16 +2,15 @@
 
   <header class="page-header">
     <div>
-      <h1>Memoria 🧠</h1>
+      <h1>{{ 'mem.title' | t }}</h1>
       <p class="subtitle">
-        Fatti su di te ricordati tra le conversazioni del profilo
-        <strong>{{ profileService.current()?.name || 'default' }}</strong> e usati per personalizzare le risposte.
-        Il toggle <strong>incognito ON/OFF</strong> resta nella sidebar della chat.
+        {{ 'mem.subtitle.a' | t }}
+        <strong>{{ profileService.current()?.name || 'default' }}</strong> {{ 'mem.subtitle.b' | t }}
       </p>
     </div>
     <div class="head-actions">
-      <button class="btn-ghost" (click)="load()" [disabled]="loading()">Aggiorna</button>
-      <button class="btn-danger" *ngIf="memories().length" (click)="forgetAll()">Dimentica tutto</button>
+      <button class="btn-ghost" (click)="load()" [disabled]="loading()">{{ 'common.refresh' | t }}</button>
+      <button class="btn-danger" *ngIf="memories().length" (click)="forgetAll()">{{ 'mem.forgetAll' | t }}</button>
     </div>
   </header>
 
@@ -19,7 +18,7 @@
   <section class="card">
     <label class="switch-row">
       <input type="checkbox" [checked]="memoryProfileEnabled()" (change)="toggleProfileMemory()" />
-      <span>Estrazione automatica dei ricordi (profilo)</span>
+      <span>{{ 'mem.autoExtract' | t }}</span>
     </label>
 
     <div class="add-row">
@@ -29,10 +28,10 @@
       <input
         type="text"
         class="text-input"
-        placeholder="Aggiungi un ricordo…"
+        [placeholder]="'mem.addPlaceholder' | t"
         [(ngModel)]="formContent"
         (keyup.enter)="add()" />
-      <button class="btn" (click)="add()" [disabled]="!formContent.trim()">Aggiungi</button>
+      <button class="btn" (click)="add()" [disabled]="!formContent.trim()">{{ 'common.add' | t }}</button>
     </div>
   </section>
 
@@ -44,15 +43,15 @@
         <span class="mem-content" [title]="mem.content">{{ mem.content }}</span>
       </div>
       <div class="item-actions">
-        <button class="btn-ghost sm" (click)="toggleItem(mem)" [title]="mem.enabled ? 'Disattiva' : 'Attiva'">
-          {{ mem.enabled ? 'Attivo' : 'Disattivo' }}
+        <button class="btn-ghost sm" (click)="toggleItem(mem)" [title]="(mem.enabled ? 'common.disable' : 'common.enable') | t">
+          {{ (mem.enabled ? 'mem.active' : 'mem.inactive') | t }}
         </button>
-        <button class="btn-danger sm" (click)="delete(mem.id, $event)" title="Dimentica">Elimina</button>
+        <button class="btn-danger sm" (click)="delete(mem.id, $event)" [title]="'mem.forget' | t">{{ 'common.delete' | t }}</button>
       </div>
     </li>
   </ul>
   <ng-template #empty>
-    <p class="empty" *ngIf="!loading()">Nessun ricordo salvato.</p>
+    <p class="empty" *ngIf="!loading()">{{ 'mem.empty' | t }}</p>
   </ng-template>
 
 </div>

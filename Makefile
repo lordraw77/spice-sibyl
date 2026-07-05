@@ -11,7 +11,7 @@ APP_VERSION   := $(patsubst v%,%,$(VERSION))
 .PHONY: up down logs backend frontend test-backend install-backend install-frontend \
         build push release prod-up prod-down frontend-docs \
         dev dev-build dev-build-backend dev-build-frontend rebuild publish \
-        tag push-tags
+        tag push-tags clean lclean
 
 # Copy docs/it + screenshots into frontend/public/docs (in-app Help
 # page). Must run before the frontend/nginx image builds: their contexts only
@@ -64,7 +64,10 @@ dev-build-frontend: frontend-docs
 	docker build --build-arg APP_VERSION=$(APP_VERSION) -f ./nginx/Dockerfile -t $(NGINX_IMAGE):latest .
 
 # One-shot dev workflow: rebuild all images, (re)start the stack detached, tail logs.
-dev: dev-build
+dev: 
+	docker compose down
+	docker system prune -a -f
+	make dev-build
 	docker compose up -d
 	docker compose logs -f
 
@@ -80,6 +83,10 @@ up:
 down:
 	docker compose down
 
+lclean:
+	docker compose down --rmi all --volumes --remove-orphans
+clean:
+	docker system prune -a -f
 logs:
 	docker compose logs -f
 

@@ -15,6 +15,8 @@ import { CommonModule } from '@angular/common';
 import { forkJoin } from 'rxjs';
 
 import { ChatService } from '../../core/services/chat.service';
+import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { UserPreferencesService } from '../../core/services/user-preferences.service';
 import { ChatModel, ProviderStatus, ProviderTestResult } from '../../core/models/chat.models';
 
@@ -33,12 +35,13 @@ interface KeyFormState {
 @Component({
   selector: 'app-providers-page',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, TranslatePipe],
   templateUrl: './providers-page.component.html',
   styleUrl: './providers-page.component.css',
 })
 export class ProvidersPageComponent implements OnInit {
   private readonly chatService = inject(ChatService);
+  private readonly i18n = inject(I18nService);
   private readonly userPrefs = inject(UserPreferencesService);
 
   providers = signal<ProviderStatus[]>([]);
@@ -98,7 +101,7 @@ export class ProvidersPageComponent implements OnInit {
       next: result => this.testStates.update(s => ({ ...s, [providerId]: { testing: false, result } })),
       error: () => this.testStates.update(s => ({
         ...s,
-        [providerId]: { testing: false, result: { provider_id: providerId, ok: false, latency_ms: null, model_count: null, error: 'Request failed' } },
+        [providerId]: { testing: false, result: { provider_id: providerId, ok: false, latency_ms: null, model_count: null, error: this.i18n.translate('chat.err.requestBody') } },
       })),
     });
   }
@@ -199,7 +202,7 @@ export class ProvidersPageComponent implements OnInit {
       error: () => {
         this.keyForms.update(s => ({
           ...s,
-          [providerId]: { ...this.getKeyForm(providerId), saving: false, error: 'Failed to save key.' },
+          [providerId]: { ...this.getKeyForm(providerId), saving: false, error: this.i18n.translate('prov.saveKeyFailed') },
         }));
       },
     });

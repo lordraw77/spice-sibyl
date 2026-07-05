@@ -5,6 +5,8 @@ import { FormsModule } from '@angular/forms';
 import { Comment, CommentService } from '../../core/services/comment.service';
 import { AuthService } from '../../core/services/auth.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { I18nService } from '../../core/i18n/i18n.service';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 interface ThreadNode extends Comment {
   replies: ThreadNode[];
@@ -22,7 +24,7 @@ interface ThreadNode extends Comment {
 @Component({
   selector: 'app-comments-thread',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TranslatePipe],
   templateUrl: './comments-thread.component.html',
   styleUrls: ['./comments-thread.component.css'],
 })
@@ -32,6 +34,7 @@ export class CommentsThreadComponent implements OnChanges {
   private readonly api = inject(CommentService);
   private readonly auth = inject(AuthService);
   private readonly notify = inject(NotificationService);
+  private readonly i18n = inject(I18nService);
 
   readonly comments = signal<Comment[]>([]);
   readonly loading = signal(false);
@@ -76,7 +79,7 @@ export class CommentsThreadComponent implements OnChanges {
     if (!body) return;
     this.api.create(this.conversationId, body).subscribe({
       next: (c) => { this.comments.update((l) => [...l, c]); this.newComment = ''; },
-      error: () => this.notify.add('error', 'Invio commento fallito'),
+      error: () => this.notify.add('error', this.i18n.translate('cmt.postFailed')),
     });
   }
 
@@ -94,7 +97,7 @@ export class CommentsThreadComponent implements OnChanges {
         this.replyingTo.set(null);
         this.replyBody = '';
       },
-      error: () => this.notify.add('error', 'Risposta fallita'),
+      error: () => this.notify.add('error', this.i18n.translate('cmt.replyFailed')),
     });
   }
 
@@ -111,18 +114,18 @@ export class CommentsThreadComponent implements OnChanges {
         this.comments.update((l) => l.map((x) => (x.id === updated.id ? updated : x)));
         this.editingId.set(null);
       },
-      error: () => this.notify.add('error', 'Modifica fallita'),
+      error: () => this.notify.add('error', this.i18n.translate('cmt.editFailed')),
     });
   }
 
   remove(c: Comment): void {
-    if (!confirm('Eliminare questo commento?')) return;
+    if (!confirm(this.i18n.translate('cmt.deleteConfirm'))) return;
     this.api.delete(this.conversationId, c.id).subscribe({
       next: () =>
         this.comments.update((l) =>
           l.map((x) => (x.id === c.id ? { ...x, deleted: true, body: '' } : x)),
         ),
-      error: () => this.notify.add('error', 'Eliminazione fallita'),
+      error: () => this.notify.add('error', this.i18n.translate('ws.deleteFailed')),
     });
   }
 

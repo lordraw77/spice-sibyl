@@ -1,49 +1,49 @@
-# Memory & personalization
+# Mémoire et personnalisation
 
-Phase 19 features: per-profile persistent memory, automatic titles, response cache, reply feedback and the Info page.
+Fonctionnalités de la phase 19 : mémoire persistante par profil, titres automatiques, cache des réponses, feedback sur les réponses et page Informations.
 
-## Per-profile persistent memory
+## Mémoire persistante par profil
 
-**What it does.** SpiceSibyl remembers facts about you across conversations (preferences, personal facts, ongoing projects, standing instructions). After each persisted exchange, an async low-cost LLM call (`MEMORY_EXTRACTION_MODEL`, default = `DEFAULT_MODEL`) extracts noteworthy information and consolidates it into the `profile_memories` table (automatic dedup, capped at `MEMORY_MAX_ITEMS` memories). When memory is on, enabled memories are compacted into a `<user_memory>` block appended to the system prompt (`MEMORY_MAX_CHARS` character budget, most recent first).
+**Ce que ça fait.** SpiceSibyl retient des faits vous concernant à travers les conversations (préférences, faits personnels, projets en cours, instructions permanentes). Après chaque échange persisté, un appel LLM asynchrone à faible coût (`MEMORY_EXTRACTION_MODEL`, défaut = `DEFAULT_MODEL`) extrait les informations notables et les consolide dans la table `profile_memories` (déduplication automatique, plafonnée à `MEMORY_MAX_ITEMS` souvenirs). Quand la mémoire est active, les souvenirs activés sont compactés dans un bloc `<user_memory>` ajouté au prompt système (budget de `MEMORY_MAX_CHARS` caractères, les plus récents d'abord).
 
-**How to use it.**
-- Dedicated **Memoria 🧠** page (`/memory`, **Risorse → Memoria** in the navbar, or the *Gestisci →* link next to the Memory switch in the sidebar): memory list with category (⭐ preference, 💡 fact, 📁 project, 📌 instruction), manual add with category choice, per-memory enable/disable or delete, **Forget all**. The **automatic memory extraction (profile)** checkbox — the *profile-level* switch (when OFF there is no extraction and no injection for the whole profile) — also lives here.
-- The **Memoria ON/OFF** toggle in the sidebar **Funzioni** section is the *per-chat* (incognito) switch: when OFF, new requests neither use nor feed memory.
-- Replies personalized with memory show the **🧠 memoria** chip under the message.
+**Comment l'utiliser.**
+- Page dédiée **Mémoire 🧠** (`/memory`, **Ressources → Mémoire** dans la barre de navigation, ou le lien *Gérer →* à côté de l'interrupteur Mémoire dans la barre latérale) : liste des souvenirs avec catégorie (⭐ préférence, 💡 fait, 📁 projet, 📌 instruction), ajout manuel avec choix de catégorie, activation/désactivation ou suppression par souvenir, **Tout oublier**. La case **extraction automatique des souvenirs (profil)** — l'interrupteur *au niveau du profil* (OFF = ni extraction ni injection pour tout le profil) — se trouve ici aussi.
+- L'interrupteur **Mémoire ON/OFF** dans la section **Fonctions** de la barre latérale est l'interrupteur *par chat* (incognito) : OFF = les nouvelles requêtes n'utilisent ni n'alimentent la mémoire.
+- Les réponses personnalisées par la mémoire affichent la puce **🧠 mémoire** sous le message.
 
-**From Telegram.** `/memory on|off` toggles memory in the current chat (persisted in `telegram_prefs`); `/memory list` shows the memories of the web profile linked via `/link`; `/memory del <id>` forgets one. Injection and extraction only work for linked users.
+**Depuis Telegram.** `/memory on|off` bascule la mémoire dans le chat courant (persistée dans `telegram_prefs`) ; `/memory list` affiche les souvenirs du profil web associé via `/link` ; `/memory del <id>` en oublie un. Injection et extraction ne fonctionnent que pour les utilisateurs associés.
 
 **Configuration.**
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MEMORY_ENABLED` | `true` | Global feature switch |
-| `MEMORY_EXTRACTION_MODEL` | *(empty = `DEFAULT_MODEL`)* | Model for the async extraction call |
-| `MEMORY_MAX_CHARS` | `2000` | Character budget of the injected block |
-| `MEMORY_MAX_ITEMS` | `100` | Max memories per profile |
+| Variable | Défaut | Description |
+|----------|--------|-------------|
+| `MEMORY_ENABLED` | `true` | Interrupteur global de la fonctionnalité |
+| `MEMORY_EXTRACTION_MODEL` | *(vide = `DEFAULT_MODEL`)* | Modèle de l'appel d'extraction asynchrone |
+| `MEMORY_MAX_CHARS` | `2000` | Budget en caractères du bloc injecté |
+| `MEMORY_MAX_ITEMS` | `100` | Souvenirs max par profil |
 
-API: `GET/POST /v1/memories`, `PATCH/DELETE /v1/memories/{id}`, `DELETE /v1/memories` (forget all), `GET/PUT /v1/memories/settings`.
+API : `GET/POST /v1/memories`, `PATCH/DELETE /v1/memories/{id}`, `DELETE /v1/memories` (tout oublier), `GET/PUT /v1/memories/settings`.
 
-## Automatic titles (LLM auto-titling)
+## Titres automatiques (auto-titling LLM)
 
-**What it does.** After a conversation's first persisted exchange, a background task generates a concise title (max 6 words, in the conversation's language) replacing the old "first 60 chars of the first message" heuristic. The conversation list (Conversations panel) refreshes on its own a few seconds later.
+**Ce que ça fait.** Après le premier échange persisté d'une conversation, une tâche d'arrière-plan génère un titre concis (max 6 mots, dans la langue de la conversation) remplaçant l'ancienne heuristique « 60 premiers caractères du premier message ». La liste des conversations se rafraîchit d'elle-même quelques secondes plus tard.
 
-**Configuration.** `AUTO_TITLE_ENABLED` (default `true`), `TITLE_MODEL` (empty = `MEMORY_EXTRACTION_MODEL`, then `DEFAULT_MODEL`).
+**Configuration.** `AUTO_TITLE_ENABLED` (défaut `true`), `TITLE_MODEL` (vide = `MEMORY_EXTRACTION_MODEL`, puis `DEFAULT_MODEL`).
 
-## Response cache
+## Cache des réponses
 
-**What it does.** Completed replies go into an in-memory LRU cache keyed exactly on model + messages + temperature + max tokens. An identical request within the TTL skips the provider entirely: the reply is replayed in one shot with the **⚡ cache** chip and zero latency. Requests with tools, `agent/*` models and multimodal content (images) are never cached.
+**Ce que ça fait.** Les réponses terminées vont dans un cache LRU en mémoire, indexé exactement sur modèle + messages + température + max tokens. Une requête identique dans le TTL saute complètement le fournisseur : la réponse est rejouée d'un coup avec la puce **⚡ cache** et une latence nulle. Les requêtes avec outils, modèles `agent/*` et contenu multimodal (images) ne sont jamais mises en cache.
 
-**Configuration.** `RESPONSE_CACHE_ENABLED` (default `true`), `RESPONSE_CACHE_TTL_SECONDS` (default `600`), `RESPONSE_CACHE_MAX_ENTRIES` (default `256`). Hit/miss stats are visible on the **Info** page.
+**Configuration.** `RESPONSE_CACHE_ENABLED` (défaut `true`), `RESPONSE_CACHE_TTL_SECONDS` (défaut `600`), `RESPONSE_CACHE_MAX_ENTRIES` (défaut `256`). Les stats hit/miss sont visibles sur la page **Informations**.
 
-## Reply feedback (👍/👎)
+## Feedback sur les réponses (👍/👎)
 
-**What it does.** Every persisted assistant reply can be rated thumbs up/down (optional note on 👎). Ratings feed an exportable dataset for offline model evaluation.
+**Ce que ça fait.** Chaque réponse persistée de l'assistant peut être notée pouce haut/bas (note facultative sur 👎). Les évaluations alimentent un jeu de données exportable pour l'évaluation hors ligne des modèles.
 
-**How to use it.**
-- Hover over a reply: 👍 and 👎 appear among the actions. Clicking the active icon again clears the rating.
-- Export the dataset from `GET /v1/feedback/export`: every rated reply is paired with the prompt that generated it (message id, model, provider, rating, note).
-- Regression harness: `backend/scripts/eval_regression.py` re-runs 👍-rated prompts against the gateway and flags replies that drift too far from the approved ones.
+**Comment l'utiliser.**
+- Survolez une réponse : 👍 et 👎 apparaissent parmi les actions. Recliquer l'icône active efface la note.
+- Exportez le jeu de données depuis `GET /v1/feedback/export` : chaque réponse notée est associée au prompt qui l'a générée (id du message, modèle, fournisseur, note, commentaire).
+- Harnais de régression : `backend/scripts/eval_regression.py` rejoue les prompts notés 👍 contre la passerelle et signale les réponses qui s'écartent trop de celles approuvées.
 
 ```bash
 python backend/scripts/eval_regression.py dataset.json \
@@ -51,8 +51,8 @@ python backend/scripts/eval_regression.py dataset.json \
   --email admin@example.com --password ... [--model groq/llama-3.1-8b-instant]
 ```
 
-## Info page
+## Page Informations
 
-**What it does.** The **Info** navbar entry opens a page with: web UI version (from the build-time `package.json`), backend version/environment/uptime (`GET /v1/info`), default model, database (path and size), API endpoints in use (base URL, health, readiness, metrics, OpenAPI docs link), live READY/DEGRADED status and the list of enabled features with cache statistics.
+**Ce que ça fait.** L'entrée **Info** de la barre de navigation ouvre une page avec : version de l'interface web (du `package.json` au moment du build), version/environnement/uptime du backend (`GET /v1/info`), modèle par défaut, base de données (chemin et taille), endpoints API utilisés (URL de base, health, readiness, métriques, lien vers la doc OpenAPI), état READY/DEGRADED en direct et la liste des fonctionnalités activées avec les statistiques du cache.
 
-**Configuration.** The backend version comes from `APP_VERSION` (default aligned with the release); Docker builds stamp it automatically from the release tag (`make release VERSION=v1.9.0`).
+**Configuration.** La version du backend vient de `APP_VERSION` (défaut aligné sur la release) ; les builds Docker l'estampillent automatiquement depuis le tag de release (`make release VERSION=v1.9.0`).
