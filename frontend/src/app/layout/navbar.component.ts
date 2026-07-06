@@ -1,5 +1,6 @@
 import { Component, HostListener, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { ThemeService } from '../core/services/theme.service';
@@ -10,6 +11,7 @@ import { Locale } from '../core/i18n/locale';
 import { FlagComponent } from '../core/i18n/flag.component';
 import { ProfileService } from '../core/services/profile.service';
 import { NotificationPrefsService, NotifyEventType } from '../core/services/notification-prefs.service';
+import { ReminderPrefsService } from '../core/services/reminder-prefs.service';
 
 interface NavItem {
   label: string;
@@ -48,12 +50,14 @@ const ICONS = {
   help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
   ops:
     '<path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/><circle cx="12" cy="12" r="4"/>',
+  reminders:
+    '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 3h6"/>',
 };
 
 @Component({
   selector: 'app-navbar',
   standalone: true,
-  imports: [CommonModule, RouterLink, RouterLinkActive, TranslatePipe, FlagComponent],
+  imports: [CommonModule, FormsModule, RouterLink, RouterLinkActive, TranslatePipe, FlagComponent],
   template: `
     <nav class="navbar">
       <div class="brand">
@@ -164,6 +168,15 @@ const ICONS = {
                 <input type="checkbox" [checked]="notifyPrefsSvc.prefs()[evt.key]" (change)="toggleNotifyPref(evt.key)" />
                 <span>{{ evt.labelKey | t }}</span>
               </label>
+              <span class="section-label">{{ 'reminders.timezoneDefault' | t }}</span>
+              <select
+                class="settings-select"
+                [ngModel]="reminderPrefsSvc.timezone() ?? ''"
+                (ngModelChange)="onReminderTimezoneChange($event)"
+              >
+                <option value="">{{ 'reminders.timezoneDeviceDefault' | t }}</option>
+                <option *ngFor="let tz of timezoneOptions" [value]="tz">{{ tz }}</option>
+              </select>
             </div>
           </div>
           <button class="logout-btn" (click)="logout()" [title]="'navbar.logout' | t">
@@ -483,6 +496,16 @@ const ICONS = {
       color: var(--text-secondary, var(--text-primary));
       cursor: pointer;
     }
+    .settings-select {
+      width: 100%;
+      box-sizing: border-box;
+      background: var(--bg-input, var(--bg-surface));
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: .4rem;
+      padding: .35rem .5rem;
+      font-size: .8rem;
+    }
 
     @media (max-width: 575.98px) {
       .navbar { padding: .6rem 1rem; }
@@ -531,6 +554,19 @@ export class NavbarComponent {
   private readonly router = inject(Router);
   private readonly sanitizer = inject(DomSanitizer);
   readonly notifyPrefsSvc = inject(NotificationPrefsService);
+  readonly reminderPrefsSvc = inject(ReminderPrefsService);
+
+  /** Common IANA timezones offered for the reminder default-timezone override. */
+  readonly timezoneOptions = [
+    'UTC', 'Europe/Rome', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Madrid',
+    'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+    'America/Sao_Paulo', 'Asia/Tokyo', 'Asia/Shanghai', 'Asia/Kolkata', 'Asia/Dubai',
+    'Australia/Sydney',
+  ];
+
+  onReminderTimezoneChange(value: string): void {
+    this.reminderPrefsSvc.set(value || null);
+  }
 
   readonly accentPickerOpen = signal(false);
   readonly langPickerOpen = signal(false);
@@ -578,6 +614,7 @@ export class NavbarComponent {
       children: [
         { label: 'nav.tools', route: '/tools', icon: ICONS.tools },
         { label: 'nav.workflows', route: '/workflows', icon: ICONS.workflow },
+        { label: 'nav.reminders', route: '/reminders', icon: ICONS.reminders },
         { label: 'nav.mcp', route: '/mcp', icon: ICONS.mcp, adminOnly: true },
         { label: 'nav.workspaces', route: '/workspaces', icon: ICONS.workspace },
       ],

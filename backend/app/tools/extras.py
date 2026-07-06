@@ -271,66 +271,22 @@ async def fetch_rss(url: str, max_entries: int = 5) -> str:
 
 # ── create_reminder ──────────────────────────────────────────────────────────
 
-_REL_RE = re.compile(r"^\+?(\d+)\s*(m|min|h|hour[s]?|d|day[s]?)$", re.IGNORECASE)
-_ABS_HM_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
-_ABS_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})$")
+async def create_reminder(
+    text: str, when: str, profile_id: str = "default", recurrence: str | None = None
+) -> str:
+    """Create a reminder for the profile's linked Telegram account.
 
-
-def _parse_when(token: str) -> int | None:
-    """Parse '+30m'/'2h'/'1d', 'HH:MM' or 'YYYY-MM-DD HH:MM' into a unix ts."""
-    import zoneinfo
-
-    try:
-        tz = zoneinfo.ZoneInfo(settings.timezone)
-    except Exception:  # noqa: BLE001 — bad TZ config falls back to UTC
-        tz = None
-    now = datetime.now(tz)
-    token = token.strip()
-
-    rel = _REL_RE.match(token)
-    if rel:
-        amount = int(rel.group(1))
-        unit = rel.group(2)[0].lower()
-        seconds = {"m": 60, "h": 3600, "d": 86400}[unit]
-        return int((now + timedelta(seconds=amount * seconds)).timestamp())
-
-    hm = _ABS_HM_RE.match(token)
-    if hm:
-        hour, minute = int(hm.group(1)), int(hm.group(2))
-        if hour > 23 or minute > 59:
-            return None
-        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if target <= now:
-            target += timedelta(days=1)
-        return int(target.timestamp())
-
-    full = _ABS_DATE_RE.match(token)
-    if full:
-        try:
-            target = datetime(
-                int(full.group(1)), int(full.group(2)), int(full.group(3)),
-                int(full.group(4)), int(full.group(5)), tzinfo=tz,
-            )
-        except ValueError:
-            return None
-        return int(target.timestamp())
-
-    return None
-
-
-async def create_reminder(text: str, when: str, profile_id: str = "default") -> str:
-    """Create a Telegram reminder for the profile's linked Telegram account."""
-    from app.db import telegram_link_repository, telegram_reminder_repository
+    `when` accepts the shared reminder_parsing grammar: relative ('+30m',
+    '2h', '1d'), absolute ('HH:MM', 'YYYY-MM-DD HH:MM'), or natural-language
+    phrases ('domani alle 9', 'tra due ore', ...). `recurrence`, if given, is
+    one of 'daily' or 'weekly:<mon,tue,...>' — the Phase 23.d compact
+    recurrence grammar (see app.services.reminder_parsing).
+    """
+    from app.db import telegram_link_repository
+    from app.services import reminder_service
 
     if not settings.telegram_bot_token:
         return "Error: the Telegram bot is not configured, reminders cannot be delivered"
-
-    fire_at = _parse_when(when)
-    if fire_at is None:
-        return (
-            f"Error: cannot parse time '{when}'. Use '+30m', '2h', '1d', "
-            "'HH:MM' or 'YYYY-MM-DD HH:MM'."
-        )
 
     db = await _connect()
     try:
@@ -344,18 +300,27 @@ async def create_reminder(text: str, when: str, profile_id: str = "default") -> 
         )
 
     chat_id = link["telegram_id"]
-    reminder_id = await telegram_reminder_repository.create(chat_id, chat_id, text, fire_at)
+    import zoneinfo
 
-    scheduled = False
-    try:
-        from app.telegram import bot as tg_bot
-        scheduled = tg_bot.schedule_external_reminder(reminder_id, chat_id, text, fire_at)
-    except Exception:  # noqa: BLE001 — the row survives; it reloads at next boot
-        logger.exception("create_reminder: live scheduling failed, will load at next boot")
+    from app.services import reminder_parsing
 
+    tz = zoneinfo.ZoneInfo(settings.timezone)
+    parsed = reminder_parsing.parse_recurrence_and_when(f"{when} {text}", tz)
+    if parsed is None:
+        return (
+            f"Error: cannot parse time '{when}'. Use '+30m', '2h', '1d', "
+            "'HH:MM', 'YYYY-MM-DD HH:MM', or a natural-language phrase."
+        )
+    _, fire_at, parsed_text = parsed
+    final_recurrence = recurrence or "once"
+
+    reminder_id = await reminder_service.create(
+        owner_profile_id=profile_id, chat_id=chat_id, text=parsed_text,
+        recurrence=final_recurrence, fire_at=fire_at, timezone=settings.timezone,
+        channels="telegram",
+    )
     when_str = datetime.fromtimestamp(fire_at).strftime("%Y-%m-%d %H:%M")
-    note = "" if scheduled else " (bot offline: it will be scheduled at next startup)"
-    return f"Reminder set for {when_str} ({settings.timezone}): {text}{note}"
+    return f"Reminder set for {when_str} ({settings.timezone}, recurrence={final_recurrence}) [id={reminder_id[:8]}]: {parsed_text}"
 
 
 # ── extract_document ─────────────────────────────────────────────────────────

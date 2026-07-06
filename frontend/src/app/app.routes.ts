@@ -64,6 +64,14 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'reminders',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/reminders/reminders-page.component').then(
+        (m) => m.RemindersPageComponent
+      ),
+  },
+  {
     path: 'mcp',
     canActivate: [authGuard, adminGuard],
     loadComponent: () =>

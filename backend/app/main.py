@@ -57,6 +57,11 @@ async def lifespan(application: FastAPI):
         from app.services import discovery_refresh
         discovery_task = asyncio.create_task(discovery_refresh.refresh_loop())
 
+    # Phase 23.d: channel-agnostic reminder polling loop (fires due reminders
+    # regardless of whether the Telegram bot is running)
+    from app.services import reminder_service
+    reminder_service.start()
+
     # Start Telegram bot if a token is configured
     tg_app = None
     if settings.telegram_bot_token:
@@ -68,6 +73,8 @@ async def lifespan(application: FastAPI):
         logging.getLogger(__name__).info("Telegram bot started (polling)")
 
     yield
+
+    await reminder_service.stop()
 
     if backup_task:
         backup_task.cancel()

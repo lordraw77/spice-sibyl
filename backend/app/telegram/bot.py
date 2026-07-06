@@ -15,7 +15,9 @@ Commands:
   /history          — list recent conversations in this chat
   /search <query>   — full-text search past messages
   /stats            — show global usage statistics
-  /remind <when> <t>— schedule a reminder (HH:MM or +30m/2h/1d), persisted + JobQueue
+  /remind <when> <t>— schedule a reminder (HH:MM, +30m/2h/1d, NL phrases, or
+                      "every day 08:00 …"/"every monday …"/"cron:…" for recurring)
+  /remindai <when> <prompt> — smart reminder: runs a small tool loop at fire time
   /reminders        — list pending reminders; /unremind <id> cancels
   /lang             — switch the bot UI language per chat (it/en)
   Any text          — sent to the active model, reply streamed back
@@ -54,9 +56,10 @@ from app.core.config import settings
 from app.data.model_catalog import iter_configured_models
 from app.db.search_repository import search_conversations
 from app.db.stats_repository import get_usage_stats
-from app.db import telegram_reminder_repository as reminder_repo
+from app.db import reminder_repository as reminder_repo
 from app.db import telegram_prefs_repository as prefs_repo
 from app.db import conversation_repository as conv_repo
+from app.services import reminder_service
 from app.telegram import i18n
 from app.telegram.i18n import t
 from app.dependencies.provider_factory import get_provider
@@ -120,8 +123,8 @@ _active_convs: dict[int, str] = {}
 # active conversation this process (avoids re-reading the DB on every message).
 _hydrated: set[int] = set()
 
-# The running Application, set by build_application — lets the create_reminder
-# tool schedule jobs on the live JobQueue from outside the bot.
+# The running Application, set by build_application — lets notification_service
+# and reminder_service push messages via get_bot() from outside the bot module.
 _application: "Application | None" = None
 
 
@@ -1881,11 +1884,12 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await _stream_reply(chat_id, session, model, reply_sent, update, persist_user=doc_message)
 
 
-# ── Reminders (/remind) ───────────────────────────────────────────────────────
-
-_REL_RE = re.compile(r"^\+?(\d+)\s*([mhd])$", re.IGNORECASE)
-_ABS_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
-_REL_UNIT_SECONDS = {"m": 60, "h": 3600, "d": 86400}
+# ── Reminders (/remind, /remindai) — Phase 23.d ───────────────────────────────
+#
+# Firing is owned by app.services.reminder_service's channel-agnostic polling
+# loop (started in app/main.py's lifespan), not the Telegram JobQueue — a
+# reminder fires whether or not the bot is running, and web-only reminders
+# (no linked Telegram chat) work the same way.
 
 
 def _tz() -> ZoneInfo:
@@ -1905,70 +1909,12 @@ def _fmt_when(fire_at: int, locale: str | None = None) -> str:
     return dt.strftime(fmt)
 
 
-def _parse_when(token: str) -> int | None:
-    """Parse a time token into an absolute unix timestamp.
-
-    Times are interpreted in the configured timezone (settings.timezone), so
-    "/remind 15:50" means 15:50 local regardless of the container's system TZ.
-    Accepts relative ("+30m", "2h", "1d") and absolute ("15:50") forms.  For an
-    absolute time already past today, schedules the next day.  Returns None if
-    the token isn't a recognized time.
-    """
-    now = datetime.now(_tz())
-    rel = _REL_RE.match(token)
-    if rel:
-        amount = int(rel.group(1))
-        unit = rel.group(2).lower()
-        return int((now + timedelta(seconds=amount * _REL_UNIT_SECONDS[unit])).timestamp())
-
-    absolute = _ABS_RE.match(token)
-    if absolute:
-        hour, minute = int(absolute.group(1)), int(absolute.group(2))
-        if hour > 23 or minute > 59:
-            return None
-        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if target <= now:
-            target += timedelta(days=1)
-        return int(target.timestamp())
-
-    return None
-
-
-async def _fire_reminder(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """JobQueue callback: deliver a reminder and mark it fired."""
-    data = context.job.data or {}
-    reminder_id = data.get("id")
-    chat_id = data.get("chat_id")
-    text = data.get("text", "")
-    logger.info("_fire_reminder: delivering id=%s chat_id=%s", reminder_id, chat_id)
-    try:
-        await context.bot.send_message(chat_id=chat_id, text=t(_locale(chat_id), "remind_fired", text=text))
-    except Exception:
-        logger.exception("_fire_reminder: send failed id=%s chat_id=%s", reminder_id, chat_id)
-    finally:
-        if reminder_id:
-            await reminder_repo.mark_fired(reminder_id)
-
-    # Phase 23.c: surface the fired reminder as a web toast/badge for linked users.
-    try:
-        profile_id = await _linked_profile_id(chat_id)
-        if profile_id:
-            from app.db.database import get_db
-            from app.services import notification_service
-            async for db in get_db():
-                await notification_service.notify_web(
-                    db, profile_id, "reminderFired",
-                    title="⏰ Promemoria", body=text,
-                )
-    except Exception:
-        logger.exception("_fire_reminder: notify_web failed id=%s chat_id=%s", reminder_id, chat_id)
-
-
 def get_bot():
     """Return the running Telegram Bot instance, or None if the bot isn't active.
 
-    Lets notification_service (Phase 23.c) push a web→Telegram message without
-    importing the rest of this module, mirroring schedule_external_reminder below.
+    Lets notification_service (Phase 23.c) and reminder_service (Phase 23.d)
+    push a web/reminder → Telegram message without importing the rest of this
+    module.
     """
     return _application.bot if _application is not None else None
 
@@ -1978,61 +1924,51 @@ def is_notify_enabled(chat_id: int) -> bool:
     return _notify_prefs.get(chat_id, True)
 
 
-def schedule_external_reminder(reminder_id: str, chat_id: int, text: str, fire_at: int) -> bool:
-    """Schedule a reminder created outside the bot (Phase 19 create_reminder tool).
-
-    Returns False when the bot isn't running or has no JobQueue — the persisted
-    row is then picked up by _reload_reminders at the next startup.
-    """
-    if _application is None or _application.job_queue is None:
-        return False
-    _schedule_reminder(_application.job_queue, reminder_id, chat_id, text, fire_at)
-    return True
-
-
-def _schedule_reminder(job_queue, reminder_id: str, chat_id: int, text: str, fire_at: int) -> None:
-    """Register a JobQueue job that fires at fire_at (or immediately if past)."""
-    delay = max(fire_at - int(time.time()), 0)
-    job_queue.run_once(
-        _fire_reminder,
-        when=delay,
-        data={"id": reminder_id, "chat_id": chat_id, "text": text},
-        name=f"reminder:{reminder_id}",
-    )
-
-
-async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _do_remind(update: Update, context: ContextTypes.DEFAULT_TYPE, *, smart: bool) -> None:
     user = update.effective_user
     if not _is_allowed(user.id):
-        logger.warning("cmd_remind: accesso negato user_id=%s", user.id)
+        logger.warning("_do_remind: accesso negato user_id=%s", user.id)
         return
     chat_id = update.effective_chat.id
     loc = _locale(chat_id)
 
+    usage_key = "remindai_usage" if smart else "remind_usage"
     if not context.args or len(context.args) < 2:
-        await update.message.reply_text(t(loc, "remind_usage"), parse_mode=ParseMode.HTML)
+        await update.message.reply_text(t(loc, usage_key), parse_mode=ParseMode.HTML)
         return
 
-    if context.job_queue is None:
-        logger.error("cmd_remind: JobQueue non disponibile (manca l'extra python-telegram-bot[job-queue])")
-        await update.message.reply_text(t(loc, "remind_unavailable"))
-        return
-
-    when_token = context.args[0]
-    text = " ".join(context.args[1:]).strip()
-    fire_at = _parse_when(when_token)
-    if fire_at is None:
+    raw = " ".join(context.args)
+    profile_id = await _linked_profile_id(chat_id)
+    created = await reminder_service.create_from_text(
+        raw, owner_profile_id=profile_id, chat_id=chat_id, channels="telegram",
+        tz_name=settings.timezone, smart=smart,
+    )
+    if created is None:
         await update.message.reply_text(t(loc, "remind_invalid_time"), parse_mode=ParseMode.HTML)
         return
 
-    reminder_id = await reminder_repo.create(chat_id, user.id, text, fire_at)
-    _schedule_reminder(context.job_queue, reminder_id, chat_id, text, fire_at)
-    when_str = _fmt_when(fire_at, loc)
-    logger.info("cmd_remind: scheduled chat_id=%s fire_at=%s (in %ds) id=%s", chat_id, when_str, max(fire_at - int(time.time()), 0), reminder_id)
+    when_str = _fmt_when(created["fire_at"], loc)
+    logger.info(
+        "_do_remind: scheduled chat_id=%s recurrence=%s fire_at=%s id=%s smart=%s",
+        chat_id, created["recurrence"], when_str, created["id"], smart,
+    )
     await update.message.reply_text(
-        t(loc, "remind_set", when=when_str, text=text, short_id=reminder_id[:8]),
+        t(
+            loc, "remind_set", when=when_str, text=created["text"],
+            short_id=created["id"][:8], recurrence=created["recurrence"],
+        ),
         parse_mode=ParseMode.HTML,
     )
+
+
+async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _do_remind(update, context, smart=False)
+
+
+async def cmd_remindai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Smart reminder: at fire time, runs a small tool loop (fetch_rss/get_weather/
+    kb_search/search_conversations) over the prompt instead of sending static text."""
+    await _do_remind(update, context, smart=True)
 
 
 async def cmd_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2041,13 +1977,15 @@ async def cmd_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     chat_id = update.effective_chat.id
     loc = _locale(chat_id)
-    rows = await reminder_repo.list_pending(chat_id)
+    rows = await reminder_repo.list_for_chat(chat_id)
     if not rows:
         await update.message.reply_text(t(loc, "reminders_none"))
         return
     lines = [t(loc, "reminders_header")]
     for row in rows:
-        lines.append(f"<code>{row['id'][:8]}</code> — {_fmt_when(row['fire_at'], loc)} — {row['text']}")
+        label = row["smart_prompt"] or row["text"] or ""
+        recurrence = "" if row["recurrence"] == "once" else f" [{row['recurrence']}]"
+        lines.append(f"<code>{row['id'][:8]}</code> — {_fmt_when(row['fire_at'], loc)}{recurrence} — {label}")
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
@@ -2062,19 +2000,43 @@ async def cmd_unremind(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     prefix = context.args[0]
-    rows = await reminder_repo.list_pending(chat_id)
+    rows = await reminder_repo.list_for_chat(chat_id)
     match = next((r for r in rows if r["id"].startswith(prefix)), None)
     if not match:
         await update.message.reply_text(t(loc, "unremind_not_found"))
         return
 
-    await reminder_repo.delete(match["id"], chat_id)
-    # Cancel the scheduled job if still pending
-    if context.job_queue is not None:
-        for job in context.job_queue.get_jobs_by_name(f"reminder:{match['id']}"):
-            job.schedule_removal()
+    await reminder_service.delete(match["id"], chat_id=chat_id)
     logger.info("cmd_unremind: cancelled id=%s chat_id=%s", match["id"], chat_id)
     await update.message.reply_text(t(loc, "unremind_done"))
+
+
+async def _cb_reminder_snooze(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    reminder_id = query.data.removeprefix("remind_snooze:")
+    ok = await reminder_service.snooze(reminder_id)
+    if ok:
+        loc = _locale(query.message.chat_id)
+        await query.message.reply_text(t(loc, "remind_snoozed"))
+
+
+async def _cb_reminder_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    reminder_id = query.data.removeprefix("remind_repeat:")
+    await reminder_service.repeat(reminder_id)
+
+
+async def _cb_reminder_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    reminder_id = query.data.removeprefix("remind_delete:")
+    chat_id = query.message.chat_id
+    ok = await reminder_service.delete(reminder_id, chat_id=chat_id)
+    if ok:
+        loc = _locale(chat_id)
+        await query.message.reply_text(t(loc, "remind_deleted"))
 
 
 # ── Language (/lang) ──────────────────────────────────────────────────────────
@@ -2182,18 +2144,6 @@ async def _load_active_convs() -> None:
         logger.exception("_load_active_convs: caricamento conversazioni attive fallito")
 
 
-async def _reload_reminders(app: Application) -> None:
-    """Re-schedule pending reminders persisted across a restart."""
-    if app.job_queue is None:
-        logger.warning("_reload_reminders: JobQueue non disponibile, reminder disabilitati")
-        return
-    rows = await reminder_repo.list_all_pending()
-    for row in rows:
-        _schedule_reminder(app.job_queue, row["id"], row["chat_id"], row["text"], row["fire_at"])
-    if rows:
-        logger.info("_reload_reminders: %d promemoria ripristinati", len(rows))
-
-
 # ── Bot lifecycle ─────────────────────────────────────────────────────────────
 
 _BOT_COMMANDS = [
@@ -2206,7 +2156,8 @@ _BOT_COMMANDS = [
     BotCommand("history", "Conversazioni recenti (riprendi da web o Telegram)"),
     BotCommand("search", "Cerca nelle conversazioni (/search <testo>)"),
     BotCommand("stats", "Statistiche di utilizzo"),
-    BotCommand("remind", "Imposta un promemoria (/remind 15:50 testo)"),
+    BotCommand("remind", "Imposta un promemoria (/remind 15:50 testo, every day 08:00 …)"),
+    BotCommand("remindai", "Promemoria intelligente (esegue un prompt al momento dell'invio)"),
     BotCommand("reminders", "Mostra i promemoria in programma"),
     BotCommand("unremind", "Annulla un promemoria (/unremind <id>)"),
     BotCommand("memory", "Memoria personale (/memory on|off|list|del)"),
@@ -2233,7 +2184,6 @@ async def _post_init(app: Application) -> None:
     await _load_tools_prefs()
     await _load_notify_prefs()
     await _load_active_convs()
-    await _reload_reminders(app)
 
 
 def build_application() -> Application:
@@ -2263,6 +2213,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("search", cmd_search))
     app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CommandHandler("remind", cmd_remind))
+    app.add_handler(CommandHandler("remindai", cmd_remindai))
     app.add_handler(CommandHandler("reminders", cmd_reminders))
     app.add_handler(CommandHandler("unremind", cmd_unremind))
     app.add_handler(CommandHandler("memory", cmd_memory))
@@ -2281,6 +2232,9 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(_cb_quick_action, pattern=r"^qa:"))
     app.add_handler(CallbackQueryHandler(_cb_resume, pattern=r"^resume:"))
     app.add_handler(CallbackQueryHandler(_cb_lang, pattern=r"^lang:"))
+    app.add_handler(CallbackQueryHandler(_cb_reminder_snooze, pattern=r"^remind_snooze:"))
+    app.add_handler(CallbackQueryHandler(_cb_reminder_repeat, pattern=r"^remind_repeat:"))
+    app.add_handler(CallbackQueryHandler(_cb_reminder_delete, pattern=r"^remind_delete:"))
     # Inline query handler
     app.add_handler(InlineQueryHandler(handle_inline_query))
     # Message handlers

@@ -12,6 +12,7 @@ import { PushNotifyService } from './push-notify.service';
 import { NotificationPrefsService, NotifyPrefs } from './notification-prefs.service';
 import { ProfileService } from './profile.service';
 import { UserPreferencesService, UserPreferences } from './user-preferences.service';
+import { ReminderPrefsService } from './reminder-prefs.service';
 
 interface SettingsBlob {
   data: Record<string, unknown>;
@@ -25,6 +26,7 @@ interface UserBlob {
   onboarded?: boolean;
   pushEnabled?: boolean;
   notifyPrefs?: Partial<NotifyPrefs>;
+  reminderTimezone?: string | null;
 }
 
 const SAVE_DEBOUNCE_MS = 600;
@@ -55,6 +57,7 @@ export class SettingsSyncService {
   private readonly notifyPrefs = inject(NotificationPrefsService);
   private readonly profile = inject(ProfileService);
   private readonly userPrefs = inject(UserPreferencesService);
+  private readonly reminderPrefs = inject(ReminderPrefsService);
 
   /** Enabled only after the initial hydrate, so boot never triggers a save. */
   private ready = false;
@@ -112,6 +115,7 @@ export class SettingsSyncService {
       onboarded: this.onboarding.seen(),
       pushEnabled: this.push.enabled(),
       notifyPrefs: this.notifyPrefs.prefs(),
+      reminderTimezone: this.reminderPrefs.timezone(),
     };
   }
 
@@ -160,6 +164,9 @@ export class SettingsSyncService {
     }
     if (data.notifyPrefs && typeof data.notifyPrefs === 'object') {
       this.notifyPrefs.hydrate(data.notifyPrefs);
+    }
+    if (typeof data.reminderTimezone === 'string' || data.reminderTimezone === null) {
+      this.reminderPrefs.hydrate(data.reminderTimezone);
     }
   }
 

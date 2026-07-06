@@ -32,6 +32,7 @@ from app.api.v1.endpoints import (
     notifications,
     profiles,
     providers,
+    reminders,
     settings,
     sharing,
     stats,
@@ -85,4 +86,5 @@ api_router.include_router(memories.router, prefix="/memories", tags=["memories"]
 api_router.include_router(feedback.router, prefix="/feedback", tags=["feedback"], dependencies=_protected)
 api_router.include_router(info.router, prefix="/info", tags=["info"], dependencies=_protected)
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"], dependencies=_protected)
+api_router.include_router(reminders.router, prefix="/reminders", tags=["reminders"], dependencies=_protected)
 api_router.include_router(workspaces.router, prefix="/workspaces", tags=["workspaces"], dependencies=_protected)

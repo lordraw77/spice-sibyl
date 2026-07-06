@@ -70,9 +70,18 @@ Inline buttons after every reply: **Regenerate** (re-runs the last turn), **Tran
 
 `@bot_name question` in any Telegram chat: a direct non-streaming answer (max 300 tokens) as an `InlineQueryResultArticle`, with a 30-second cache.
 
-## Persistent reminders
+## Reminders (cross-channel, Phase 23.d)
 
-Reminders are stored in `telegram_reminders` and scheduled on the python-telegram-bot JobQueue: they **survive restarts** (reloaded on boot). Times use `TIMEZONE`, regardless of the container clock.
+Reminders are stored in a channel-agnostic `reminders` table and fired by a polling loop in `reminder_service.py` (~20s interval) — they run whether or not the Telegram bot is connected, and **survive restarts**. Times use `TIMEZONE` by default, or a per-reminder timezone override set from the web UI.
+
+- **`/remind <when> <text>`** — accepts everything the old syntax did, plus recurrence and natural-language phrasing:
+  - one-shot: `/remind 15:50 Call Mario`, `/remind +30m Check the backups`, `/remind 2h Meeting`, `/remind 2024-06-01 09:00 Trip`
+  - natural language (IT/EN): `/remind tomorrow at 9 Dentist`, `/remind domani alle 9 Dentista`, `/remind tra due ore Call back`, `/remind in two hours Call back`, `/remind il 15 alle 14:30 Review`, `/remind dopodomani Follow up`, `/remind stasera Water the plants`, or a bare weekday like `/remind monday Team sync`
+  - recurring: `/remind every day 08:00 Take vitamins`, `/remind every monday Weekly meeting`, or a power-user cron with `/remind cron:0,8,*,*,1-5 Weekday alarm` (5 comma-separated fields — `min,hour,dom,mon,dow` — since Telegram splits command args on whitespace)
+- **`/remindai <when> <prompt>`** — a **smart reminder**: instead of static text, at fire time it runs the prompt through a small bounded tool loop (max 4 steps, with `fetch_rss` / `get_weather` / `kb_search` / `search_conversations`) and delivers whatever the model produces, e.g. `/remindai every day 08:00 summarize my RSS feeds`.
+- **`/reminders`** · **`/unremind <id>`** — unchanged in spirit, now backed by the unified table; `/reminders` shows the recurrence tag (e.g. `[daily]`, `[weekly:mon]`) next to each entry.
+- **Snooze / repeat / delete** — a fired reminder on Telegram carries an inline keyboard: 💤 snoozes it by 10 minutes (reschedules `fire_at`, does not affect recurrence), 🔁 re-delivers the same content immediately without touching the schedule, 🗑 deletes the reminder outright (cancels any future recurrence too).
+- **Web management** — the Reminders panel on the web UI (`/reminders` route) can create, edit, pause/resume and delete reminders, and set a per-user timezone override, backed by `GET/POST/PATCH/DELETE /v1/reminders`, `POST /v1/reminders/{id}/snooze` and `POST /v1/reminders/{id}/repeat`. A reminder created from the web can target delivery channel `telegram`, `web`, or `both`, with matching snooze/repeat toast actions on `reminderFired` events.
 
 ## Cross-channel notifications (Phase 23.c)
 

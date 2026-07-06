@@ -1,0 +1,139 @@
+<div class="rem-shell">
+
+  <header class="page-header">
+    <div>
+      <h1>{{ 'reminders.title' | t }}</h1>
+      <p class="subtitle">{{ 'reminders.subtitle' | t }}</p>
+    </div>
+    <div class="head-actions">
+      <button class="btn-ghost" (click)="refresh()" [disabled]="loading()">{{ 'common.refresh' | t }}</button>
+    </div>
+  </header>
+
+  <!-- Create / edit -->
+  <section class="rem-card">
+    <div class="card-head">
+      <h2>{{ editingId() ? ('reminders.editTitle' | t) : ('reminders.newTitle' | t) }}</h2>
+    </div>
+
+    <div class="mode-toggle">
+      <button class="mode-btn" [class.active]="promptMode === 'text'" (click)="promptMode = 'text'">{{ 'reminders.mode.text' | t }}</button>
+      <button class="mode-btn" [class.active]="promptMode === 'smart'" (click)="promptMode = 'smart'">{{ 'reminders.mode.smart' | t }}</button>
+    </div>
+
+    <label class="field" *ngIf="promptMode === 'text'">
+      <span class="field-label">{{ 'reminders.text' | t }}</span>
+      <textarea class="rem-textarea" rows="2" [(ngModel)]="text" [placeholder]="'reminders.textPlaceholder' | t"></textarea>
+    </label>
+
+    <label class="field" *ngIf="promptMode === 'smart'">
+      <span class="field-label">{{ 'reminders.smartPrompt' | t }}</span>
+      <textarea class="rem-textarea" rows="2" [(ngModel)]="smartPrompt" [placeholder]="'reminders.smartPromptPlaceholder' | t"></textarea>
+      <span class="field-hint">{{ 'reminders.smartPromptHint' | t }}</span>
+    </label>
+
+    <div class="field-grid">
+      <label class="field grow">
+        <span class="field-label">{{ 'reminders.fireAt' | t }}</span>
+        <input class="rem-input" type="datetime-local" [(ngModel)]="fireAtLocal" />
+      </label>
+      <label class="field">
+        <span class="field-label">{{ 'reminders.timezone' | t }}</span>
+        <input class="rem-input" type="text" [(ngModel)]="timezone" placeholder="Europe/Rome" />
+      </label>
+    </div>
+
+    <fieldset class="field recurrence-field">
+      <span class="field-label">{{ 'reminders.recurrence' | t }}</span>
+      <div class="recurrence-options">
+        <label class="radio-row">
+          <input type="radio" name="recurrenceKind" value="once" [(ngModel)]="recurrenceKind" />
+          <span>{{ 'reminders.recurrence.once' | t }}</span>
+        </label>
+        <label class="radio-row">
+          <input type="radio" name="recurrenceKind" value="daily" [(ngModel)]="recurrenceKind" />
+          <span>{{ 'reminders.recurrence.daily' | t }}</span>
+        </label>
+        <label class="radio-row">
+          <input type="radio" name="recurrenceKind" value="weekly" [(ngModel)]="recurrenceKind" />
+          <span>{{ 'reminders.recurrence.weekly' | t }}</span>
+        </label>
+        <label class="radio-row">
+          <input type="radio" name="recurrenceKind" value="cron" [(ngModel)]="recurrenceKind" />
+          <span>{{ 'reminders.recurrence.cron' | t }}</span>
+        </label>
+      </div>
+
+      <div class="weekday-picker" *ngIf="recurrenceKind === 'weekly'">
+        <label class="weekday-chip" *ngFor="let d of weekdays" [class.active]="selectedWeekdays.includes(d.key)">
+          <input type="checkbox" [checked]="selectedWeekdays.includes(d.key)" (change)="toggleWeekday(d.key)" />
+          {{ d.labelKey | t }}
+        </label>
+      </div>
+
+      <div class="cron-input" *ngIf="recurrenceKind === 'cron'">
+        <input class="rem-input mono" type="text" [(ngModel)]="cronRaw" placeholder="0,8,*,*,1-5" />
+        <span class="field-hint">{{ 'reminders.cronHint' | t }}</span>
+      </div>
+    </fieldset>
+
+    <label class="field">
+      <span class="field-label">{{ 'reminders.channels' | t }}</span>
+      <div class="channel-options">
+        <label class="radio-row" [class.disabled]="!telegramAvailable">
+          <input type="radio" name="channels" value="telegram" [(ngModel)]="channels" [disabled]="!telegramAvailable" />
+          <span>{{ 'reminders.channel.telegram' | t }}</span>
+        </label>
+        <label class="radio-row">
+          <input type="radio" name="channels" value="web" [(ngModel)]="channels" />
+          <span>{{ 'reminders.channel.web' | t }}</span>
+        </label>
+        <label class="radio-row" [class.disabled]="!telegramAvailable">
+          <input type="radio" name="channels" value="both" [(ngModel)]="channels" [disabled]="!telegramAvailable" />
+          <span>{{ 'reminders.channel.both' | t }}</span>
+        </label>
+      </div>
+      <span class="field-hint" *ngIf="!telegramAvailable">{{ 'reminders.telegramNotLinked' | t }}</span>
+    </label>
+
+    <div class="form-row">
+      <button class="btn-ghost" *ngIf="editingId()" (click)="resetForm()">{{ 'common.cancel' | t }}</button>
+      <span *ngIf="!editingId()"></span>
+      <button class="btn" (click)="save()" [disabled]="saving() || !formValid">
+        {{ (saving() ? 'common.loading' : (editingId() ? 'common.save' : 'common.create')) | t }}
+      </button>
+    </div>
+  </section>
+
+  <!-- List -->
+  <section class="rem-card">
+    <div class="card-head"><h2>{{ 'reminders.listTitle' | t: { n: reminders().length } }}</h2></div>
+
+    <p class="muted" *ngIf="!loading() && !reminders().length">{{ 'reminders.empty' | t }}</p>
+
+    <ul class="reminder-list">
+      <li class="reminder" *ngFor="let r of reminders()">
+        <div class="reminder-head">
+          <div class="reminder-main">
+            <span class="badge" [class.off]="!r.active">{{ r.active ? ('reminders.active' | t) : ('reminders.paused' | t) }}</span>
+            <strong class="reminder-text">{{ r.text || r.smart_prompt }}</strong>
+          </div>
+          <div class="reminder-actions">
+            <button class="btn-ghost" *ngIf="r.channels !== 'telegram'" (click)="snooze(r)">{{ 'reminders.snooze' | t }}</button>
+            <button class="btn-ghost" (click)="toggleActive(r)">{{ (r.active ? 'reminders.pause' : 'reminders.resume') | t }}</button>
+            <button class="btn-ghost" (click)="edit(r)">{{ 'common.edit' | t }}</button>
+            <button class="btn-danger" (click)="remove(r)">{{ 'common.delete' | t }}</button>
+          </div>
+        </div>
+        <div class="reminder-meta">
+          <span>{{ recurrenceLabel(r) }}</span>
+          <span>{{ fireAtDisplay(r) }}</span>
+          <span class="chip">{{ channelLabel(r.channels) }}</span>
+          <span *ngIf="r.timezone" class="mono">{{ r.timezone }}</span>
+          <span *ngIf="r.fired" class="muted">{{ 'reminders.fired' | t }}</span>
+        </div>
+      </li>
+    </ul>
+  </section>
+
+</div>

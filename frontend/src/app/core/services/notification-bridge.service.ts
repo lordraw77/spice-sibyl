@@ -17,6 +17,13 @@ import { AppConfigService } from '../config/app-config.service';
 import { AuthService } from './auth.service';
 import { NotificationService } from './notification.service';
 import { NotifyEventType } from './notification-prefs.service';
+import { RemindersService } from './reminders.service';
+import { I18nService } from '../i18n/i18n.service';
+
+interface ReminderFiredMeta {
+  reminderId: string;
+  recurrence: string;
+}
 
 interface NotificationEvent {
   id: string;
@@ -24,6 +31,7 @@ interface NotificationEvent {
   title: string;
   body: string;
   created_at: number;
+  meta?: ReminderFiredMeta | Record<string, unknown> | null;
 }
 
 interface NotificationListResponse {
@@ -37,6 +45,8 @@ export class NotificationBridgeService {
   private readonly config = inject(AppConfigService);
   private readonly auth = inject(AuthService);
   private readonly toasts = inject(NotificationService);
+  private readonly reminders = inject(RemindersService);
+  private readonly i18n = inject(I18nService);
 
   readonly unreadCount = signal(0);
 
@@ -129,6 +139,33 @@ export class NotificationBridgeService {
 
   private handleEvent(event: NotificationEvent): void {
     this.unreadCount.update(n => n + 1);
+
+    const reminderId =
+      event.event_type === 'reminderFired' && event.meta && typeof event.meta === 'object'
+        ? (event.meta as Partial<ReminderFiredMeta>).reminderId
+        : undefined;
+
+    if (reminderId) {
+      // Phase 23.d — snooze or immediately repeat the fired reminder from the toast.
+      this.toasts.add('info', event.title, event.body, 12000, () => this.markRead(event.id), [
+        {
+          label: this.i18n.translate('reminders.snoozeToast'),
+          onClick: () => {
+            this.reminders.snooze(reminderId, 10).subscribe({ error: () => {} });
+            this.markRead(event.id);
+          },
+        },
+        {
+          label: this.i18n.translate('reminders.repeatToast'),
+          onClick: () => {
+            this.reminders.repeat(reminderId).subscribe({ error: () => {} });
+            this.markRead(event.id);
+          },
+        },
+      ]);
+      return;
+    }
+
     this.toasts.add('info', event.title, event.body, 8000, () => this.markRead(event.id));
   }
 }

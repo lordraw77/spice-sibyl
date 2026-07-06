@@ -59,9 +59,18 @@ Botones inline tras cada respuesta: **Regenerar** (repite el último turno), **T
 
 `@nombre_del_bot pregunta` en cualquier chat de Telegram: una respuesta directa sin streaming (máx. 300 tokens) como `InlineQueryResultArticle`, con caché de 30 segundos.
 
-## Recordatorios persistentes
+## Recordatorios (entre canales, Fase 23.d)
 
-Los recordatorios se guardan en `telegram_reminders` y se programan en la JobQueue de python-telegram-bot: **sobreviven a los reinicios** (recargados al arrancar). Las horas usan `TIMEZONE`, independientemente del reloj del contenedor.
+Los recordatorios se guardan en una tabla `reminders` independiente del canal y se disparan mediante un bucle de sondeo en `reminder_service.py` (intervalo de ~20s) — funcionan tanto si el bot de Telegram está conectado como si no, y **sobreviven a los reinicios**. Las horas usan `TIMEZONE` por defecto, o una zona horaria específica por recordatorio configurable desde la interfaz web.
+
+- **`/remind <cuándo> <texto>`** — acepta toda la sintaxis anterior, más recurrencia y frases en lenguaje natural:
+  - puntual: `/remind 15:50 Llamar a Mario`, `/remind +30m Revisar las copias de seguridad`, `/remind 2h Reunión`, `/remind 2024-06-01 09:00 Viaje`
+  - lenguaje natural (IT/EN): `/remind tomorrow at 9 Dentista`, `/remind domani alle 9 Dentista`, `/remind tra due ore Devolver la llamada`, `/remind in two hours Devolver la llamada`, `/remind il 15 alle 14:30 Revisión`, `/remind dopodomani Seguimiento`, `/remind stasera Regar las plantas`, o un día de la semana suelto como `/remind monday Sync de equipo`
+  - recurrentes: `/remind every day 08:00 Tomar las vitaminas`, `/remind every monday Reunión semanal`, o una expresión cron para usuarios avanzados con `/remind cron:0,8,*,*,1-5 Alarma laborable` (5 campos separados por comas — `min,hora,día-mes,mes,día-semana` — porque Telegram separa los argumentos del comando por espacios)
+- **`/remindai <cuándo> <prompt>`** — un **recordatorio inteligente**: en lugar de texto estático, al dispararse ejecuta el prompt en un pequeño bucle de herramientas acotado (máx. 4 pasos, con `fetch_rss` / `get_weather` / `kb_search` / `search_conversations`) y entrega lo que el modelo genere, p. ej. `/remindai every day 08:00 resume mis feeds RSS`.
+- **`/reminders`** · **`/unremind <id>`** — sin cambios de fondo, ahora respaldados por la tabla unificada; `/reminders` muestra la etiqueta de recurrencia (p. ej. `[daily]`, `[weekly:mon]`) junto a cada entrada.
+- **Posponer / repetir / eliminar** — un recordatorio disparado en Telegram lleva un teclado inline: 💤 lo pospone 10 minutos (reprograma `fire_at`, sin afectar a la recurrencia), 🔁 vuelve a entregar el mismo contenido de inmediato sin tocar la programación, 🗑 elimina el recordatorio por completo (cancela también cualquier recurrencia futura).
+- **Gestión desde la web** — el panel de Recordatorios en la interfaz web (ruta `/reminders`) permite crear, editar, pausar/reanudar y eliminar recordatorios, y fijar una zona horaria personal, apoyándose en `GET/POST/PATCH/DELETE /v1/reminders`, `POST /v1/reminders/{id}/snooze` y `POST /v1/reminders/{id}/repeat`. Un recordatorio creado desde la web puede dirigirse al canal `telegram`, `web` o `both`, con las mismas acciones de posponer/repetir en las notificaciones toast de eventos `reminderFired`.
 
 ## Notificaciones entre canales (Fase 23.c)
 

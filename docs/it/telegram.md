@@ -70,9 +70,18 @@ Dopo ogni risposta compaiono pulsanti inline: **Regenerate** (riesegue l'ultimo 
 
 `@nome_bot domanda` in qualunque chat Telegram: risposta diretta non-streaming (max 300 token) come `InlineQueryResultArticle`, con cache di 30 secondi.
 
-## Promemoria persistenti
+## Promemoria (cross-canale, Fase 23.d)
 
-I promemoria sono salvati in `telegram_reminders` e schedulati sulla JobQueue di python-telegram-bot: **sopravvivono al riavvio** (ricaricati al boot). Gli orari usano `TIMEZONE`, indipendentemente dall'orologio del container.
+I promemoria sono salvati in una tabella `reminders` indipendente dal canale e vengono innescati da un loop di polling in `reminder_service.py` (intervallo ~20s) — funzionano che il bot Telegram sia connesso o meno, e **sopravvivono al riavvio**. Gli orari usano `TIMEZONE` di default, oppure un fuso orario specifico per promemoria impostabile dall'interfaccia web.
+
+- **`/remind <quando> <testo>`** — accetta tutta la sintassi precedente, più ricorrenza e frasi in linguaggio naturale:
+  - una tantum: `/remind 15:50 Chiama Mario`, `/remind +30m Controlla i backup`, `/remind 2h Riunione`, `/remind 2024-06-01 09:00 Viaggio`
+  - linguaggio naturale (IT/EN): `/remind domani alle 9 Dentista`, `/remind tomorrow at 9 Dentist`, `/remind tra due ore Richiama`, `/remind in two hours Richiama`, `/remind il 15 alle 14:30 Revisione`, `/remind dopodomani Follow up`, `/remind stasera Annaffia le piante`, oppure un giorno della settimana da solo come `/remind lunedì Sync di team`
+  - ricorrenti: `/remind every day 08:00 Prendi le vitamine`, `/remind every monday Riunione settimanale`, oppure un'espressione cron per utenti avanzati con `/remind cron:0,8,*,*,1-5 Sveglia feriale` (5 campi separati da virgola — `min,ora,giorno-mese,mese,giorno-settimana` — perché Telegram divide gli argomenti del comando sugli spazi)
+- **`/remindai <quando> <prompt>`** — un **promemoria intelligente**: invece di un testo statico, al momento dello scatto esegue il prompt in un piccolo tool loop delimitato (max 4 passi, con `fetch_rss` / `get_weather` / `kb_search` / `search_conversations`) e consegna ciò che il modello produce, ad es. `/remindai every day 08:00 riassumi i miei feed RSS`.
+- **`/reminders`** · **`/unremind <id>`** — invariati nello spirito, ora basati sulla tabella unificata; `/reminders` mostra il tag di ricorrenza (es. `[daily]`, `[weekly:mon]`) accanto a ogni voce.
+- **Posticipa / ripeti / elimina** — un promemoria scattato su Telegram porta una tastiera inline: 💤 lo posticipa di 10 minuti (riprogramma `fire_at`, senza toccare la ricorrenza), 🔁 riconsegna subito lo stesso contenuto senza toccare la programmazione, 🗑 elimina definitivamente il promemoria (annullando anche eventuali ricorrenze future).
+- **Gestione via web** — il pannello Promemoria nell'interfaccia web (rotta `/reminders`) permette di creare, modificare, mettere in pausa/riprendere ed eliminare promemoria, e di impostare un fuso orario personale, basandosi su `GET/POST/PATCH/DELETE /v1/reminders`, `POST /v1/reminders/{id}/snooze` e `POST /v1/reminders/{id}/repeat`. Un promemoria creato dal web può avere come canale di consegna `telegram`, `web` o `both`, con le corrispondenti azioni posticipa/ripeti sui toast per gli eventi `reminderFired`.
 
 ## Notifiche cross-canale (Fase 23.c)
 

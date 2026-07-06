@@ -13,6 +13,13 @@
     <div class="toast-body">
       <span class="toast-title">{{ t.title }}</span>
       <span class="toast-detail" *ngIf="t.detail">{{ t.detail }}</span>
+      <div class="toast-actions" *ngIf="t.actions?.length">
+        <button
+          *ngFor="let a of t.actions"
+          class="toast-action"
+          (click)="runAction(t, a); $event.stopPropagation()"
+        >{{ a.label }}</button>
+      </div>
     </div>
     <button class="toast-close" (click)="dismiss(t.id); $event.stopPropagation()" [attr.aria-label]="'common.close' | t">✕</button>
   </div>

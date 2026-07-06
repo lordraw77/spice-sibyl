@@ -1,6 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { NotificationService, Toast } from '../../core/services/notification.service';
+import { NotificationService, Toast, ToastAction } from '../../core/services/notification.service';
 import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 @Component({
@@ -20,6 +20,11 @@ export class ToastContainerComponent {
   click(toast: Toast): void {
     this.notifications.dismiss(toast.id);
     toast.onClick!();
+  }
+
+  runAction(toast: Toast, action: ToastAction): void {
+    this.notifications.dismiss(toast.id);
+    action.onClick();
   }
 
   trackById(_: number, toast: Toast): string {

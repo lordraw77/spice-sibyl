@@ -90,6 +90,28 @@ CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated
 CREATE INDEX IF NOT EXISTS idx_messages_provider ON messages(provider);
 CREATE INDEX IF NOT EXISTS idx_messages_role ON messages(role);
 
+-- Phase 23.d: unified cross-channel reminders (replaces the Phase 14
+-- telegram_reminders table — see _migrate_reminders below).
+CREATE TABLE IF NOT EXISTS reminders (
+    id               TEXT    PRIMARY KEY,
+    owner_profile_id TEXT,
+    chat_id          INTEGER,
+    text             TEXT,
+    smart_prompt     TEXT,
+    recurrence       TEXT    NOT NULL DEFAULT 'once',
+    fire_at          INTEGER NOT NULL,
+    timezone         TEXT,
+    channels         TEXT    NOT NULL DEFAULT 'telegram',
+    active           INTEGER NOT NULL DEFAULT 1,
+    fired            INTEGER NOT NULL DEFAULT 0,
+    created_at       INTEGER NOT NULL,
+    last_fired_at    INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_reminders_fire ON reminders(fire_at);
+CREATE INDEX IF NOT EXISTS idx_reminders_profile ON reminders(owner_profile_id);
+CREATE INDEX IF NOT EXISTS idx_reminders_chat ON reminders(chat_id);
+
 CREATE TABLE IF NOT EXISTS telegram_links (
     telegram_id INTEGER PRIMARY KEY,
     profile_id  TEXT    NOT NULL UNIQUE,
@@ -484,7 +506,41 @@ async def init_db() -> None:
             except Exception:
                 logger.exception("Unexpected migration error; stmt=%s", stmt)
 
+        await _migrate_reminders(db)
         await _bootstrap_admin(db)
+
+
+async def _migrate_reminders(db: aiosqlite.Connection) -> None:
+    """One-time migration: Phase 14 telegram_reminders -> Phase 23.d reminders.
+
+    Copies every row (recurrence='once', channels='telegram'), best-effort
+    resolving owner_profile_id via the chat's Telegram link, then drops the
+    old table. Guarded by a table-existence check so it runs at most once.
+    """
+    async with db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='telegram_reminders'"
+    ) as cursor:
+        exists = await cursor.fetchone()
+    if not exists:
+        return
+
+    from app.db import telegram_link_repository
+
+    async with db.execute("SELECT * FROM telegram_reminders") as cursor:
+        rows = await cursor.fetchall()
+
+    for row in rows:
+        link = await telegram_link_repository.get_by_telegram_id(db, row["chat_id"])
+        owner_profile_id = link["profile_id"] if link else None
+        await db.execute(
+            "INSERT OR IGNORE INTO reminders "
+            "(id, owner_profile_id, chat_id, text, recurrence, fire_at, channels, active, fired, created_at) "
+            "VALUES (?, ?, ?, ?, 'once', ?, 'telegram', 1, ?, ?)",
+            (row["id"], owner_profile_id, row["chat_id"], row["text"], row["fire_at"], row["fired"], row["created_at"]),
+        )
+    await db.execute("DROP TABLE telegram_reminders")
+    await db.commit()
+    logger.info("Migrated %d reminder row(s) from telegram_reminders to reminders", len(rows))
 
 
 async def _bootstrap_admin(db: aiosqlite.Connection) -> None:

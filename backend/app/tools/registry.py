@@ -213,7 +213,7 @@ TOOL_DEFINITIONS.extend([
             "name": "create_reminder",
             "description": (
                 "Creates a reminder delivered on Telegram to the user's linked account. "
-                "Use when the user asks to be reminded of something."
+                "Use when the user asks to be reminded of something, once or recurring."
             ),
             "parameters": {
                 "type": "object",
@@ -221,7 +221,17 @@ TOOL_DEFINITIONS.extend([
                     "text": {"type": "string", "description": "What to remind the user about"},
                     "when": {
                         "type": "string",
-                        "description": "When to fire: '+30m', '2h', '1d', 'HH:MM' or 'YYYY-MM-DD HH:MM'",
+                        "description": (
+                            "When to fire: '+30m', '2h', '1d', 'HH:MM', 'YYYY-MM-DD HH:MM', "
+                            "or a natural-language phrase ('domani alle 9', 'tra due ore')"
+                        ),
+                    },
+                    "recurrence": {
+                        "type": "string",
+                        "description": (
+                            "Optional: 'daily' to repeat every day at the parsed time, or "
+                            "'weekly:mon,wed' to repeat on specific weekdays. Omit for a one-shot reminder."
+                        ),
                     },
                 },
                 "required": ["text", "when"],

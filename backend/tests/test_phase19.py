@@ -267,16 +267,6 @@ def test_ssrf_guard_blocks_private_hosts():
     assert extras.assert_public_url("ftp://example.com/x") is not None
 
 
-def test_parse_when_relative_and_absolute():
-    now = int(time.time())
-    fire = extras._parse_when("+30m")
-    assert fire is not None and 29 * 60 <= fire - now <= 31 * 60
-    assert extras._parse_when("25:99") is None
-    assert extras._parse_when("domani") is None
-    hm = extras._parse_when("23:59")
-    assert hm is not None and hm > now
-
-
 @pytest.mark.anyio
 async def test_search_conversations_tool_empty_profile():
     result = await extras.search_conversations("qualcosa", profile_id="nonexistent-profile")

@@ -42,7 +42,8 @@ MESSAGES: dict[str, dict[str, str]] = {
             "  /history — mostra conversazione corrente\n"
             "  /search &lt;testo&gt; — cerca nelle conversazioni salvate\n"
             "  /stats — statistiche di utilizzo\n"
-            "  /remind &lt;quando&gt; &lt;testo&gt; — promemoria (es. 15:50 o +30m)\n"
+            "  /remind &lt;quando&gt; &lt;testo&gt; — promemoria (es. 15:50, +30m, ricorrenti)\n"
+            "  /remindai &lt;quando&gt; &lt;prompt&gt; — promemoria intelligente\n"
             "  /reminders — promemoria in programma\n"
             "  /unremind &lt;id&gt; — annulla un promemoria\n"
             "  /memory — memoria personale (on|off|list|del)\n"
@@ -73,11 +74,22 @@ MESSAGES: dict[str, dict[str, str]] = {
             "Esempi:\n"
             "  <code>/remind 15:50 Chiama Mario</code>\n"
             "  <code>/remind +30m Controlla i backup</code>\n"
-            "  <code>/remind 2h Riunione</code>"
+            "  <code>/remind 2h Riunione</code>\n"
+            "  <code>/remind domani alle 9 Dentista</code>\n"
+            "  <code>/remind every day 08:00 Prendi le vitamine</code>\n"
+            "  <code>/remind every monday Riunione settimanale</code>\n"
+            "  <code>/remind cron:0,8,*,*,1-5 Sveglia nei giorni feriali</code>"
+        ),
+        "remindai_usage": (
+            "Uso: <code>/remindai &lt;quando&gt; &lt;prompt&gt;</code>\n"
+            "Al momento dell'invio esegue il prompt (può usare RSS, meteo, knowledge base) "
+            "e consegna il risultato invece di un testo statico.\n"
+            "Esempio: <code>/remindai every day 08:00 riassumi i miei feed RSS</code>"
         ),
         "remind_invalid_time": (
-            "⚠️ Orario non valido. Usa <code>HH:MM</code> (es. 15:50) "
-            "o un valore relativo (es. <code>+30m</code>, <code>2h</code>, <code>1d</code>)."
+            "⚠️ Orario non valido. Usa <code>HH:MM</code> (es. 15:50), "
+            "un valore relativo (es. <code>+30m</code>, <code>2h</code>, <code>1d</code>) "
+            "o una frase come <code>domani alle 9</code>."
         ),
         "remind_unavailable": "⚠️ I promemoria non sono disponibili: lo scheduler non è attivo sul server.",
         "remind_set": (
@@ -85,6 +97,8 @@ MESSAGES: dict[str, dict[str, str]] = {
             "<code>/reminders</code> per vederli, <code>/unremind {short_id}</code> per annullare."
         ),
         "remind_fired": "⏰ Promemoria: {text}",
+        "remind_snoozed": "💤 Promemoria posticipato di 10 minuti.",
+        "remind_deleted": "🗑 Promemoria eliminato.",
         "reminders_none": "Nessun promemoria in programma.",
         "reminders_header": "⏰ <b>Promemoria in programma:</b>\n",
         "unremind_usage": "Uso: <code>/unremind &lt;id&gt;</code>",
@@ -172,7 +186,8 @@ MESSAGES: dict[str, dict[str, str]] = {
             "  /history — show current conversation\n"
             "  /search &lt;text&gt; — search saved conversations\n"
             "  /stats — usage statistics\n"
-            "  /remind &lt;when&gt; &lt;text&gt; — set a reminder (e.g. 15:50 or +30m)\n"
+            "  /remind &lt;when&gt; &lt;text&gt; — set a reminder (e.g. 15:50, +30m, recurring)\n"
+            "  /remindai &lt;when&gt; &lt;prompt&gt; — smart reminder\n"
             "  /reminders — scheduled reminders\n"
             "  /unremind &lt;id&gt; — cancel a reminder\n"
             "  /memory — personal memory (on|off|list|del)\n"
@@ -203,11 +218,22 @@ MESSAGES: dict[str, dict[str, str]] = {
             "Examples:\n"
             "  <code>/remind 15:50 Call Mario</code>\n"
             "  <code>/remind +30m Check the backups</code>\n"
-            "  <code>/remind 2h Meeting</code>"
+            "  <code>/remind 2h Meeting</code>\n"
+            "  <code>/remind tomorrow at 9 Dentist</code>\n"
+            "  <code>/remind every day 08:00 Take vitamins</code>\n"
+            "  <code>/remind every monday Weekly meeting</code>\n"
+            "  <code>/remind cron:0,8,*,*,1-5 Weekday alarm</code>"
+        ),
+        "remindai_usage": (
+            "Usage: <code>/remindai &lt;when&gt; &lt;prompt&gt;</code>\n"
+            "At fire time it runs the prompt (can use RSS, weather, knowledge base) "
+            "and delivers the result instead of static text.\n"
+            "Example: <code>/remindai every day 08:00 summarize my RSS feeds</code>"
         ),
         "remind_invalid_time": (
-            "⚠️ Invalid time. Use <code>HH:MM</code> (e.g. 15:50) "
-            "or a relative value (e.g. <code>+30m</code>, <code>2h</code>, <code>1d</code>)."
+            "⚠️ Invalid time. Use <code>HH:MM</code> (e.g. 15:50), "
+            "a relative value (e.g. <code>+30m</code>, <code>2h</code>, <code>1d</code>), "
+            "or a phrase like <code>tomorrow at 9</code>."
         ),
         "remind_unavailable": "⚠️ Reminders are unavailable: the scheduler is not running on the server.",
         "remind_set": (
@@ -215,6 +241,8 @@ MESSAGES: dict[str, dict[str, str]] = {
             "<code>/reminders</code> to list them, <code>/unremind {short_id}</code> to cancel."
         ),
         "remind_fired": "⏰ Reminder: {text}",
+        "remind_snoozed": "💤 Reminder snoozed for 10 minutes.",
+        "remind_deleted": "🗑 Reminder deleted.",
         "reminders_none": "No reminders scheduled.",
         "reminders_header": "⏰ <b>Scheduled reminders:</b>\n",
         "unremind_usage": "Usage: <code>/unremind &lt;id&gt;</code>",
@@ -302,7 +330,8 @@ MESSAGES: dict[str, dict[str, str]] = {
             "  /history — afficher la conversation en cours\n"
             "  /search &lt;texte&gt; — rechercher dans les conversations enregistrées\n"
             "  /stats — statistiques d'utilisation\n"
-            "  /remind &lt;quand&gt; &lt;texte&gt; — rappel (ex. 15:50 ou +30m)\n"
+            "  /remind &lt;quand&gt; &lt;texte&gt; — rappel (ex. 15:50, +30m, récurrent)\n"
+            "  /remindai &lt;quand&gt; &lt;prompt&gt; — rappel intelligent\n"
             "  /reminders — rappels programmés\n"
             "  /unremind &lt;id&gt; — annuler un rappel\n"
             "  /memory — mémoire personnelle (on|off|list|del)\n"
@@ -333,11 +362,22 @@ MESSAGES: dict[str, dict[str, str]] = {
             "Exemples :\n"
             "  <code>/remind 15:50 Appeler Marie</code>\n"
             "  <code>/remind +30m Vérifier les sauvegardes</code>\n"
-            "  <code>/remind 2h Réunion</code>"
+            "  <code>/remind 2h Réunion</code>\n"
+            "  <code>/remind tomorrow at 9 Dentiste</code>\n"
+            "  <code>/remind every day 08:00 Prendre les vitamines</code>\n"
+            "  <code>/remind every monday Réunion hebdomadaire</code>\n"
+            "  <code>/remind cron:0,8,*,*,1-5 Alarme en semaine</code>"
+        ),
+        "remindai_usage": (
+            "Usage : <code>/remindai &lt;quand&gt; &lt;prompt&gt;</code>\n"
+            "Au déclenchement, exécute le prompt (RSS, météo, base de connaissances) "
+            "et livre le résultat au lieu d'un texte statique.\n"
+            "Exemple : <code>/remindai every day 08:00 résume mes flux RSS</code>"
         ),
         "remind_invalid_time": (
-            "⚠️ Heure invalide. Utilisez <code>HH:MM</code> (ex. 15:50) "
-            "ou une valeur relative (ex. <code>+30m</code>, <code>2h</code>, <code>1d</code>)."
+            "⚠️ Heure invalide. Utilisez <code>HH:MM</code> (ex. 15:50), "
+            "une valeur relative (ex. <code>+30m</code>, <code>2h</code>, <code>1d</code>) "
+            "ou une phrase comme <code>tomorrow at 9</code>."
         ),
         "remind_unavailable": "⚠️ Les rappels sont indisponibles : le planificateur n'est pas actif sur le serveur.",
         "remind_set": (
@@ -345,6 +385,8 @@ MESSAGES: dict[str, dict[str, str]] = {
             "<code>/reminders</code> pour les voir, <code>/unremind {short_id}</code> pour annuler."
         ),
         "remind_fired": "⏰ Rappel : {text}",
+        "remind_snoozed": "💤 Rappel reporté de 10 minutes.",
+        "remind_deleted": "🗑 Rappel supprimé.",
         "reminders_none": "Aucun rappel programmé.",
         "reminders_header": "⏰ <b>Rappels programmés :</b>\n",
         "unremind_usage": "Usage : <code>/unremind &lt;id&gt;</code>",
@@ -432,7 +474,8 @@ MESSAGES: dict[str, dict[str, str]] = {
             "  /history — aktuelle Unterhaltung anzeigen\n"
             "  /search &lt;text&gt; — gespeicherte Unterhaltungen durchsuchen\n"
             "  /stats — Nutzungsstatistiken\n"
-            "  /remind &lt;wann&gt; &lt;text&gt; — Erinnerung (z. B. 15:50 oder +30m)\n"
+            "  /remind &lt;wann&gt; &lt;text&gt; — Erinnerung (z. B. 15:50, +30m, wiederkehrend)\n"
+            "  /remindai &lt;wann&gt; &lt;prompt&gt; — intelligente Erinnerung\n"
             "  /reminders — geplante Erinnerungen\n"
             "  /unremind &lt;id&gt; — eine Erinnerung abbrechen\n"
             "  /memory — persönliches Gedächtnis (on|off|list|del)\n"
@@ -463,11 +506,22 @@ MESSAGES: dict[str, dict[str, str]] = {
             "Beispiele:\n"
             "  <code>/remind 15:50 Maria anrufen</code>\n"
             "  <code>/remind +30m Backups prüfen</code>\n"
-            "  <code>/remind 2h Besprechung</code>"
+            "  <code>/remind 2h Besprechung</code>\n"
+            "  <code>/remind tomorrow at 9 Zahnarzt</code>\n"
+            "  <code>/remind every day 08:00 Vitamine nehmen</code>\n"
+            "  <code>/remind every monday Wöchentliches Meeting</code>\n"
+            "  <code>/remind cron:0,8,*,*,1-5 Wochentags-Wecker</code>"
+        ),
+        "remindai_usage": (
+            "Verwendung: <code>/remindai &lt;wann&gt; &lt;prompt&gt;</code>\n"
+            "Führt beim Auslösen den Prompt aus (RSS, Wetter, Wissensdatenbank) "
+            "und liefert das Ergebnis statt eines statischen Textes.\n"
+            "Beispiel: <code>/remindai every day 08:00 fasse meine RSS-Feeds zusammen</code>"
         ),
         "remind_invalid_time": (
-            "⚠️ Ungültige Uhrzeit. Nutze <code>HH:MM</code> (z. B. 15:50) "
-            "oder einen relativen Wert (z. B. <code>+30m</code>, <code>2h</code>, <code>1d</code>)."
+            "⚠️ Ungültige Uhrzeit. Nutze <code>HH:MM</code> (z. B. 15:50), "
+            "einen relativen Wert (z. B. <code>+30m</code>, <code>2h</code>, <code>1d</code>) "
+            "oder eine Formulierung wie <code>tomorrow at 9</code>."
         ),
         "remind_unavailable": "⚠️ Erinnerungen sind nicht verfügbar: Der Planer läuft nicht auf dem Server.",
         "remind_set": (
@@ -475,6 +529,8 @@ MESSAGES: dict[str, dict[str, str]] = {
             "<code>/reminders</code> zum Anzeigen, <code>/unremind {short_id}</code> zum Abbrechen."
         ),
         "remind_fired": "⏰ Erinnerung: {text}",
+        "remind_snoozed": "💤 Erinnerung um 10 Minuten verschoben.",
+        "remind_deleted": "🗑 Erinnerung gelöscht.",
         "reminders_none": "Keine geplanten Erinnerungen.",
         "reminders_header": "⏰ <b>Geplante Erinnerungen:</b>\n",
         "unremind_usage": "Verwendung: <code>/unremind &lt;id&gt;</code>",
@@ -562,7 +618,8 @@ MESSAGES: dict[str, dict[str, str]] = {
             "  /history — mostrar la conversación actual\n"
             "  /search &lt;texto&gt; — buscar en las conversaciones guardadas\n"
             "  /stats — estadísticas de uso\n"
-            "  /remind &lt;cuándo&gt; &lt;texto&gt; — recordatorio (p. ej. 15:50 o +30m)\n"
+            "  /remind &lt;cuándo&gt; &lt;texto&gt; — recordatorio (p. ej. 15:50, +30m, recurrente)\n"
+            "  /remindai &lt;cuándo&gt; &lt;prompt&gt; — recordatorio inteligente\n"
             "  /reminders — recordatorios programados\n"
             "  /unremind &lt;id&gt; — cancelar un recordatorio\n"
             "  /memory — memoria personal (on|off|list|del)\n"
@@ -593,11 +650,22 @@ MESSAGES: dict[str, dict[str, str]] = {
             "Ejemplos:\n"
             "  <code>/remind 15:50 Llamar a María</code>\n"
             "  <code>/remind +30m Revisar las copias de seguridad</code>\n"
-            "  <code>/remind 2h Reunión</code>"
+            "  <code>/remind 2h Reunión</code>\n"
+            "  <code>/remind tomorrow at 9 Dentista</code>\n"
+            "  <code>/remind every day 08:00 Tomar vitaminas</code>\n"
+            "  <code>/remind every monday Reunión semanal</code>\n"
+            "  <code>/remind cron:0,8,*,*,1-5 Alarma entre semana</code>"
+        ),
+        "remindai_usage": (
+            "Uso: <code>/remindai &lt;cuándo&gt; &lt;prompt&gt;</code>\n"
+            "Al dispararse ejecuta el prompt (RSS, clima, base de conocimiento) "
+            "y entrega el resultado en lugar de un texto estático.\n"
+            "Ejemplo: <code>/remindai every day 08:00 resume mis feeds RSS</code>"
         ),
         "remind_invalid_time": (
-            "⚠️ Hora no válida. Usa <code>HH:MM</code> (p. ej. 15:50) "
-            "o un valor relativo (p. ej. <code>+30m</code>, <code>2h</code>, <code>1d</code>)."
+            "⚠️ Hora no válida. Usa <code>HH:MM</code> (p. ej. 15:50), "
+            "un valor relativo (p. ej. <code>+30m</code>, <code>2h</code>, <code>1d</code>) "
+            "o una frase como <code>tomorrow at 9</code>."
         ),
         "remind_unavailable": "⚠️ Los recordatorios no están disponibles: el planificador no está activo en el servidor.",
         "remind_set": (
@@ -605,6 +673,8 @@ MESSAGES: dict[str, dict[str, str]] = {
             "<code>/reminders</code> para verlos, <code>/unremind {short_id}</code> para cancelar."
         ),
         "remind_fired": "⏰ Recordatorio: {text}",
+        "remind_snoozed": "💤 Recordatorio pospuesto 10 minutos.",
+        "remind_deleted": "🗑 Recordatorio eliminado.",
         "reminders_none": "No hay recordatorios programados.",
         "reminders_header": "⏰ <b>Recordatorios programados:</b>\n",
         "unremind_usage": "Uso: <code>/unremind &lt;id&gt;</code>",
