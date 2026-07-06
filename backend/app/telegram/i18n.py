@@ -143,6 +143,12 @@ MESSAGES: dict[str, dict[str, str]] = {
         ),
         "tools_on": "🔧 Strumenti attivati per questa chat.",
         "tools_off": "🔧 Strumenti disattivati per questa chat.",
+        "notify_usage": (
+            "Uso: <code>/notify on|off</code>\n"
+            "  attiva/disattiva le notifiche dal web per questa chat"
+        ),
+        "notify_on": "🔔 Notifiche dal web attivate per questa chat.",
+        "notify_off": "🔕 Notifiche dal web disattivate per questa chat.",
         "tools_header": "🔧 Strumenti disponibili ({count}):",
         "tools_none": "🔧 Nessuno strumento disponibile.",
         "tools_status_on": "Stato attuale: <b>attivi</b> ✅",
@@ -267,6 +273,12 @@ MESSAGES: dict[str, dict[str, str]] = {
         ),
         "tools_on": "🔧 Tools enabled for this chat.",
         "tools_off": "🔧 Tools disabled for this chat.",
+        "notify_usage": (
+            "Usage: <code>/notify on|off</code>\n"
+            "  enable/disable web-triggered notifications for this chat"
+        ),
+        "notify_on": "🔔 Web notifications enabled for this chat.",
+        "notify_off": "🔕 Web notifications disabled for this chat.",
         "tools_header": "🔧 Available tools ({count}):",
         "tools_none": "🔧 No tools available.",
         "tools_status_on": "Current status: <b>enabled</b> ✅",
@@ -391,6 +403,12 @@ MESSAGES: dict[str, dict[str, str]] = {
         ),
         "tools_on": "🔧 Outils activés pour ce chat.",
         "tools_off": "🔧 Outils désactivés pour ce chat.",
+        "notify_usage": (
+            "Usage : <code>/notify on|off</code>\n"
+            "  active/désactive les notifications depuis le web pour ce chat"
+        ),
+        "notify_on": "🔔 Notifications depuis le web activées pour ce chat.",
+        "notify_off": "🔕 Notifications depuis le web désactivées pour ce chat.",
         "tools_header": "🔧 Outils disponibles ({count}) :",
         "tools_none": "🔧 Aucun outil disponible.",
         "tools_status_on": "État actuel : <b>activés</b> ✅",
@@ -515,6 +533,12 @@ MESSAGES: dict[str, dict[str, str]] = {
         ),
         "tools_on": "🔧 Tools für diesen Chat aktiviert.",
         "tools_off": "🔧 Tools für diesen Chat deaktiviert.",
+        "notify_usage": (
+            "Verwendung: <code>/notify on|off</code>\n"
+            "  Web-Benachrichtigungen für diesen Chat aktivieren/deaktivieren"
+        ),
+        "notify_on": "🔔 Web-Benachrichtigungen für diesen Chat aktiviert.",
+        "notify_off": "🔕 Web-Benachrichtigungen für diesen Chat deaktiviert.",
         "tools_header": "🔧 Verfügbare Tools ({count}):",
         "tools_none": "🔧 Keine Tools verfügbar.",
         "tools_status_on": "Aktueller Status: <b>aktiv</b> ✅",
@@ -639,6 +663,12 @@ MESSAGES: dict[str, dict[str, str]] = {
         ),
         "tools_on": "🔧 Herramientas activadas para este chat.",
         "tools_off": "🔧 Herramientas desactivadas para este chat.",
+        "notify_usage": (
+            "Uso: <code>/notify on|off</code>\n"
+            "  activa/desactiva las notificaciones desde la web para este chat"
+        ),
+        "notify_on": "🔔 Notificaciones desde la web activadas para este chat.",
+        "notify_off": "🔕 Notificaciones desde la web desactivadas para este chat.",
         "tools_header": "🔧 Herramientas disponibles ({count}):",
         "tools_none": "🔧 No hay herramientas disponibles.",
         "tools_status_on": "Estado actual: <b>activadas</b> ✅",

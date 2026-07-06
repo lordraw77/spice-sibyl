@@ -1,8 +1,8 @@
 # SpiceSibyl — One gateway, many minds
 
-SpiceSibyl is an OpenAI-compatible multi-provider AI gateway with a built-in Angular web console.  A single API endpoint routes chat completion requests to any supported backend — local Ollama models, Groq, OpenRouter, Cloudflare Workers AI, Google Gemini, Mistral, Cerebras, Together AI, Fireworks AI, and HuggingFace — without changing the client code.
+SpiceSibyl is an OpenAI-compatible multi-provider AI gateway with a built-in Angular web console and a Telegram bot on the same backend.  A single API endpoint routes chat completion requests to any supported backend — local Ollama models, Groq, OpenRouter, Cloudflare Workers AI, Google Gemini, Mistral, Cerebras, Together AI, Fireworks AI, HuggingFace, and NVIDIA — without changing the client code.
 
-> 📖 **Feature documentation** — detailed per-feature guide with screenshots: [English](docs/en/README.md) · [Italiano](docs/it/README.md)
+> 📖 **Feature documentation** — this file covers architecture, setup, and the original core API; the day-to-day **feature-by-feature guide with screenshots** (auth, RAG, MCP/agents, workflows, workspaces, i18n, notifications, and everything below) lives in [docs/en/README.md](docs/en/README.md) · [docs/it/README.md](docs/it/README.md) · [fr](docs/fr/README.md) · [de](docs/de/README.md) · [es](docs/es/README.md). The full phase-by-phase changelog is [docs/roadmap.md](docs/roadmap.md).
 
 ---
 
@@ -17,16 +17,22 @@ SpiceSibyl is an OpenAI-compatible multi-provider AI gateway with a built-in Ang
 7. [Conversation persistence](#conversation-persistence)
 8. [Conversation export](#conversation-export)
 9. [API key vault](#api-key-vault)
-10. [Profiles](#profiles)
+10. [Authentication and profiles](#authentication-and-profiles)
 11. [Provider catalog](#provider-catalog)
 12. [Model discovery](#model-discovery)
 13. [Tool calling](#tool-calling)
-14. [Multi-MCP orchestrator (agent mode)](#multi-mcp-orchestrator-agent-mode)
-15. [Telegram bot](#telegram-bot)
-16. [Usage stats](#usage-stats)
-17. [Chat UI features](#chat-ui-features)
-18. [Error handling](#error-handling)
-19. [Running tests](#running-tests)
+14. [Knowledge base (RAG)](#knowledge-base-rag)
+15. [MCP, agents and workflows](#mcp-agents-and-workflows)
+16. [Multi-MCP orchestrator (agent mode)](#multi-mcp-orchestrator-agent-mode)
+17. [Telegram bot](#telegram-bot)
+18. [Workspaces and collaboration](#workspaces-and-collaboration)
+19. [Internationalization](#internationalization)
+20. [Cross-channel notifications](#cross-channel-notifications)
+21. [Usage stats](#usage-stats)
+22. [Chat UI features](#chat-ui-features)
+23. [Observability and operations](#observability-and-operations)
+24. [Error handling](#error-handling)
+25. [Running tests](#running-tests)
 
 ---
 
@@ -50,12 +56,25 @@ FastAPI gateway  (/api/v1)   ── routing by model prefix ──►
       │                              └─► ask_proxmox · ask_synology · ask_linux
       │                                  ask_homeassistant · ask_watchyourlan
       │
-      ├── ToolRegistry         ──► get_datetime · calculator · web_search
+      ├── AuthN/AuthZ          ──► JWT access + refresh tokens, roles (admin/user/read-only),
+      │                            per-user rate limiting, audit log, personal API tokens
+      ├── ToolRegistry         ──► built-ins (get_datetime, calculator, web_search, read_url,
+      │                            python_exec, kb_search, get_weather, …) + per-profile custom
+      │                            HTTP tools + discovered MCP server tools
+      ├── RAG service          ──► document/URL ingestion, hybrid (FTS5 + vector) retrieval,
+      │                            optional LLM rerank, citations
+      ├── Workflow service     ──► durable multi-step agent runs (background asyncio loop,
+      │                            pause/resume/cancel, checkpointed)
+      ├── Notification service ──► cross-channel bridge: Telegram ⇄ web (SSE) event fan-out
       │
       └── SQLite (aiosqlite)
-            ├── conversations + messages  (history per profile)
-            ├── messages_fts              (FTS5 virtual table for search)
-            ├── profiles                  (named identities)
+            ├── users + profiles + refresh_tokens + audit_log
+            ├── conversations + messages  (history per profile, FTS5-indexed)
+            ├── kb_documents + kb_chunks  (RAG)
+            ├── agent_runs + agent_run_steps  (workflows)
+            ├── workspaces + workspace_members  (collaboration)
+            ├── mcp_servers + custom_tools
+            ├── notification_events
             └── api_keys                  (Fernet-encrypted)
 ```
 
@@ -65,8 +84,8 @@ FastAPI gateway  (/api/v1)   ── routing by model prefix ──►
 
 | Layer     | Technology                                                       |
 |-----------|------------------------------------------------------------------|
-| Backend   | Python 3.11 · FastAPI · LiteLLM · httpx · aiosqlite · cryptography |
-| Frontend  | Angular 18 · signals · marked · DOMPurify · highlight.js         |
+| Backend   | Python 3.12 · FastAPI · LiteLLM · httpx · aiosqlite · cryptography · sse-starlette |
+| Frontend  | Angular 18 (standalone components, signals) · marked · DOMPurify · highlight.js |
 | Dev env   | Docker Compose · Makefile                                        |
 
 ---
@@ -144,13 +163,16 @@ All backend settings are read from environment variables or `backend/.env`.
 |-------------------------|--------------------------------------|------------------------------------------------------|
 | `APP_NAME`              | `SpiceSibyl API`                     | Service name                                         |
 | `APP_ENV`               | `development`                        | Environment tag                                      |
-| `API_KEY`               | `change-me`                          | Bearer token for incoming requests                   |
 | `CORS_ORIGINS`          | `http://localhost:4200,...`          | Comma-separated allowed origins                      |
+| `PUBLIC_URL`            | —                                    | Public origin (e.g. `https://sibyl.example.com`), auto-added to CORS for DDNS/reverse-proxy access |
 | `DEFAULT_MODEL`         | `ollama/qwen2.5:7b-instruct`         | Model used when none is specified                    |
 | `LITELLM_PROVIDER`      | `litellm`                            | Set to `mock` to skip real API calls                 |
 | `OLLAMA_API_BASE`       | `http://host.docker.internal:11434`  | Ollama instance base URL                             |
 | `DB_PATH`               | `spice_sibyl.db`                     | SQLite database file path                            |
 | `VAULT_SECRET_KEY`      | `change-me-in-production`            | Master secret for API key encryption — **change this** |
+| `JWT_SECRET_KEY`        | `change-me-in-production`            | Secret signing JWT access/refresh tokens — **change this** |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | —                            | Bootstrap admin credentials, created on first boot when the `users` table is empty — **required**, auth is mandatory |
+| `RATE_LIMIT_DEFAULT`    | `60/minute`                          | Per-user sliding-window rate limit (`N/second\|minute\|hour`) |
 | `GROQ_API_KEY`          | —                                    | Groq Cloud API key                                   |
 | `OPENROUTER_API_KEY`    | —                                    | OpenRouter API key                                   |
 | `GEMINI_API_KEY`        | —                                    | Google Gemini API key                                |
@@ -335,15 +357,17 @@ Keys set via the UI survive container restarts. Setting `VAULT_SECRET_KEY` to a 
 
 ---
 
-## Profiles
+## Authentication and profiles
 
-SpiceSibyl supports named **profiles** — lightweight identities with no passwords. They separate conversation history without requiring authentication.
+Auth is **mandatory** on every `/api/v1` route except a small public allowlist (`/auth/*`, `/health`, `GET /shared/{token}`). User accounts use email/password login (bcrypt) with role-based permissions (`admin`, `user`, `read-only`), JWT access tokens (30 min) plus rotating refresh tokens (14 d, revocable), and an audit log of security-relevant actions. A bootstrap admin is created on first boot from `ADMIN_EMAIL`/`ADMIN_PASSWORD`. Personal API tokens (`sk-sibyl-…`) allow programmatic access without the login flow. Full detail: [docs/en/authentication-and-profiles.md](docs/en/authentication-and-profiles.md).
 
-- On first visit a modal asks "Chi sei?" (Who are you?)
-- Select an existing profile or create a new one (name only)
-- The active profile is stored in `localStorage`
-- All conversations are tagged with the profile UUID
+Each user owns one or more **profiles** — named identities that separate conversation history, knowledge base, memory and settings:
+
+- A profile selector modal appears on first visit; select an existing profile or create a new one
+- The active profile is stored in `localStorage` and roams (theme/locale/chat settings) via `GET/PUT /v1/settings`
+- All conversations, documents and memories are scoped to a profile (`profile_id`), and every profile-scoped endpoint validates ownership
 - Switch profiles at any time via the sidebar chip — the conversation list refreshes instantly
+- A profile can be **linked to a Telegram account** (`/link`), sharing conversation history and cross-channel notifications across both surfaces
 
 Profiles are stored in the database and survive page refreshes. Deleting a profile removes all its conversations.
 
@@ -406,6 +430,19 @@ Ground answers on your own documents. Upload PDF, TXT, DOCX or Markdown files (p
 
 ---
 
+## MCP, agents and workflows
+
+Beyond the Multi-MCP orchestrator sidecar below, SpiceSibyl has its own built-in extensibility layer, admin-managed and available on both web and Telegram:
+
+- **User-defined custom tools** — HTTP-backed tools registered from the `/tools` page (name, JSON-schema parameters, endpoint, auth) with no code changes, merged into the tool loop namespaced `custom__<name>`.
+- **MCP server management** — configure standard `mcpServers` JSON (stdio or remote) on the admin-only `/mcp` page; a built-in JSON-RPC client discovers each server's tools (`mcp__<server>__<tool>`) and injects them into the shared tool loop.
+- **Persistent multi-step workflows** — durable, resumable agent runs (`/workflows`) that work toward a goal using the full tool registry for far more iterations than the 5-step chat loop; every step is checkpointed so runs survive pauses, cancellation, and restarts.
+- **Sandboxed code interpreter** — the `python_exec` tool runs untouched user/model code in an isolated, rlimited subprocess with no network access.
+
+Full detail: [docs/en/mcp-and-agents.md](docs/en/mcp-and-agents.md) · [docs/en/tool-calling.md](docs/en/tool-calling.md).
+
+---
+
 ## Multi-MCP orchestrator (agent mode)
 
 SpiceSibyl can expose an external **multi-agent orchestrator** (the [`multi-mcp`](../multi-mcp) project) as a first-class model, so it is reachable from both the web console and Telegram with no channel-specific code. The orchestrator delegates each request to specialized sub-agents — Proxmox, Synology NAS, Linux SSH fleet, Home Assistant, and WatchYourLAN — each backed by its own MCP server.
@@ -455,13 +492,39 @@ The command menu is registered automatically (visible under the Telegram `/` but
 | `/remind <when> <text>` | Schedule a reminder — absolute `HH:MM` or relative `+30m` / `2h` / `1d` |
 | `/reminders`      | List pending reminders for this chat                               |
 | `/unremind <id>`  | Cancel a reminder by its short id                                 |
-| `/lang`           | Switch the bot UI language (inline keyboard, or `/lang en\|it`)     |
+| `/lang`           | Switch the bot UI language (inline keyboard, or `/lang en\|it\|fr\|de\|es`) |
 
 Switching between `/agent` and `/chat` toggles the active model and clears the conversation (agent and chat contexts are kept separate). The bot maintains in-memory counters (`messages_received`, `messages_sent`, `errors`, `active_chats`) exposed via `GET /stats`.
 
 **Reminders** are persisted in SQLite (`telegram_reminders`) and scheduled on the python-telegram-bot `JobQueue` (the `[job-queue]` extra / APScheduler), so they survive a restart — pending ones are reloaded and rescheduled on boot. Times are interpreted in `TIMEZONE` (default `Europe/Rome`), independent of the container's system clock.
 
-**Language** — `/lang` stores a per-chat locale in `telegram_prefs` (warm-cached at boot). Localized strings live in `app/telegram/i18n.py` (`it` is the default, `en` available); add a locale by extending `MESSAGES` and `SUPPORTED_LOCALES`.
+**Language** — `/lang` stores a per-chat locale in `telegram_prefs` (warm-cached at boot), across 5 locales (`it`/`en`/`fr`/`de`/`es`); see [Internationalization](#internationalization).
+
+> The table above is the original command set; a **linked web profile** (`/link` · `/unlink`) unlocks a lot more — shared cross-channel conversation history, `/kb`/`/rag` for the knowledge base, `/tool`/`/tools` for the server-side tool loop (MCP included), `/memory`, `/search`, `/imagine`, and `/notify on|off` for the cross-channel notification bridge. The full, current command reference lives in [docs/en/telegram.md](docs/en/telegram.md) (kept in sync on every change; this file is not).
+
+---
+
+## Workspaces and collaboration
+
+Team-scoped **workspaces** (owner > admin > editor > viewer roles) let members share individually-owned conversations and knowledge-base documents by reference — the owning profile keeps the resource, sharing just makes it visible to the workspace. Threaded **comments** can be anchored to a whole shared conversation or a specific message. Manage workspaces, members, and shared resources on the `/workspaces` page. Full detail: [docs/en/workspaces-and-collaboration.md](docs/en/workspaces-and-collaboration.md).
+
+---
+
+## Internationalization
+
+The web console and the Telegram bot both support **five UI languages** — English, Italian, French, German, Spanish — switchable at runtime (🌐 navbar picker or `/lang`) with no reload, browser-language auto-detection on first visit, and locale-aware number/date/cost formatting. A profile's locale roams across devices via `PATCH /v1/profiles/{id}`. Full detail: [docs/en/internationalization.md](docs/en/internationalization.md).
+
+---
+
+## Cross-channel notifications
+
+For **linked** web/Telegram accounts, the two channels notify each other about relevant events:
+
+- **Web → Telegram** — a workflow run finishing/failing, an image finishing generation, or a long chat reply finishing while the tab is hidden push a message to the linked Telegram chat.
+- **Telegram → Web** — a fired reminder or a document ingested via `/kb` surface as a toast/badge in the web UI, delivered live over an SSE stream (`GET /v1/notifications/stream`).
+- A per-event-type opt-in matrix lives behind the **⚙ Settings** icon in the navbar (between your email and the logout button); the Telegram side has its own mute, `/notify on|off`.
+
+Full detail: [docs/en/chat.md#cross-channel-notifications-phase-23c](docs/en/chat.md#cross-channel-notifications-phase-23c) · [docs/en/telegram.md#cross-channel-notifications-phase-23c](docs/en/telegram.md#cross-channel-notifications-phase-23c).
 
 ---
 
@@ -491,6 +554,18 @@ Beyond basic chat, the Angular frontend includes several quality-of-life feature
 | **Edit last message** | Load the last user message back into the composer for editing |
 | **Stream cancellation** | Stop button aborts the in-flight request and resets the UI |
 | **Conversation export** | Download as Markdown or JSON from the topbar |
+
+---
+
+## Observability and operations
+
+- **Health & readiness** — `GET /v1/health` (liveness) and `GET /v1/ready` (DB + provider connectivity, 503 when degraded); used by the Docker `HEALTHCHECK` and compose `depends_on: condition: service_healthy`.
+- **Prometheus metrics** — `GET /v1/metrics` (OpenMetrics): HTTP request counters/latency, per-provider request/token/latency counters, active SSE stream gauge. Optional `METRICS_TOKEN` bearer guard.
+- **Structured logging** — `LOG_FORMAT=json` emits JSON logs carrying a `request_id` correlated across the HTTP request, the Multi-MCP sidecar call, and Telegram flows.
+- **Scheduled backups** — opt-in (`BACKUP_ENABLED`) SQLite online-backup snapshots on an interval/retention, plus admin `POST /v1/admin/backup` / `GET /v1/admin/backups` / `POST /v1/admin/restore` and per-profile export/import.
+- **Admin Ops page** (`/ops`, admin-only) — live readiness, a `/metrics` link, backup management, and per-profile export/import.
+
+Full detail: [docs/en/operations.md](docs/en/operations.md).
 
 ---
 

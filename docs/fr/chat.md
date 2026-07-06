@@ -64,6 +64,12 @@ La section **Fonctions** de la barre latérale a trois interrupteurs, chacun ave
 - **Knowledge (RAG) ON/OFF** — activé, les chunks les plus pertinents sont injectés dans le message et les sources apparaissent comme puces de citation sous la réponse (documents sur `/knowledge`). Détails dans [Base de connaissances et RAG](knowledge-rag.md).
 - **Mémoire ON/OFF** — ON = les souvenirs du profil sont utilisés ; OFF = chat incognito (souvenirs sur `/memory`). Détails dans [Mémoire et personnalisation](memory-and-personalization.md).
 
+## Notifications inter-canaux (Phase 23.c)
+
+![Popover des paramètres de notifications](screenshots/settings-popover.png)
+
+Le popover **⚙ Paramètres** dans la navbar (entre votre email et le bouton de déconnexion) liste les types d'événements inter-canaux — workflow terminé, image générée, longue réponse terminée alors que l'onglet était masqué, rappel Telegram déclenché, document ajouté via Telegram — chacun avec sa propre case à cocher ; en décocher une désactive uniquement cet événement. Le réglage suit le compte sur chaque appareil. Voir [Bot Telegram](telegram.md#notifications-inter-canaux-phase-23c) pour la coupure côté Telegram avec `/notify on|off`.
+
 ## Recherche dans les conversations
 
 **Ce que ça fait.** Recherche plein texte (SQLite FTS5, index synchronisé par triggers) dans toutes les conversations du profil.

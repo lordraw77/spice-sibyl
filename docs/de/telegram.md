@@ -24,6 +24,7 @@
 | `/rag on\|off` | schaltet die Wissensdatenbank-Injektion in diesem Chat um (pro Chat, **standardmäßig OFF**) |
 | `/tool on\|off` | schaltet die Tool-Schleife für diesen Chat um (pro Chat, **standardmäßig OFF**) |
 | `/tools` | listet die verfügbaren Tools (gruppiert) und den aktuellen Umschalter-Status auf — nur Anzeige, ändert den Zustand nicht |
+| `/notify on\|off` | stummschalten/aktivieren der von Web-Ereignissen ausgelösten Telegram-Push-Nachrichten (pro Chat, **standardmäßig ON**) |
 | `/lang` · `/lang en\|it\|fr\|de\|es` | Bot-Sprache pro Chat (Inline-Tastatur oder direkt); persistiert in `telegram_prefs` |
 
 ## Medien
@@ -61,3 +62,13 @@ Inline-Buttons nach jeder Antwort: **Neu generieren** (wiederholt den letzten Zu
 ## Persistente Erinnerungen
 
 Erinnerungen liegen in `telegram_reminders` und werden über die python-telegram-bot JobQueue geplant: sie **überleben Neustarts** (beim Boot neu geladen). Zeiten nutzen `TIMEZONE`, unabhängig von der Container-Uhr.
+
+## Kanalübergreifende Benachrichtigungen (Phase 23.c)
+
+Für **verknüpfte Web-Profile** benachrichtigen sich Telegram und die Web-Oberfläche gegenseitig über relevante Ereignisse:
+
+- **Web → Telegram** — der Abschluss (oder Fehlschlag) eines Workflow-Laufs, das Ende einer Bildgenerierung oder eine lange Chat-Antwort, die fertig wird, während der Browser-Tab ausgeblendet war, lösen eine Push-Nachricht an den verknüpften Chat aus.
+- **Telegram → Web** — eine ausgelöste Erinnerung oder ein über `/kb` hinzugefügtes Dokument erscheinen als Toast/Badge in der Web-Sidebar (live über einen SSE-Stream oder beim nächsten Laden der Seite).
+- **`/notify on|off`** — schaltet die Telegram-Seite der Brücke für diesen Chat stumm/aktiv (**pro Chat, standardmäßig ON**). Die Web-Seite hat ihre eigene Opt-in-Matrix pro Ereignistyp im Sidebar-Panel **Benachrichtigungen** (siehe [Web-Chat](chat.md#kanalübergreifende-benachrichtigungen-phase-23c)).
+
+Implementierung: `notification_service.py` (`notify_telegram` / `notify_web`), die Tabelle `notification_events` und `telegram_prefs.notify`.

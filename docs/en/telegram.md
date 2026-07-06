@@ -24,6 +24,7 @@
 | `/rag on\|off` | toggle knowledge-base injection in this chat (per-chat, **OFF by default**) |
 | `/tool on\|off` | toggle the tool loop for this chat (per-chat, **OFF by default**) |
 | `/tools` | list the available tools (grouped) and the current toggle status — view-only, does not change state |
+| `/notify on\|off` | mute/unmute Telegram pushes triggered by web events (per-chat, **ON by default**) |
 | `/lang` · `/lang en\|it` | per-chat bot UI language (inline keyboard or direct); persisted in `telegram_prefs` |
 
 ## Media handling
@@ -72,3 +73,13 @@ Inline buttons after every reply: **Regenerate** (re-runs the last turn), **Tran
 ## Persistent reminders
 
 Reminders are stored in `telegram_reminders` and scheduled on the python-telegram-bot JobQueue: they **survive restarts** (reloaded on boot). Times use `TIMEZONE`, regardless of the container clock.
+
+## Cross-channel notifications (Phase 23.c)
+
+For **linked web profiles**, Telegram and the web UI notify each other about relevant events:
+
+- **Web → Telegram** — a workflow run finishing or failing, an image finishing generation, or a long chat reply finishing while the browser tab was hidden trigger a push to the linked chat.
+- **Telegram → Web** — a fired reminder or a document ingested via `/kb` appear as a toast/badge in the web sidebar (delivered live over an SSE stream, or picked up on next page load).
+- **`/notify on|off`** — mutes/unmutes the Telegram side of the bridge for this chat (**per-chat, ON by default**). The web side has its own per-event-type opt-in matrix in the sidebar's **Notifications** panel (see [Web chat](chat.md#cross-channel-notifications-phase-23c)).
+
+Implementation: `notification_service.py` (`notify_telegram` / `notify_web`), the `notification_events` table, and `telegram_prefs.notify`.

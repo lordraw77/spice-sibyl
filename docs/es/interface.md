@@ -19,7 +19,7 @@
 - Las entradas **solo admin** (MCP, Ops) aparecen únicamente con el rol adecuado; un grupo sin entradas visibles se oculta.
 - En pantallas estrechas (< 576 px) la barra se pliega en un menú hamburguesa y los submenús se vuelven **acordeones** en línea.
 
-A la derecha están el **selector de idioma 🌐**, el **selector de color de acento**, el **conmutador de tema** y el **chip de usuario** con cierre de sesión.
+A la derecha están el **selector de idioma 🌐**, el **selector de color de acento**, el **conmutador de tema** y el **chip de usuario** — email, un popover **⚙ Configuración** (opt-in por tipo de evento para las notificaciones entre canales, ver [Chat web](chat.md#notificaciones-entre-canales-fase-23c)) y cierre de sesión.
 
 ## Tema oscuro/claro y color de acento
 

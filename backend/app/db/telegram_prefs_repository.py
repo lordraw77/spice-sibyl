@@ -67,6 +67,34 @@ async def load_all_tools() -> dict[int, bool]:
         await db.close()
 
 
+async def load_all_notify() -> dict[int, bool]:
+    """Return all persisted chat_id → notify-toggle mappings (Phase 23.c)."""
+    db = await _connect()
+    try:
+        async with db.execute("SELECT chat_id, notify FROM telegram_prefs") as cursor:
+            rows = await cursor.fetchall()
+        return {row["chat_id"]: bool(row["notify"]) for row in rows}
+    finally:
+        await db.close()
+
+
+async def set_notify(chat_id: int, enabled: bool) -> None:
+    """Persist the per-chat cross-channel notification mute (/notify on|off)."""
+    now = int(time.time())
+    db = await _connect()
+    try:
+        await db.execute(
+            "INSERT INTO telegram_prefs (chat_id, locale, notify, updated_at) "
+            "VALUES (?, 'it', ?, ?) "
+            "ON CONFLICT(chat_id) DO UPDATE SET notify = excluded.notify, updated_at = excluded.updated_at",
+            (chat_id, int(enabled), now),
+        )
+        await db.commit()
+        logger.info("telegram_prefs: chat_id=%s notify=%s", chat_id, enabled)
+    finally:
+        await db.close()
+
+
 async def set_tools(chat_id: int, enabled: bool) -> None:
     """Persist the per-chat tool-loop toggle (/tools on|off)."""
     now = int(time.time())

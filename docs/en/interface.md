@@ -19,7 +19,7 @@
 - **Admin-only** items (MCP, Ops) appear only with the proper role; a group with no visible items is hidden.
 - On narrow screens (< 576 px) the navbar collapses into a hamburger menu and submenus become inline **accordions**.
 
-On the right sit the **accent-color picker**, the **theme toggle** and the **user chip** with logout.
+On the right sit the **language picker**, the **accent-color picker**, the **theme toggle** and the **user chip** — email, a **⚙ Settings** popover (per-event-type cross-channel notification opt-in, see [Web chat](chat.md#cross-channel-notifications-phase-23c)) and logout.
 
 ## Dark/light theme and accent color
 

@@ -51,6 +51,7 @@ import { NotificationService } from '../../core/services/notification.service';
 import { AppConfigService } from '../../core/config/app-config.service';
 import { UserPreferencesService } from '../../core/services/user-preferences.service';
 import { PushNotifyService } from '../../core/services/push-notify.service';
+import { NotificationBridgeService } from '../../core/services/notification-bridge.service';
 import { I18nService } from '../../core/i18n/i18n.service';
 import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { LocaleCostPipe } from '../../core/i18n/format.pipes';
@@ -77,6 +78,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly auth = inject(AuthService);
   readonly i18n = inject(I18nService);
   readonly pushNotify = inject(PushNotifyService);
+  private readonly notificationBridge = inject(NotificationBridgeService);
   readonly onboarding = inject(OnboardingService);
 
   /** Build headers for raw fetch() calls, which bypass the auth interceptor. */
@@ -820,13 +822,19 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
         if (Date.now() - streamStartedAt > 10_000) {
           const reply = this.messages()[streamingIdx]?.content ?? '';
           const preview = reply.replace(/\s+/g, ' ').trim().slice(0, 120) || this.i18n.translate('chat.notify.replyReady');
-          this.pushNotify.notifyComplete(this.i18n.translate('chat.notify.pushTitle'), preview, () => {
+          const pushTitle = this.i18n.translate('chat.notify.pushTitle');
+          this.pushNotify.notifyComplete(pushTitle, preview, () => {
             this.router.navigate(['/chat']).then(() => {
               if (targetConversationId && targetConversationId !== this.currentConversationId) {
                 this.selectConversation(targetConversationId);
               }
             });
           });
+          // Phase 23.c: the tab-hidden condition is only observable client-side —
+          // forward it to the backend so linked users also get a Telegram push.
+          if (document.hidden) {
+            void this.notificationBridge.trigger('longCompletionDone', pushTitle, preview);
+          }
         }
       },
     });

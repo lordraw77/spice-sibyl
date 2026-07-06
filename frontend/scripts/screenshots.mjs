@@ -93,9 +93,9 @@ async function captureLocale(browser, lang) {
 
   // ── Logged-out login page (locale set before app bootstrap) ──────────────
   await safe('login', async () => {
-    await page.goto(`${BASE_URL}/login`, { waitUntil: 'networkidle' });
+    await page.goto(`${BASE_URL}/login`, { waitUntil: 'load' });
     await setLocale(page, lang);
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'load' });
     await sleep(400);
     await shoot(page, lang, 'login');
   });
@@ -136,7 +136,7 @@ async function captureLocale(browser, lang) {
 
   // ── Onboarding tour (first-run; only if it shows) ────────────────────────
   await safe('onboarding', async () => {
-    await page.goto(`${BASE_URL}/chat`, { waitUntil: 'networkidle' });
+    await page.goto(`${BASE_URL}/chat`, { waitUntil: 'load' });
     await sleep(800);
     const tour = page.locator('.tour-card, .tour-backdrop').first();
     if (await tour.isVisible().catch(() => false)) {
@@ -149,7 +149,7 @@ async function captureLocale(browser, lang) {
 
   // ── Chat page (empty) + a conversation (best effort) ─────────────────────
   await safe('chat', async () => {
-    await page.goto(`${BASE_URL}/chat`, { waitUntil: 'networkidle' });
+    await page.goto(`${BASE_URL}/chat`, { waitUntil: 'load' });
     await sleep(700);
     await shoot(page, lang, 'chat');
   });
@@ -171,7 +171,7 @@ async function captureLocale(browser, lang) {
   // ── Straight route captures ──────────────────────────────────────────────
   for (const [name, route] of Object.entries(ROUTES)) {
     await safe(name, async () => {
-      await page.goto(`${BASE_URL}${route}`, { waitUntil: 'networkidle' });
+      await page.goto(`${BASE_URL}${route}`, { waitUntil: 'load' });
       await sleep(900);
       await shoot(page, lang, name);
     });
@@ -179,7 +179,7 @@ async function captureLocale(browser, lang) {
 
   // ── Workspace comments (best effort; fallback = workspace page) ───────────
   await safe('workspace-commenti', async () => {
-    await page.goto(`${BASE_URL}/workspaces`, { waitUntil: 'networkidle' });
+    await page.goto(`${BASE_URL}/workspaces`, { waitUntil: 'load' });
     await sleep(900);
     // Try to reveal a comment thread if the UI exposes one.
     const commentBtn = page.locator('button:has-text("Comment"), button:has-text("Commenti"), [class*="comment"]').first();

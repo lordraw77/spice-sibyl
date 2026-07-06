@@ -29,6 +29,7 @@ from app.api.v1.endpoints import (
     memories,
     metrics,
     models,
+    notifications,
     profiles,
     providers,
     settings,
@@ -83,4 +84,5 @@ api_router.include_router(workflows.router, prefix="/workflows", tags=["workflow
 api_router.include_router(memories.router, prefix="/memories", tags=["memories"], dependencies=_protected)
 api_router.include_router(feedback.router, prefix="/feedback", tags=["feedback"], dependencies=_protected)
 api_router.include_router(info.router, prefix="/info", tags=["info"], dependencies=_protected)
+api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"], dependencies=_protected)
 api_router.include_router(workspaces.router, prefix="/workspaces", tags=["workspaces"], dependencies=_protected)

@@ -9,6 +9,7 @@ import { I18nService } from '../i18n/i18n.service';
 import { isLocale } from '../i18n/locale';
 import { OnboardingService } from './onboarding.service';
 import { PushNotifyService } from './push-notify.service';
+import { NotificationPrefsService, NotifyPrefs } from './notification-prefs.service';
 import { ProfileService } from './profile.service';
 import { UserPreferencesService, UserPreferences } from './user-preferences.service';
 
@@ -23,6 +24,7 @@ interface UserBlob {
   locale?: string;
   onboarded?: boolean;
   pushEnabled?: boolean;
+  notifyPrefs?: Partial<NotifyPrefs>;
 }
 
 const SAVE_DEBOUNCE_MS = 600;
@@ -50,6 +52,7 @@ export class SettingsSyncService {
   private readonly i18n = inject(I18nService);
   private readonly onboarding = inject(OnboardingService);
   private readonly push = inject(PushNotifyService);
+  private readonly notifyPrefs = inject(NotificationPrefsService);
   private readonly profile = inject(ProfileService);
   private readonly userPrefs = inject(UserPreferencesService);
 
@@ -108,6 +111,7 @@ export class SettingsSyncService {
       locale: this.i18n.locale(),
       onboarded: this.onboarding.seen(),
       pushEnabled: this.push.enabled(),
+      notifyPrefs: this.notifyPrefs.prefs(),
     };
   }
 
@@ -153,6 +157,9 @@ export class SettingsSyncService {
     }
     if (typeof data.pushEnabled === 'boolean') {
       this.push.hydrate(data.pushEnabled);
+    }
+    if (data.notifyPrefs && typeof data.notifyPrefs === 'object') {
+      this.notifyPrefs.hydrate(data.notifyPrefs);
     }
   }
 

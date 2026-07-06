@@ -32,6 +32,8 @@ export const it: TranslationMap = {
   'navbar.accentCustom': 'Colore personalizzato',
   'navbar.theme': 'Tema',
   'navbar.language': 'Lingua',
+  'navbar.settings': 'Impostazioni',
+  'navbar.settings.notifications': 'Notifiche',
   'navbar.logout': 'Esci',
 
   // ── Common actions ─────────────────────────────────────────────────────
@@ -185,6 +187,12 @@ export const it: TranslationMap = {
   'chat.notify.replyBody': 'Il modello ha terminato la risposta.',
   'chat.notify.replyReady': 'La risposta è pronta.',
   'chat.notify.pushTitle': 'SpiceSibyl — risposta pronta',
+  'chat.notify.prefs.title': 'Notifiche',
+  'chat.notify.prefs.workflowDone': 'Workflow completato',
+  'chat.notify.prefs.imageGenDone': 'Immagine generata',
+  'chat.notify.prefs.longCompletionDone': 'Risposta lunga completata (scheda nascosta)',
+  'chat.notify.prefs.reminderFired': 'Promemoria Telegram scattato',
+  'chat.notify.prefs.kbIngested': 'Documento aggiunto via Telegram',
   'chat.feedback.prompt': 'Cosa non va in questa risposta? (opzionale)',
   'chat.feedback.sendFailed': 'Invio feedback fallito.',
   'chat.err.updateTags': 'Impossibile aggiornare i tag.',

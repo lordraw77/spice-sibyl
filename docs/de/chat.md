@@ -64,6 +64,12 @@ Der Bereich **Funktionen** der Seitenleiste hat drei Schalter, jeder mit einem *
 - **Knowledge (RAG) ON/OFF** — aktiviert werden die relevantesten Chunks in die Nachricht injiziert und die Quellen erscheinen als Zitat-Chips unter der Antwort (Dokumente auf `/knowledge`). Details in [Wissensdatenbank und RAG](knowledge-rag.md).
 - **Gedächtnis ON/OFF** — ON = die Erinnerungen des Profils werden genutzt; OFF = Inkognito-Chat (Erinnerungen auf `/memory`). Details in [Gedächtnis und Personalisierung](memory-and-personalization.md).
 
+## Kanalübergreifende Benachrichtigungen (Phase 23.c)
+
+![Popover für Benachrichtigungseinstellungen](screenshots/settings-popover.png)
+
+Das **⚙ Einstellungen**-Popover in der Navbar (zwischen deiner E-Mail und dem Abmelden-Button) listet die kanalübergreifenden Ereignistypen auf — Workflow abgeschlossen, Bild generiert, lange Antwort fertig bei ausgeblendetem Tab, Telegram-Erinnerung ausgelöst, Dokument über Telegram hinzugefügt — jeweils mit eigener Checkbox; das Deaktivieren einer davon schaltet nur dieses eine Ereignis ab. Die Einstellung folgt dem Konto geräteübergreifend. Siehe [Telegram-Bot](telegram.md#kanalübergreifende-benachrichtigungen-phase-23c) für die Stummschaltung auf Telegram-Seite mit `/notify on|off`.
+
 ## Unterhaltungssuche
 
 **Was es macht.** Volltextsuche (SQLite FTS5, Index per Trigger synchron gehalten) über alle Unterhaltungen des Profils.

@@ -19,7 +19,7 @@
 - Les entrées **admin uniquement** (MCP, Ops) n'apparaissent qu'avec le bon rôle ; un groupe sans entrée visible est masqué.
 - Sur écrans étroits (< 576 px) la navbar se replie en menu hamburger et les sous-menus deviennent des **accordéons** en ligne.
 
-À droite se trouvent le **sélecteur de langue 🌐**, le **sélecteur de couleur d'accent**, le **bouton de thème** et la **puce utilisateur** avec déconnexion.
+À droite se trouvent le **sélecteur de langue 🌐**, le **sélecteur de couleur d'accent**, le **bouton de thème** et la **puce utilisateur** — email, un popover **⚙ Paramètres** (opt-in par type d'événement pour les notifications inter-canaux, voir [Chat web](chat.md#notifications-inter-canaux-phase-23c)) et déconnexion.
 
 ## Thème sombre/clair et couleur d'accent
 

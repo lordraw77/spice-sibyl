@@ -19,7 +19,7 @@
 - Le voci riservate agli **admin** (MCP, Ops) compaiono solo con il ruolo adeguato; un gruppo senza voci visibili viene nascosto.
 - Su schermi stretti (< 576 px) la navbar collassa nel menu hamburger e i sottomenu diventano **accordion** inline.
 
-A destra restano il **picker del colore d'accento**, il **toggle tema** e il **chip utente** con logout.
+A destra restano il **selettore lingua**, il **picker del colore d'accento**, il **toggle tema** e il **chip utente** — email, un popover **⚙ Impostazioni** (opt-in per tipo di evento delle notifiche cross-canale, vedi [Chat web](chat.md#notifiche-cross-canale-fase-23c)) e logout.
 
 ## Tema scuro/chiaro e colore d'accento
 

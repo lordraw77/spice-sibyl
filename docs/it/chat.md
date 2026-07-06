@@ -64,6 +64,12 @@ Nella sezione **Funzioni** della sidebar ci sono tre interruttori, ognuno con un
 - **Knowledge (RAG) ON/OFF** — quando attivo, i chunk più pertinenti vengono iniettati nel messaggio e le fonti compaiono come chip di citazione sotto la risposta (documenti su `/knowledge`). Dettagli in [Knowledge base e RAG](knowledge-rag.md).
 - **Memoria ON/OFF** — ON = i ricordi del profilo vengono usati; OFF = chat in incognito (ricordi su `/memory`). Dettagli in [Memoria e personalizzazione](memoria-e-personalizzazione.md).
 
+## Notifiche cross-canale (Fase 23.c)
+
+![Popover impostazioni notifiche](screenshots/settings-popover.png)
+
+Il popover **⚙ Impostazioni** nella navbar (tra la tua email e il tasto di logout) elenca i tipi di evento cross-canale — workflow completato, immagine generata, risposta lunga completata a scheda nascosta, promemoria Telegram scattato, documento aggiunto via Telegram — ciascuno con la propria casella di spunta; disattivandone una si esce solo da quel singolo evento. L'impostazione segue l'account su ogni dispositivo. Vedi [Bot Telegram](telegram.md#notifiche-cross-canale-fase-23c) per il mute lato Telegram con `/notify on|off`.
+
 ## Ricerca nelle conversazioni
 
 **Cosa fa.** Ricerca full-text (SQLite FTS5, indice sincronizzato via trigger) su tutte le conversazioni del profilo.

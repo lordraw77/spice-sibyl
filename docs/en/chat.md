@@ -64,6 +64,12 @@ The sidebar **Funzioni** (Features) section has three switches, each with a **Ge
 - **Knowledge (RAG) ON/OFF** — when enabled, the most relevant chunks are injected into the message and the sources appear as citation chips under the response (documents on `/knowledge`). Details in [Knowledge base and RAG](knowledge-rag.md).
 - **Memoria ON/OFF** — ON = the profile's memories are used; OFF = incognito chat (memories on `/memory`). Details in [Memory and personalization](memory-and-personalization.md).
 
+## Cross-channel notifications (Phase 23.c)
+
+![Notifications settings popover](screenshots/settings-popover.png)
+
+The **⚙ Settings** popover in the navbar (between your email and the logout button) lists the cross-channel event types — workflow finished, image generated, long reply finished while the tab was hidden, Telegram reminder fired, document added via Telegram — each with its own checkbox; unchecking one opts out of just that event. The setting roams with your account. See [Telegram bot](telegram.md#cross-channel-notifications-phase-23c) for the Telegram-side `/notify on|off` mute.
+
 ## Conversation search
 
 **What it does.** Full-text search (SQLite FTS5, index kept in sync via triggers) across all the profile's conversations.

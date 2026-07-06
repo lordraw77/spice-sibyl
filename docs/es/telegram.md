@@ -24,6 +24,7 @@
 | `/rag on\|off` | activa/desactiva la inyección de la base de conocimiento en este chat (por chat, **OFF por defecto**) |
 | `/tool on\|off` | activa/desactiva el bucle de herramientas para este chat (por chat, **OFF por defecto**) |
 | `/tools` | lista las herramientas disponibles (agrupadas) y el estado actual del interruptor — solo lectura, no modifica el estado |
+| `/notify on\|off` | silencia/reactiva los avisos de Telegram provocados por eventos web (por chat, **ON por defecto**) |
 | `/lang` · `/lang en\|it\|fr\|de\|es` | idioma del bot por chat (teclado inline o directo); persistido en `telegram_prefs` |
 
 ## Gestión de medios
@@ -61,3 +62,13 @@ Botones inline tras cada respuesta: **Regenerar** (repite el último turno), **T
 ## Recordatorios persistentes
 
 Los recordatorios se guardan en `telegram_reminders` y se programan en la JobQueue de python-telegram-bot: **sobreviven a los reinicios** (recargados al arrancar). Las horas usan `TIMEZONE`, independientemente del reloj del contenedor.
+
+## Notificaciones entre canales (Fase 23.c)
+
+Para los **perfiles web vinculados**, Telegram y la interfaz web se notifican mutuamente los eventos relevantes:
+
+- **Web → Telegram** — la finalización (o el fallo) de un workflow, el fin de una generación de imagen, o una respuesta larga terminada mientras la pestaña del navegador estaba oculta disparan un mensaje al chat vinculado.
+- **Telegram → Web** — un recordatorio disparado o un documento ingerido vía `/kb` aparecen como un toast/badge en la barra lateral web (entregado en vivo vía un stream SSE, o recogido en la siguiente carga de la página).
+- **`/notify on|off`** — silencia/reactiva el lado Telegram del puente para este chat (**por chat, ON por defecto**). El lado web tiene su propia matriz de opt-in por tipo de evento en el panel **Notificaciones** de la barra lateral (ver [Chat web](chat.md#notificaciones-entre-canales-fase-23c)).
+
+Implementación: `notification_service.py` (`notify_telegram` / `notify_web`), la tabla `notification_events` y `telegram_prefs.notify`.

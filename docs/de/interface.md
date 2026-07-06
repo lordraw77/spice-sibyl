@@ -19,7 +19,7 @@
 - **Nur-Admin**-Einträge (MCP, Ops) erscheinen nur mit passender Rolle; eine Gruppe ohne sichtbare Einträge wird ausgeblendet.
 - Auf schmalen Bildschirmen (< 576 px) klappt die Navbar in ein Hamburger-Menü zusammen und Untermenüs werden zu Inline-**Akkordeons**.
 
-Rechts sitzen der **Sprachumschalter 🌐**, der **Akzentfarben-Wähler**, der **Design-Umschalter** und der **Benutzer-Chip** mit Abmeldung.
+Rechts sitzen der **Sprachumschalter 🌐**, der **Akzentfarben-Wähler**, der **Design-Umschalter** und der **Benutzer-Chip** — E-Mail, ein **⚙ Einstellungen**-Popover (Opt-in pro Ereignistyp für kanalübergreifende Benachrichtigungen, siehe [Web-Chat](chat.md#kanalübergreifende-benachrichtigungen-phase-23c)) und Abmeldung.
 
 ## Dunkles/helles Design und Akzentfarbe
 

@@ -29,3 +29,6 @@ frontend/public/docs/
 # Runtime-generated catalogs (fallback location when /config is not mounted)
 backend/app/data/discovered_models.json
 backend/app/data/runtime_overrides.json
+graphify-out/
+.claude/
+

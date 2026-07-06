@@ -24,6 +24,7 @@
 | `/rag on\|off` | attiva/disattiva l'iniezione della knowledge base in questa chat (per chat, **OFF di default**) |
 | `/tool on\|off` | attiva/disattiva il tool loop per questa chat (per chat, **OFF di default**) |
 | `/tools` | elenca gli strumenti disponibili (raggruppati) e lo stato attuale del toggle — solo visualizzazione, non modifica lo stato |
+| `/notify on\|off` | silenzia/riattiva le notifiche Telegram innescate da eventi web (per chat, **ON di default**) |
 | `/lang` · `/lang en\|it` | lingua dell'interfaccia del bot per chat (tastiera inline o diretta); persistita in `telegram_prefs` |
 
 ## Contenuti multimediali
@@ -72,3 +73,13 @@ Dopo ogni risposta compaiono pulsanti inline: **Regenerate** (riesegue l'ultimo 
 ## Promemoria persistenti
 
 I promemoria sono salvati in `telegram_reminders` e schedulati sulla JobQueue di python-telegram-bot: **sopravvivono al riavvio** (ricaricati al boot). Gli orari usano `TIMEZONE`, indipendentemente dall'orologio del container.
+
+## Notifiche cross-canale (Fase 23.c)
+
+Per i **profili web collegati**, Telegram e l'interfaccia web si notificano a vicenda gli eventi rilevanti:
+
+- **Web → Telegram** — il completamento (o fallimento) di un workflow, la fine di una generazione di immagine, o una risposta lunga completata mentre la scheda del browser era nascosta innescano un messaggio nella chat collegata.
+- **Telegram → Web** — un promemoria scattato o un documento ingerito via `/kb` compaiono come toast/badge nella sidebar web (in tempo reale via stream SSE, o al successivo caricamento della pagina).
+- **`/notify on|off`** — silenzia/riattiva il lato Telegram del bridge per questa chat (**per chat, ON di default**). Il lato web ha una propria matrice di opt-in per tipo di evento nel pannello **Notifiche** della sidebar (vedi [Chat web](chat.md#notifiche-cross-canale-fase-23c)).
+
+Implementazione: `notification_service.py` (`notify_telegram` / `notify_web`), la tabella `notification_events` e `telegram_prefs.notify`.

@@ -84,6 +84,22 @@ def _deserialize(raw: str) -> list[ChatMessage]:
     return [ChatMessage.model_validate(m) for m in json.loads(raw)]
 
 
+async def _notify_completion(
+    db: aiosqlite.Connection, profile_id: str, run_id: str, event_type: str, goal: str
+) -> None:
+    """Phase 23.c: push a Telegram message when a run finishes/fails, for linked profiles."""
+    from app.services import notification_service
+
+    goal_preview = goal.strip().replace("\n", " ")[:200]
+    verb = "completed" if event_type == "workflowDone" else "failed"
+    try:
+        await notification_service.notify_telegram(
+            db, profile_id, event_type, f"🤖 Workflow {verb}: {goal_preview}"
+        )
+    except Exception:  # noqa: BLE001 — a notification failure must not affect the run
+        logger.exception("Workflow %s: notify_telegram failed", run_id)
+
+
 def start(run_id: str, system_prompt: str | None = None) -> None:
     """Spawn (or resume) the background loop for a run."""
     if is_live(run_id):
@@ -188,6 +204,7 @@ async def _run_loop(run_id: str, system_prompt: str | None = None) -> None:
                 await workflow_repository.checkpoint(db, run_id, _serialize(messages), step + 1)
                 await workflow_repository.set_status(db, run_id, "completed", result=content)
                 logger.info("Workflow %s completed in %d step(s)", run_id, step + 1)
+                await _notify_completion(db, run.profile_id, run_id, "workflowDone", run.goal)
                 return
 
             if content.strip():
@@ -237,6 +254,7 @@ async def _run_loop(run_id: str, system_prompt: str | None = None) -> None:
         await workflow_repository.add_step(db, run_id, step, "error", error)
         await workflow_repository.set_status(db, run_id, "failed", error=error)
         logger.warning("Workflow %s failed: %s", run_id, error)
+        await _notify_completion(db, run.profile_id, run_id, "workflowFailed", run.goal)
 
     except asyncio.CancelledError:
         # Cancel endpoint already set the status; just stop quietly.
@@ -249,6 +267,8 @@ async def _run_loop(run_id: str, system_prompt: str | None = None) -> None:
                 db, run_id, run.current_step if run else 0, "error", str(exc)
             )
             await workflow_repository.set_status(db, run_id, "failed", error=str(exc))
+            if run:
+                await _notify_completion(db, run.profile_id, run_id, "workflowFailed", run.goal)
         except Exception:  # noqa: BLE001
             logger.exception("Workflow %s: could not record failure", run_id)
     finally:

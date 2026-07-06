@@ -397,6 +397,23 @@ CREATE TABLE IF NOT EXISTS preferences (
     data       TEXT    NOT NULL,      -- JSON blob, shape owned by the frontend
     updated_at INTEGER NOT NULL
 );
+
+-- Phase 23.c: cross-channel notification events (Telegram → web direction).
+-- Persisted so a badge/unread count survives when no SSE stream is open;
+-- also fanned out live to any connected stream via an in-memory queue.
+CREATE TABLE IF NOT EXISTS notification_events (
+    id         TEXT    PRIMARY KEY,
+    user_id    TEXT    NOT NULL,
+    profile_id TEXT    NOT NULL,
+    event_type TEXT    NOT NULL,
+    title      TEXT    NOT NULL,
+    body       TEXT    NOT NULL DEFAULT '',
+    meta_json  TEXT,
+    created_at INTEGER NOT NULL,
+    read       INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_notification_events_user ON notification_events(user_id, created_at);
 """
 
 _MIGRATIONS = [
@@ -446,6 +463,8 @@ _MIGRATIONS = [
     "ALTER TABLE telegram_prefs ADD COLUMN active_conversation_id TEXT DEFAULT NULL",
     # Phase 23.b: per-chat Telegram tool-loop toggle (/tools on|off) — OFF by default
     "ALTER TABLE telegram_prefs ADD COLUMN tools INTEGER NOT NULL DEFAULT 0",
+    # Phase 23.c: per-chat Telegram notification mute (/notify on|off) — ON by default
+    "ALTER TABLE telegram_prefs ADD COLUMN notify INTEGER NOT NULL DEFAULT 1",
 ]
 
 

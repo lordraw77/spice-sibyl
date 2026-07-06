@@ -9,6 +9,7 @@ import { TranslatePipe } from '../core/i18n/translate.pipe';
 import { Locale } from '../core/i18n/locale';
 import { FlagComponent } from '../core/i18n/flag.component';
 import { ProfileService } from '../core/services/profile.service';
+import { NotificationPrefsService, NotifyEventType } from '../core/services/notification-prefs.service';
 
 interface NavItem {
   label: string;
@@ -153,6 +154,18 @@ const ICONS = {
         </button>
         <div class="user-chip" *ngIf="auth.currentUser() as user">
           <span class="user-email" [title]="user.role">{{ user.email }}</span>
+          <div class="settings-picker-wrapper">
+            <button class="settings-toggle" (click)="toggleSettingsPicker($event)" [title]="'navbar.settings' | t" [attr.aria-label]="'navbar.settings' | t">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82A1.65 1.65 0 0 0 3 13.09H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+            <div class="settings-popover" *ngIf="settingsPickerOpen()" (click)="$event.stopPropagation()">
+              <span class="section-label">{{ 'navbar.settings.notifications' | t }}</span>
+              <label class="settings-check-row" *ngFor="let evt of notifyEventTypes">
+                <input type="checkbox" [checked]="notifyPrefsSvc.prefs()[evt.key]" (change)="toggleNotifyPref(evt.key)" />
+                <span>{{ evt.labelKey | t }}</span>
+              </label>
+            </div>
+          </div>
           <button class="logout-btn" (click)="logout()" [title]="'navbar.logout' | t">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
@@ -430,6 +443,47 @@ const ICONS = {
     }
     .accent-reset:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
 
+    /* Settings (gear) picker — cross-channel notification prefs, Phase 23.c */
+    .settings-picker-wrapper { position: relative; }
+    .settings-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2rem;
+      height: 2rem;
+      border-radius: .5rem;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    .settings-toggle:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+    .settings-popover {
+      position: absolute;
+      top: 2.4rem;
+      right: 0;
+      display: flex;
+      flex-direction: column;
+      gap: .4rem;
+      background: var(--bg-surface);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-light);
+      border-radius: .65rem;
+      padding: .6rem .7rem;
+      z-index: 200;
+      min-width: 240px;
+      box-shadow: 0 4px 16px var(--shadow);
+    }
+    .settings-check-row {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      font-size: .82rem;
+      color: var(--text-secondary, var(--text-primary));
+      cursor: pointer;
+    }
+
     @media (max-width: 575.98px) {
       .navbar { padding: .6rem 1rem; }
       .brand-tag { display: none; }
@@ -476,9 +530,29 @@ export class NavbarComponent {
   private readonly profile = inject(ProfileService);
   private readonly router = inject(Router);
   private readonly sanitizer = inject(DomSanitizer);
+  readonly notifyPrefsSvc = inject(NotificationPrefsService);
 
   readonly accentPickerOpen = signal(false);
   readonly langPickerOpen = signal(false);
+  readonly settingsPickerOpen = signal(false);
+
+  /** Phase 23.c: per-event-type cross-channel notification opt-in, shown in the settings popover. */
+  readonly notifyEventTypes: { key: NotifyEventType; labelKey: string }[] = [
+    { key: 'workflowDone', labelKey: 'chat.notify.prefs.workflowDone' },
+    { key: 'imageGenDone', labelKey: 'chat.notify.prefs.imageGenDone' },
+    { key: 'longCompletionDone', labelKey: 'chat.notify.prefs.longCompletionDone' },
+    { key: 'reminderFired', labelKey: 'chat.notify.prefs.reminderFired' },
+    { key: 'kbIngested', labelKey: 'chat.notify.prefs.kbIngested' },
+  ];
+
+  toggleNotifyPref(key: NotifyEventType): void {
+    this.notifyPrefsSvc.set(key, !this.notifyPrefsSvc.prefs()[key]);
+  }
+
+  toggleSettingsPicker(event: Event): void {
+    event.stopPropagation();
+    this.settingsPickerOpen.update((v) => !v);
+  }
   readonly mobileMenuOpen = signal(false);
   readonly openMenu = signal<string | null>(null);
 
@@ -567,6 +641,7 @@ export class NavbarComponent {
     this.openMenu.set(null);
     this.accentPickerOpen.set(false);
     this.langPickerOpen.set(false);
+    this.settingsPickerOpen.set(false);
   }
 
   toggleLangPicker(event: Event): void {

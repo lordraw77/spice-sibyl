@@ -102,6 +102,10 @@ _rag_prefs: dict[int, bool] = {}
 # the built-in + custom + MCP tools merged in, exactly as the web chat.
 _tools_prefs: dict[int, bool] = {}
 
+# Phase 23.c: chat_id → cross-channel notification mute (/notify on|off), warm-cached;
+# ON by default. Consulted by notification_service before pushing a web→Telegram event.
+_notify_prefs: dict[int, bool] = {}
+
 # Reused for the server-side tool-execution loop (Phase 23.b): the bot shares the
 # web chat's loop so tool behavior stays identical across channels.
 _chat_service = ChatService()
@@ -664,6 +668,26 @@ async def cmd_rag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     await update.message.reply_text(t(loc, "rag_usage"), parse_mode=ParseMode.HTML)
+
+
+async def cmd_notify(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Phase 23.c: /notify on|off — mute/unmute web→Telegram cross-channel pushes."""
+    user = update.effective_user
+    if not _is_allowed(user.id):
+        return
+    chat_id = update.effective_chat.id
+    loc = _locale(chat_id)
+    args = [a.strip() for a in (context.args or []) if a.strip()]
+    sub = args[0].lower() if args else ""
+
+    if sub in ("on", "off"):
+        enabled = sub == "on"
+        _notify_prefs[chat_id] = enabled
+        await prefs_repo.set_notify(chat_id, enabled)
+        await update.message.reply_text(t(loc, "notify_on" if enabled else "notify_off"))
+        return
+
+    await update.message.reply_text(t(loc, "notify_usage"), parse_mode=ParseMode.HTML)
 
 
 def _split_message(text: str, max_length: int = 4000) -> list[str]:
@@ -1715,6 +1739,17 @@ async def _ingest_document_to_kb(update: Update, context: ContextTypes.DEFAULT_T
         await sent.edit_text(
             t(loc, "kb_ingested", filename=fname, chunks=chunk_count), parse_mode=ParseMode.HTML
         )
+        # Phase 23.c: surface the ingestion as a web toast/badge for the linked profile.
+        try:
+            from app.db.database import get_db
+            from app.services import notification_service
+            async for wdb in get_db():
+                await notification_service.notify_web(
+                    wdb, profile_id, "kbIngested",
+                    title="📄 Documento aggiunto alla KB", body=fname,
+                )
+        except Exception:
+            logger.exception("kb_ingest: notify_web failed chat_id=%s file=%r", chat_id, fname)
     except Exception as exc:
         _tg_errors += 1
         logger.warning("kb_ingest: FAILED chat_id=%s file=%r — %s", chat_id, fname, exc)
@@ -1914,6 +1949,34 @@ async def _fire_reminder(context: ContextTypes.DEFAULT_TYPE) -> None:
         if reminder_id:
             await reminder_repo.mark_fired(reminder_id)
 
+    # Phase 23.c: surface the fired reminder as a web toast/badge for linked users.
+    try:
+        profile_id = await _linked_profile_id(chat_id)
+        if profile_id:
+            from app.db.database import get_db
+            from app.services import notification_service
+            async for db in get_db():
+                await notification_service.notify_web(
+                    db, profile_id, "reminderFired",
+                    title="⏰ Promemoria", body=text,
+                )
+    except Exception:
+        logger.exception("_fire_reminder: notify_web failed id=%s chat_id=%s", reminder_id, chat_id)
+
+
+def get_bot():
+    """Return the running Telegram Bot instance, or None if the bot isn't active.
+
+    Lets notification_service (Phase 23.c) push a web→Telegram message without
+    importing the rest of this module, mirroring schedule_external_reminder below.
+    """
+    return _application.bot if _application is not None else None
+
+
+def is_notify_enabled(chat_id: int) -> bool:
+    """Whether cross-channel notifications are muted for this chat (/notify off)."""
+    return _notify_prefs.get(chat_id, True)
+
 
 def schedule_external_reminder(reminder_id: str, chat_id: int, text: str, fire_at: int) -> bool:
     """Schedule a reminder created outside the bot (Phase 19 create_reminder tool).
@@ -2090,6 +2153,16 @@ async def _load_tools_prefs() -> None:
         logger.exception("_load_tools_prefs: caricamento preferenze strumenti fallito")
 
 
+async def _load_notify_prefs() -> None:
+    """Warm-start the per-chat notification-mute cache from telegram_prefs (Phase 23.c)."""
+    try:
+        _notify_prefs.update(await prefs_repo.load_all_notify())
+        if _notify_prefs:
+            logger.info("_load_notify_prefs: %d preferenze notifiche caricate", len(_notify_prefs))
+    except Exception:
+        logger.exception("_load_notify_prefs: caricamento preferenze notifiche fallito")
+
+
 async def _load_locales() -> None:
     """Warm-start the locale cache from telegram_prefs at boot."""
     try:
@@ -2141,6 +2214,7 @@ _BOT_COMMANDS = [
     BotCommand("rag", "Attiva/disattiva la knowledge base (/rag on|off)"),
     BotCommand("tool", "Attiva/disattiva l'uso degli strumenti (/tool on|off)"),
     BotCommand("tools", "Strumenti/MCP: elenca gli strumenti disponibili"),
+    BotCommand("notify", "Notifiche dal web (/notify on|off)"),
     BotCommand("lang", "Cambia lingua del bot / change bot language"),
     BotCommand("link", "Collega al profilo web"),
     BotCommand("unlink", "Scollega dal profilo web"),
@@ -2157,6 +2231,7 @@ async def _post_init(app: Application) -> None:
     await _load_memory_prefs()
     await _load_rag_prefs()
     await _load_tools_prefs()
+    await _load_notify_prefs()
     await _load_active_convs()
     await _reload_reminders(app)
 
@@ -2195,6 +2270,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("rag", cmd_rag))
     app.add_handler(CommandHandler("tool", cmd_tool))
     app.add_handler(CommandHandler("tools", cmd_tools))
+    app.add_handler(CommandHandler("notify", cmd_notify))
     app.add_handler(CommandHandler("lang", cmd_lang))
     app.add_handler(CommandHandler("link", cmd_link))
     app.add_handler(CommandHandler("unlink", cmd_unlink))
