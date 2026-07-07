@@ -22,24 +22,35 @@ import aiosqlite
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 
+from app.db import graph_repository as graph_repo
 from app.db import kb_repository as repo
 from app.db.database import get_db
 from app.dependencies.auth import resolve_profile
+from app.core.config import settings
 from app.schemas.knowledge import (
+    CommunityBuildResult,
+    GlobalSearchRequest,
+    GlobalSearchResponse,
+    GraphCommunity,
+    GraphNodeDetail,
+    GraphRagStatus,
     KbChunk,
     KbDocument,
     KbDocumentSource,
+    KbGraph,
     KbSearchRequest,
     KbUrlRequest,
     RagSource,
+    WikiPage,
 )
-from app.services import rag_service
+from app.services import document_converter, graphrag_service, rag_service, wiki_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 _MAX_BYTES = 20 * 1024 * 1024
-_ALLOWED_EXT = (".pdf", ".txt", ".md", ".markdown", ".docx")
+# wikillm: MarkItDown handles a much wider set of formats than the old extractor.
+_ALLOWED_EXT = document_converter.SUPPORTED_EXTENSIONS
 
 
 @router.get("/documents", response_model=list[KbDocument])
@@ -58,7 +69,11 @@ async def upload_document(
 ):
     filename = file.filename or "document"
     if not filename.lower().endswith(_ALLOWED_EXT):
-        raise HTTPException(status_code=400, detail="Unsupported file type. Use PDF, TXT, DOCX or Markdown.")
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Accepted: PDF, DOCX, PPTX, XLSX, CSV, HTML, "
+            "TXT, Markdown, EPUB, JSON, XML.",
+        )
 
     data = await file.read()
     if not data:
@@ -203,3 +218,142 @@ async def search(
     except Exception as exc:
         logger.warning("RAG search failed: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+# ── wikillm: wiki tree, knowledge graph, batch re-ingest ───────────────────────
+@router.get("/documents/{doc_id}/wiki", response_model=list[WikiPage])
+async def get_document_wiki(
+    doc_id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Section tree (headings + extractive summaries) built from the Markdown."""
+    return await wiki_service.get_wiki(db, doc_id)
+
+
+@router.get("/graph", response_model=KbGraph)
+async def get_graph(
+    document_id: str | None = None,
+    db: aiosqlite.Connection = Depends(get_db),
+    pid: str = Depends(resolve_profile),
+):
+    """The profile's knowledge graph (optionally scoped to one document)."""
+    nodes, edges = await graph_repo.get_graph(db, pid, document_id=document_id)
+    return KbGraph(nodes=nodes, edges=edges)
+
+
+@router.get("/graph/nodes/{node_id}", response_model=GraphNodeDetail)
+async def get_graph_node(
+    node_id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+    pid: str = Depends(resolve_profile),
+):
+    """A node with its immediate neighbours and the documents mentioning it."""
+    node = await graph_repo.get_node(db, pid, node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found.")
+    neighbors, edges = await graph_repo.get_neighbors(db, pid, node_id)
+    documents: list[KbDocument] = []
+    if node.type == "entity":
+        doc_ids = await graph_repo.documents_for_entity(db, pid, node_id)
+        for did in doc_ids:
+            doc = await repo.get_document(db, did)
+            if doc:
+                documents.append(doc)
+    elif node.document_id:
+        doc = await repo.get_document(db, node.document_id)
+        if doc:
+            documents.append(doc)
+    return GraphNodeDetail(node=node, neighbors=neighbors, edges=edges, documents=documents)
+
+
+@router.post("/reingest")
+async def reingest(
+    db: aiosqlite.Connection = Depends(get_db),
+    pid: str = Depends(resolve_profile),
+):
+    """Rebuild wiki + graph + vectors for pre-wikillm documents (needs_reingest=1).
+
+    Legacy documents keep their stored plain text as the Markdown source, so the
+    structure is coarse — re-upload the original file for full fidelity.
+    """
+    pending = await repo.list_reingest_documents(db, pid)
+    rebuilt, failed = 0, 0
+    for doc in pending:
+        try:
+            await rag_service.reembed(db, doc.id, pid)
+            rebuilt += 1
+        except Exception as exc:
+            failed += 1
+            logger.warning("Re-ingest failed for doc %s: %s", doc.id, exc)
+    # Communities are a global (whole-profile) artefact — rebuild once after the batch.
+    if rebuilt:
+        try:
+            await graphrag_service.build_communities(db, pid)
+        except Exception as exc:  # noqa: BLE001 — best-effort
+            logger.warning("Community rebuild after re-ingest failed: %s", exc)
+    return {"pending": len(pending), "rebuilt": rebuilt, "failed": failed}
+
+
+# ── Phase 28.d: GraphRAG — communities + global search ─────────────────────────
+@router.get("/graph/status", response_model=GraphRagStatus)
+async def graphrag_status(
+    db: aiosqlite.Connection = Depends(get_db),
+    pid: str = Depends(resolve_profile),
+):
+    """Whether GraphRAG artefacts exist for this profile (drives the UI panel)."""
+    return GraphRagStatus(
+        llm_extract_enabled=settings.graph_llm_extract,
+        global_search_enabled=settings.graphrag_global_search,
+        community_count=await graph_repo.count_communities(db, pid),
+    )
+
+
+@router.get("/graph/communities", response_model=list[GraphCommunity])
+async def list_communities(
+    db: aiosqlite.Connection = Depends(get_db),
+    pid: str = Depends(resolve_profile),
+):
+    """Detected entity communities with their summaries, largest first."""
+    rows = await graph_repo.list_communities(db, pid)
+    out: list[GraphCommunity] = []
+    for r in rows:
+        members = await graph_repo.community_member_labels(db, pid, r["id"])
+        out.append(
+            GraphCommunity(
+                id=r["id"],
+                title=r["label"],
+                summary=r["summary"] or "",
+                size=int(r["size"] or 0),
+                members=members,
+            )
+        )
+    return out
+
+
+@router.post("/graph/communities/rebuild", response_model=CommunityBuildResult)
+async def rebuild_communities(
+    db: aiosqlite.Connection = Depends(get_db),
+    pid: str = Depends(resolve_profile),
+):
+    """Re-detect communities for the profile and (re)generate their summaries."""
+    communities, summarised, entities = await graphrag_service.build_communities(db, pid)
+    return CommunityBuildResult(
+        communities=communities, summarised=summarised, entities=entities
+    )
+
+
+@router.post("/graph/global-search", response_model=GlobalSearchResponse)
+async def global_search(
+    body: GlobalSearchRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+    pid: str = Depends(resolve_profile),
+):
+    """GraphRAG global search: map-reduce an answer over community summaries."""
+    if not settings.graphrag_global_search:
+        raise HTTPException(status_code=403, detail="Global search is disabled.")
+    if not body.query.strip():
+        raise HTTPException(status_code=422, detail="Query must not be empty.")
+    result = await graphrag_service.global_search(
+        db, pid, body.query.strip(), top_communities=body.top_communities
+    )
+    return GlobalSearchResponse(**result)

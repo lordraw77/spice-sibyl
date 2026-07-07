@@ -97,6 +97,8 @@ export interface KbDocument {
   error?: string;
   source_type?: 'file' | 'url';
   source_url?: string;
+  /** wikillm: pre-wikillm document awaiting re-ingest (Markdown/wiki/graph). */
+  needs_reingest?: boolean;
   created_at: number;
 }
 
@@ -109,6 +111,9 @@ export interface RagSource {
   snippet: string;
   char_start?: number;
   char_end?: number;
+  /** wikillm: section breadcrumb + entities mentioned in the chunk. */
+  section_path?: string;
+  entities?: string[];
 }
 
 /** A stored chunk (per-document preview). */
@@ -120,6 +125,93 @@ export interface KbChunk {
   char_start?: number;
   char_end?: number;
   embed_model?: string;
+  section_path?: string;
+  heading?: string;
+}
+
+/** wikillm: one node of a document's section tree (built from Markdown headings). */
+export interface WikiPage {
+  id: string;
+  document_id: string;
+  parent_id?: string | null;
+  heading: string;
+  level: number;
+  char_start: number;
+  char_end: number;
+  summary: string;
+  ord: number;
+}
+
+/** wikillm: a knowledge-graph node (document / section / entity / community). */
+export interface GraphNode {
+  id: string;
+  type: 'document' | 'section' | 'entity' | 'community';
+  label: string;
+  document_id?: string | null;
+  summary: string;
+  degree: number;
+}
+
+/** wikillm: a directed, weighted knowledge-graph edge. */
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  relation: 'contains' | 'mentions' | 'links_to' | 'related' | 'in_community';
+  weight: number;
+}
+
+/** wikillm: a knowledge (sub)graph for visualisation. */
+export interface KbGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+/** wikillm: a node plus its immediate neighbours (node-detail view). */
+export interface GraphNodeDetail {
+  node: GraphNode;
+  neighbors: GraphNode[];
+  edges: GraphEdge[];
+  documents: KbDocument[];
+}
+
+/** Phase 28.d: a detected community of related entities with a summary. */
+export interface GraphCommunity {
+  id: string;
+  title: string;
+  summary: string;
+  level: number;
+  size: number;
+  members: string[];
+}
+
+/** Phase 28.d: whether GraphRAG artefacts exist for a profile. */
+export interface GraphRagStatus {
+  llm_extract_enabled: boolean;
+  global_search_enabled: boolean;
+  community_count: number;
+}
+
+/** Phase 28.d: outcome of a community (re)build. */
+export interface CommunityBuildResult {
+  communities: number;
+  summarised: number;
+  entities: number;
+}
+
+/** Phase 28.d: one community's contribution to a global-search answer. */
+export interface GlobalSearchPoint {
+  community_id: string;
+  title: string;
+  score: number;
+  point: string;
+}
+
+/** Phase 28.d: GraphRAG global-search answer synthesised from community summaries. */
+export interface GlobalSearchResponse {
+  query: string;
+  answer: string;
+  points: GlobalSearchPoint[];
 }
 
 /** Body sent to POST /api/v1/chat/completions */

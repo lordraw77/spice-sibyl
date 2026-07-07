@@ -5,6 +5,48 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# wikillm: tri-state cache for sqlite-vec extension availability.
+#   None  = not probed yet
+#   True  = extension loaded, kb_chunk_vec usable (ANN KNN path)
+#   False = unavailable/disabled → retrieval falls back to the numpy cosine scan
+_vec_available: bool | None = None
+
+
+async def _try_load_vec(db: aiosqlite.Connection) -> bool:
+    """Load the sqlite-vec loadable extension on this connection.
+
+    Returns True when vector functions/vec0 tables are usable. Memoises the
+    outcome across connections and logs the fallback reason exactly once so a
+    build without extension support (or rag_use_sqlite_vec=False) degrades to
+    the numpy vector scan without spamming logs.
+    """
+    global _vec_available
+    if not settings.rag_use_sqlite_vec:
+        _vec_available = False
+        return False
+    try:
+        import sqlite_vec
+
+        await db.enable_load_extension(True)
+        await db.load_extension(sqlite_vec.loadable_path())
+        await db.enable_load_extension(False)
+        _vec_available = True
+        return True
+    except Exception as exc:
+        if _vec_available is None:
+            logger.warning(
+                "sqlite-vec unavailable (%s) — retrieval falls back to the numpy "
+                "cosine scan; set rag_use_sqlite_vec=False to silence this.", exc,
+            )
+        _vec_available = False
+        return False
+
+
+def vec_available() -> bool:
+    """Whether the sqlite-vec ANN path is usable (probed at init_db)."""
+    return bool(_vec_available)
+
+
 _SCHEMA = """
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
@@ -186,6 +228,9 @@ CREATE TABLE IF NOT EXISTS kb_documents (
     source_url  TEXT,
     source_text TEXT,                              -- full extracted text (for deep-link highlighting / re-embed)
     content_hash TEXT,                             -- sha256 of the source bytes/text (duplicate detection)
+    -- wikillm: canonical Markdown (MarkItDown output) + re-ingest flag
+    markdown    TEXT,
+    needs_reingest INTEGER NOT NULL DEFAULT 0,
     created_at  INTEGER NOT NULL
 );
 
@@ -198,6 +243,9 @@ CREATE TABLE IF NOT EXISTS kb_chunks (
     -- Phase 17: character span of this chunk within kb_documents.source_text
     char_start   INTEGER NOT NULL DEFAULT 0,
     char_end     INTEGER NOT NULL DEFAULT 0,
+    -- wikillm: Markdown section breadcrumb + heading this chunk belongs to
+    section_path TEXT,
+    heading      TEXT,
     embedding    BLOB,
     embed_model  TEXT,
     created_at   INTEGER NOT NULL,
@@ -235,6 +283,69 @@ AFTER UPDATE OF content ON kb_chunks BEGIN
     INSERT INTO kb_chunks_fts(id, document_id, profile_id, content)
     VALUES (new.id, new.document_id, new.profile_id, new.content);
 END;
+
+-- ── wikillm: MarkItDown-driven wiki + knowledge graph ──────────────────────────
+-- Per-document section tree, built from Markdown headings (MarkItDown output).
+CREATE TABLE IF NOT EXISTS kb_wiki_pages (
+    id          TEXT    PRIMARY KEY,
+    profile_id  TEXT    NOT NULL DEFAULT 'default',
+    document_id TEXT    NOT NULL,
+    parent_id   TEXT,                          -- nesting via heading level
+    heading     TEXT    NOT NULL,
+    level       INTEGER NOT NULL DEFAULT 1,
+    char_start  INTEGER NOT NULL DEFAULT 0,    -- span within kb_documents.markdown
+    char_end    INTEGER NOT NULL DEFAULT 0,
+    summary     TEXT    NOT NULL DEFAULT '',    -- extractive in Phase 1, LLM later
+    ord         INTEGER NOT NULL DEFAULT 0,     -- document order for stable rendering
+    created_at  INTEGER NOT NULL,
+    FOREIGN KEY (document_id) REFERENCES kb_documents(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_kb_wiki_profile ON kb_wiki_pages(profile_id);
+CREATE INDEX IF NOT EXISTS idx_kb_wiki_document ON kb_wiki_pages(document_id);
+
+-- Knowledge-graph nodes (document | section | entity). Entities dedupe per
+-- (profile_id, type, norm_key) so the same name across documents is one node.
+CREATE TABLE IF NOT EXISTS kb_graph_nodes (
+    id          TEXT    PRIMARY KEY,
+    profile_id  TEXT    NOT NULL DEFAULT 'default',
+    type        TEXT    NOT NULL,               -- 'document' | 'section' | 'entity'
+    norm_key    TEXT    NOT NULL,
+    label       TEXT    NOT NULL,
+    document_id TEXT,                           -- owning doc (NULL = cross-doc entity)
+    summary     TEXT    NOT NULL DEFAULT '',
+    meta_json   TEXT,
+    created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_kb_graph_nodes_profile ON kb_graph_nodes(profile_id);
+CREATE INDEX IF NOT EXISTS idx_kb_graph_nodes_key ON kb_graph_nodes(profile_id, type, norm_key);
+CREATE INDEX IF NOT EXISTS idx_kb_graph_nodes_document ON kb_graph_nodes(document_id);
+
+-- Knowledge-graph edges (document→entity mentions, entity→entity related, …).
+CREATE TABLE IF NOT EXISTS kb_graph_edges (
+    id          TEXT    PRIMARY KEY,
+    profile_id  TEXT    NOT NULL DEFAULT 'default',
+    src_node_id TEXT    NOT NULL,
+    dst_node_id TEXT    NOT NULL,
+    relation    TEXT    NOT NULL,               -- 'contains' | 'mentions' | 'links_to' | 'related'
+    weight      REAL    NOT NULL DEFAULT 1.0,
+    meta_json   TEXT,
+    created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_kb_graph_edges_profile ON kb_graph_edges(profile_id);
+CREATE INDEX IF NOT EXISTS idx_kb_graph_edges_src ON kb_graph_edges(src_node_id);
+CREATE INDEX IF NOT EXISTS idx_kb_graph_edges_dst ON kb_graph_edges(dst_node_id);
+
+-- Chunk ↔ entity-node mentions: drives 1-hop graph expansion during retrieval
+-- (seed chunk → shared entity → sibling chunks). Cascades with its chunk.
+CREATE TABLE IF NOT EXISTS kb_chunk_entities (
+    chunk_id   TEXT NOT NULL,
+    node_id    TEXT NOT NULL,
+    profile_id TEXT NOT NULL DEFAULT 'default',
+    PRIMARY KEY (chunk_id, node_id),
+    FOREIGN KEY (chunk_id) REFERENCES kb_chunks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_kb_chunk_entities_node ON kb_chunk_entities(node_id);
+CREATE INDEX IF NOT EXISTS idx_kb_chunk_entities_profile ON kb_chunk_entities(profile_id);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
     id              UNINDEXED,
@@ -487,6 +598,15 @@ _MIGRATIONS = [
     "ALTER TABLE telegram_prefs ADD COLUMN tools INTEGER NOT NULL DEFAULT 0",
     # Phase 23.c: per-chat Telegram notification mute (/notify on|off) — ON by default
     "ALTER TABLE telegram_prefs ADD COLUMN notify INTEGER NOT NULL DEFAULT 1",
+    # wikillm: canonical Markdown (MarkItDown output) + structural chunk metadata.
+    "ALTER TABLE kb_documents ADD COLUMN markdown TEXT",
+    "ALTER TABLE kb_documents ADD COLUMN needs_reingest INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE kb_chunks ADD COLUMN section_path TEXT",
+    "ALTER TABLE kb_chunks ADD COLUMN heading TEXT",
+    # wikillm clean-replacement: pre-wikillm documents have no Markdown, wiki pages
+    # or graph nodes — flag them so the batch re-ingest can rebuild them. Idempotent:
+    # once re-ingested `markdown` is populated and the row no longer matches.
+    "UPDATE kb_documents SET needs_reingest = 1 WHERE markdown IS NULL",
 ]
 
 
@@ -505,6 +625,25 @@ async def init_db() -> None:
                 logger.debug("Migration skipped (already applied): %s", exc)
             except Exception:
                 logger.exception("Unexpected migration error; stmt=%s", stmt)
+
+        # wikillm: load sqlite-vec and materialise the ANN table. The vec0 virtual
+        # table needs the extension loaded, so it lives here (not in _SCHEMA). Its
+        # width is pinned to settings.embedding_dim with a cosine distance metric;
+        # chunks whose embedding width differs are served by the numpy fallback.
+        if await _try_load_vec(db):
+            try:
+                await db.execute(
+                    "CREATE VIRTUAL TABLE IF NOT EXISTS kb_chunk_vec USING vec0("
+                    "chunk_id TEXT PRIMARY KEY, "
+                    "profile_id TEXT, "
+                    "document_id TEXT, "
+                    f"embedding float[{int(settings.embedding_dim)}] distance_metric=cosine)"
+                )
+                await db.commit()
+            except Exception:
+                logger.exception("Failed to create kb_chunk_vec; disabling sqlite-vec path")
+                global _vec_available
+                _vec_available = False
 
         await _migrate_reminders(db)
         await _bootstrap_admin(db)
@@ -579,6 +718,10 @@ async def get_db():
     db = await aiosqlite.connect(settings.db_path)
     db.row_factory = aiosqlite.Row
     await db.execute("PRAGMA foreign_keys=ON")
+    # wikillm: reload sqlite-vec per connection so vec0 KNN queries resolve. Skipped
+    # cheaply when the extension was found unavailable at startup (numpy fallback).
+    if _vec_available:
+        await _try_load_vec(db)
     try:
         yield db
     finally:

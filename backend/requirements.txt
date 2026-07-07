@@ -15,6 +15,10 @@ PyPDF2==3.0.1
 python-docx==1.1.2
 python-multipart==0.0.18
 numpy==1.26.4
+# wikillm: universal document → Markdown conversion (PDF/DOCX/PPTX/XLSX/HTML/CSV…)
+markitdown[pdf,docx,pptx,xlsx]==0.1.2
+# wikillm: ANN vector search as a loadable SQLite extension (replaces O(n) numpy scan)
+sqlite-vec==0.1.6
 PyJWT==2.10.1
 bcrypt==4.2.0
 email-validator==2.2.0

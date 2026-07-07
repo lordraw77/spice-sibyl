@@ -9,12 +9,22 @@
     </div>
     <div class="head-actions">
       <button class="btn-ghost" (click)="load()" [disabled]="loading()">{{ 'common.refresh' | t }}</button>
+      <button class="btn-ghost" (click)="openGlobalGraph()">🕸 {{ 'kb.graph' | t }}</button>
+      <button class="btn-ghost" [class.active]="graphRagOpen()" (click)="toggleGraphRag()">🧭 {{ 'kb.graphrag.title' | t }}</button>
       <label class="btn" [class.disabled]="kbUploading()">
         {{ (kbUploading() ? 'common.loading' : 'kb.upload') | t }}
-        <input type="file" multiple accept=".pdf,.txt,.md,.markdown,.docx" (change)="onFileSelected($event)" hidden [disabled]="kbUploading()" />
+        <input type="file" multiple accept=".pdf,.docx,.pptx,.xlsx,.xls,.csv,.json,.xml,.html,.htm,.txt,.md,.markdown,.epub" (change)="onFileSelected($event)" hidden [disabled]="kbUploading()" />
       </label>
     </div>
   </header>
+
+  <!-- wikillm: pre-wikillm documents need a re-ingest to build wiki + graph -->
+  <div class="reingest-banner" *ngIf="needsReingestCount() > 0">
+    <span>{{ 'kb.reingestBanner' | t: { n: needsReingestCount() } }}</span>
+    <button class="btn sm" (click)="runReingest()" [disabled]="reingestBusy()">
+      {{ (reingestBusy() ? 'common.loading' : 'kb.reingestNow') | t }}
+    </button>
+  </div>
 
   <!-- URL ingestion -->
   <section class="card">
@@ -32,19 +42,111 @@
     </div>
   </section>
 
+  <!-- Phase 28.d: GraphRAG — communities + global (map-reduce) search -->
+  <section class="card graphrag-card" *ngIf="graphRagOpen()">
+    <div class="card-head">
+      <h2>🧭 {{ 'kb.graphrag.title' | t }}</h2>
+      <button class="btn-ghost sm" (click)="rebuildCommunities()" [disabled]="communitiesBusy()">
+        {{ (communitiesBusy() ? 'common.loading' : 'kb.graphrag.rebuild') | t }}
+      </button>
+    </div>
+    <p class="subtitle sm">{{ 'kb.graphrag.desc' | t }}</p>
+
+    <!-- Global search box -->
+    <div class="url-row">
+      <input
+        type="text"
+        class="text-input"
+        [placeholder]="'kb.graphrag.searchPlaceholder' | t"
+        [value]="globalQuery()"
+        (input)="globalQuery.set($any($event.target).value)"
+        (keyup.enter)="runGlobalSearch()"
+        [disabled]="globalBusy()" />
+      <button class="btn" (click)="runGlobalSearch()" [disabled]="globalBusy() || !globalQuery().trim()">
+        {{ (globalBusy() ? 'common.loading' : 'kb.graphrag.search') | t }}
+      </button>
+    </div>
+
+    <!-- Global answer -->
+    <div class="global-answer" *ngIf="globalResult() as gr">
+      <p class="answer-text">{{ gr.answer }}</p>
+      <details class="global-points" *ngIf="gr.points.length">
+        <summary>{{ 'kb.graphrag.points' | t: { n: gr.points.length } }}</summary>
+        <ul>
+          <li *ngFor="let p of gr.points">
+            <span class="point-score">{{ p.score }}</span>
+            <span class="point-title">{{ p.title }}</span>
+            <span class="point-text">{{ p.point }}</span>
+          </li>
+        </ul>
+      </details>
+    </div>
+
+    <!-- Community list -->
+    <p class="panel-loading" *ngIf="communitiesBusy()">{{ 'common.loading' | t }}</p>
+    <ul class="community-list" *ngIf="!communitiesBusy() && communities().length; else noComms">
+      <li *ngFor="let c of communities()" class="community-item">
+        <div class="community-head">
+          <span class="community-title">{{ c.title }}</span>
+          <span class="community-size">{{ 'kb.graphrag.entities' | t: { n: c.size } }}</span>
+        </div>
+        <p class="community-summary" *ngIf="c.summary">{{ c.summary }}</p>
+        <div class="community-members" *ngIf="c.members.length">
+          <span class="member-chip" *ngFor="let m of c.members">{{ m }}</span>
+        </div>
+      </li>
+    </ul>
+    <ng-template #noComms>
+      <p class="empty sm" *ngIf="!communitiesBusy()">{{ 'kb.graphrag.noCommunities' | t }}</p>
+    </ng-template>
+  </section>
+
+  <!-- wikillm: profile-wide knowledge graph -->
+  <section class="card graph-card" *ngIf="graphOpen()">
+    <div class="card-head">
+      <h2>🕸 {{ 'kb.graphTitle' | t }}</h2>
+      <button class="btn-ghost sm" (click)="closeGraph()">{{ 'common.close' | t }}</button>
+    </div>
+    <ng-container *ngTemplateOutlet="graphBlock"></ng-container>
+  </section>
+
   <!-- Document list -->
   <ul class="item-list" *ngIf="kbDocuments().length; else empty">
-    <li *ngFor="let doc of kbDocuments()" class="item">
-      <div class="item-main doc-main">
-        <span class="kb-status" [class.ready]="doc.status === 'ready'" [class.pending]="doc.status === 'pending'" [class.error]="doc.status === 'error'" [title]="doc.error || doc.status"></span>
-        <span class="doc-name" [title]="doc.source_url || doc.filename">
-          <span *ngIf="doc.source_type === 'url'" class="kb-url-tag" [title]="'kb.webPage' | t">🔗</span>{{ doc.filename }}
-        </span>
-        <span class="doc-chunks" *ngIf="doc.status === 'ready'">{{ 'ws.chunks' | t: { n: doc.chunk_count } }}</span>
+    <li *ngFor="let doc of kbDocuments()" class="item item-doc">
+      <div class="item-row">
+        <div class="item-main doc-main">
+          <span class="kb-status" [class.ready]="doc.status === 'ready'" [class.pending]="doc.status === 'pending'" [class.error]="doc.status === 'error'" [title]="doc.error || doc.status"></span>
+          <span class="doc-name" [title]="doc.source_url || doc.filename">
+            <span *ngIf="doc.source_type === 'url'" class="kb-url-tag" [title]="'kb.webPage' | t">🔗</span>{{ doc.filename }}
+          </span>
+          <span class="doc-chunks" *ngIf="doc.status === 'ready'">{{ 'ws.chunks' | t: { n: doc.chunk_count } }}</span>
+          <span class="reingest-tag" *ngIf="doc.needs_reingest" [title]="'kb.reingestTagTitle' | t">⟳</span>
+        </div>
+        <div class="item-actions">
+          <button class="btn-ghost sm" [class.active]="expandedDocId() === doc.id && docTab() === 'wiki'" (click)="toggleDoc(doc, 'wiki', $event)" [disabled]="doc.status !== 'ready'">📑 {{ 'kb.wiki' | t }}</button>
+          <button class="btn-ghost sm" [class.active]="expandedDocId() === doc.id && docTab() === 'graph'" (click)="toggleDoc(doc, 'graph', $event)" [disabled]="doc.status !== 'ready'">🕸 {{ 'kb.graph' | t }}</button>
+          <button class="btn-ghost sm" (click)="reEmbed(doc.id, $event)" [title]="'kb.reindex' | t">Re-embed</button>
+          <button class="btn-danger sm" (click)="deleteDoc(doc.id, $event)" [title]="'common.delete' | t">{{ 'common.delete' | t }}</button>
+        </div>
       </div>
-      <div class="item-actions">
-        <button class="btn-ghost sm" (click)="reEmbed(doc.id, $event)" [title]="'kb.reindex' | t">Re-embed</button>
-        <button class="btn-danger sm" (click)="deleteDoc(doc.id, $event)" [title]="'common.delete' | t">{{ 'common.delete' | t }}</button>
+
+      <!-- Inline inspector (wiki tree or document-scoped graph) -->
+      <div class="doc-panel" *ngIf="expandedDocId() === doc.id">
+        <p class="panel-loading" *ngIf="panelLoading()">{{ 'common.loading' | t }}</p>
+
+        <ng-container *ngIf="!panelLoading() && docTab() === 'wiki'">
+          <ul class="wiki-tree" *ngIf="wikiPages().length; else noWiki">
+            <li *ngFor="let p of wikiPages()" class="wiki-item" [style.marginLeft]="wikiIndent(p.level)">
+              <span class="wiki-heading">{{ p.heading }}</span>
+              <span class="wiki-summary" *ngIf="p.summary">{{ p.summary }}</span>
+            </li>
+          </ul>
+          <ng-template #noWiki><p class="empty sm">{{ 'kb.noWiki' | t }}</p></ng-template>
+        </ng-container>
+
+        <ng-container *ngIf="!panelLoading() && docTab() === 'graph'">
+          <ng-container *ngTemplateOutlet="graphBlock"></ng-container>
+        </ng-container>
       </div>
     </li>
   </ul>
@@ -53,3 +155,35 @@
   </ng-template>
 
 </div>
+
+<!-- Shared graph renderer (used by the global card and per-document panel) -->
+<ng-template #graphBlock>
+  <div class="graph-wrap" *ngIf="nodesView().length; else noGraph">
+    <svg class="graph-svg" [attr.viewBox]="'0 0 ' + svgW + ' ' + svgH" preserveAspectRatio="xMidYMid meet">
+      <line *ngFor="let e of edgesView()" [attr.x1]="e.x1" [attr.y1]="e.y1" [attr.x2]="e.x2" [attr.y2]="e.y2" class="g-edge" />
+      <g *ngFor="let n of nodesView()" class="g-node" [class.g-doc]="n.type === 'document'" [class.g-entity]="n.type === 'entity'" (click)="onNodeClick(n.id)">
+        <circle [attr.cx]="n.x" [attr.cy]="n.y" [attr.r]="n.r" />
+        <text [attr.x]="n.x" [attr.y]="n.y - n.r - 4" text-anchor="middle">{{ n.label }}</text>
+      </g>
+    </svg>
+
+    <aside class="node-detail" *ngIf="selectedNode() as sel">
+      <h4>{{ sel.node.label }}</h4>
+      <p class="node-type">{{ sel.node.type }}</p>
+      <p class="node-summary" *ngIf="sel.node.summary">{{ sel.node.summary }}</p>
+      <div *ngIf="sel.documents.length">
+        <p class="node-sub">{{ 'kb.nodeDocs' | t }}</p>
+        <ul class="node-docs">
+          <li *ngFor="let d of sel.documents">{{ d.filename }}</li>
+        </ul>
+      </div>
+      <div *ngIf="sel.neighbors.length">
+        <p class="node-sub">{{ 'kb.nodeNeighbors' | t: { n: sel.neighbors.length } }}</p>
+        <ul class="node-neighbors">
+          <li *ngFor="let nb of sel.neighbors" (click)="onNodeClick(nb.id)">{{ nb.label }}</li>
+        </ul>
+      </div>
+    </aside>
+  </div>
+  <ng-template #noGraph><p class="empty sm">{{ 'kb.noGraph' | t }}</p></ng-template>
+</ng-template>

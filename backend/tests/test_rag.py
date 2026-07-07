@@ -48,15 +48,34 @@ def test_chunk_text_overlap_covers_all():
     assert text[-50:] in chunks[-1]
 
 
-# ── extract_text ───────────────────────────────────────────────
-def test_extract_text_markdown_and_txt():
-    assert rag_service.extract_text("a.md", b"# Title\nbody") == "# Title\nbody"
-    assert rag_service.extract_text("a.txt", b"plain text") == "plain text"
+# ── extract_text (wikillm: MarkItDown → Markdown) ──────────────
+def test_extract_text_txt_preserves_content():
+    out = rag_service.extract_text("a.txt", b"plain text about backup")
+    assert "plain text about backup" in out
 
 
-def test_extract_text_unsupported():
-    with pytest.raises(ValueError):
-        rag_service.extract_text("a.exe", b"x")
+def test_extract_text_markdown_keeps_heading():
+    out = rag_service.extract_text("a.md", b"# Title\n\nbody about nginx")
+    assert "Title" in out and "nginx" in out
+
+
+# ── wikillm: structural chunking, wiki tree, graph ─────────────
+def test_parse_markdown_sections_breadcrumbs():
+    md = "# Intro\ntext\n\n## Setup\nmore text\n"
+    sections = rag_service.parse_markdown_sections(md)
+    paths = [s.path for s in sections if s.heading]
+    assert ["Intro"] in paths
+    assert ["Intro", "Setup"] in paths
+
+
+def test_chunk_markdown_tags_sections():
+    md = "# Intro\n" + ("alpha " * 200) + "\n\n## Setup\n" + ("beta " * 200)
+    spans = rag_service.chunk_markdown_with_offsets(md)
+    assert spans, "expected structural chunks"
+    # Every chunk carries a section breadcrumb + offsets into the original md
+    assert all(sp for _c, _s, _e, sp, _h in spans)
+    for content, start, end, _sp, _h in spans:
+        assert 0 <= start < end <= len(md)
 
 
 # ── ingest → retrieve round-trip ───────────────────────────────
@@ -94,6 +113,40 @@ def test_ingest_and_retrieve_round_trip():
             # Deleting the document cascades to its chunks
             await repo.delete_document(db, doc_id)
             assert await repo.iter_chunk_vectors(db, "default") == []
+        finally:
+            await db.close()
+            os.unlink(path)
+
+    asyncio.run(run())
+
+
+def test_ingest_builds_wiki_and_graph():
+    async def run():
+        from app.db import graph_repository as gr
+        from app.services import wiki_service
+
+        db, path = await _make_db()
+        try:
+            md = (
+                "# Intro\n"
+                + "Acme Corp builds rockets. " * 5
+                + "\n\n## Setup\n"
+                + "Acme Corp SDK install steps. " * 5
+            )
+            doc_id = await repo.create_document(db, "default", "doc.md", "text/markdown", len(md))
+            await rag_service.ingest(db, doc_id, "default", "doc.md", md.encode())
+
+            wiki = await wiki_service.get_wiki(db, doc_id)
+            assert [w.heading for w in wiki] == ["Intro", "Setup"]
+
+            nodes, edges = await gr.get_graph(db, "default")
+            assert any(n.type == "document" for n in nodes)
+            assert any(n.type == "entity" and "Acme" in n.label for n in nodes)
+            assert edges, "expected document→entity mentions edges"
+
+            # Entity enrichment: retrieved chunks carry their entities.
+            res = await rag_service.retrieve(db, "default", "Acme Corp rockets", top_k=3)
+            assert any(r.entities for r in res)
         finally:
             await db.close()
             os.unlink(path)

@@ -147,6 +147,45 @@ class Settings(BaseSettings):
     # Model used when rag_rerank == "llm" (provider/model id the gateway can route).
     rag_rerank_model: str = "groq/llama-3.1-8b-instant"
 
+    # --- wikillm: MarkItDown + graph + sqlite-vec ---
+    # Fixed dimension of the sqlite-vec ANN table (kb_chunk_vec). Must match the
+    # embedding model's output width; changing it requires re-embedding all chunks.
+    # nomic-embed-text / gemini text-embedding-004 = 768; mistral-embed = 1024.
+    embedding_dim: int = 768
+    # Use the sqlite-vec extension for the vector arm when it loads successfully.
+    # Falls back to the in-memory numpy cosine scan when the extension is
+    # unavailable or fails to load (set False to force the numpy path).
+    rag_use_sqlite_vec: bool = True
+    # Expand the seed candidate pool by one hop over the knowledge graph
+    # (chunks/sections sharing an entity with a seed chunk) before reranking.
+    rag_graph_expand: bool = True
+
+    # --- Phase 28.d: GraphRAG (LLM extraction, communities, global search) ---
+    # Opt-in LLM entity + relationship extraction at ingest time. When on,
+    # graph_service asks an LLM for typed entities and entity→entity relations
+    # (richer than the regex heuristic) and adds 'related' edges; it degrades
+    # gracefully to the LLM-free extractor on any error or when off.
+    graph_llm_extract: bool = False
+    # Model for LLM extraction. Empty = default_model. "provider/model" id.
+    graph_extract_model: str = ""
+    # Cap on the Markdown (chars) sent to the extractor, for cost control.
+    graph_extract_max_chars: int = 12000
+    # Generate LLM community summaries after a (re)build of the graph. Enables
+    # Microsoft-GraphRAG-style global search over the summarised communities.
+    graph_community_summary: bool = False
+    # Model for community + global-search summarisation. Empty = graph_extract_model,
+    # then default_model.
+    graph_community_model: str = ""
+    # Minimum entity nodes in a community before it is summarised (smaller
+    # clusters are folded into their neighbours / ignored for global search).
+    graph_community_min_size: int = 3
+    # Replace the extractive wiki section summaries with LLM summaries at ingest.
+    wiki_llm_summary: bool = False
+    # Model for wiki section summaries. Empty = graph_community_model chain.
+    wiki_summary_model: str = ""
+    # Enable the map-reduce global-search endpoint over community summaries.
+    graphrag_global_search: bool = True
+
     # --- Phase 19: per-profile persistent memory ---
     # Master switch for the memory feature (per-profile toggles live in the DB).
     memory_enabled: bool = True
