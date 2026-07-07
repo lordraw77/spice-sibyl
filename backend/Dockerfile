@@ -1,7 +1,14 @@
 FROM python:3.12-slim
 
-# Non-root user for security
-RUN addgroup --system app && adduser --system --ingroup app app
+# Non-root user for security. Debian's `adduser --system` defaults to
+# HOME=/nonexistent (and never creates it), which silently breaks `npx`/`npm`
+# (needs a writable $HOME/.npm cache) for the Phase 23.5.a stdio runtimes —
+# give it a real, owned home directory instead.
+RUN addgroup --system app \
+    && adduser --system --ingroup app --home /home/app app \
+    && mkdir -p /home/app \
+    && chown -R app:app /home/app
+ENV HOME=/home/app
 
 WORKDIR /app
 COPY requirements.txt .
@@ -11,10 +18,30 @@ RUN pip install --no-cache-dir -r requirements.txt
 # launched as sibling containers via the host daemon socket (mounted at runtime
 # in docker-compose.yml). Static binary keeps the image small; no daemon.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && apt-get install -y --no-install-recommends curl ca-certificates xz-utils \
     && curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.3.1.tgz \
-       | tar -xz -C /usr/local/bin --strip-components=1 docker/docker \
-    && apt-get purge -y curl \
+       | tar -xz -C /usr/local/bin --strip-components=1 docker/docker
+
+# Phase 23.5.a — bundled stdio runtimes. The `docker run …` stdio path above
+# already works everywhere; these layers let the ubiquitous npm/PyPI-distributed
+# MCP servers (`npx -y @modelcontextprotocol/server-…`, `uvx mcp-server-…`)
+# launch directly instead of requiring a Docker sidecar. Each is toggleable via
+# build arg so operators who only need the Docker path can build a slimmer image
+# (`--build-arg INSTALL_NODE=false --build-arg INSTALL_UV=false`).
+ARG INSTALL_NODE=true
+ARG NODE_VERSION=20.18.1
+RUN if [ "$INSTALL_NODE" = "true" ]; then \
+      curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+        | tar -xJ -C /usr/local --strip-components=1 \
+          --exclude='*.md' --exclude='LICENSE' --exclude='share/doc' --exclude='share/man'; \
+    fi
+
+ARG INSTALL_UV=true
+RUN if [ "$INSTALL_UV" = "true" ]; then \
+      curl -fsSL https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh; \
+    fi
+
+RUN apt-get purge -y curl \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 

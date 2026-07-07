@@ -15,6 +15,8 @@ Routes (under /v1/mcp):
   POST   /reload               — re-probe all enabled servers, rebuild tool cache
   GET    /config               — export the {"mcpServers": {...}} bundle
   POST   /import               — import a {"mcpServers": {...}} bundle
+  GET    /runtimes             — (23.5.b) which stdio launchers this image has
+  POST   /deployment-check     — (23.5.d) what a pasted bundle needs from this deployment
 """
 
 import logging
@@ -26,7 +28,13 @@ from app.db import audit_repository, mcp_repository
 from app.db.database import get_db
 from app.dependencies.auth import require_role
 from app.schemas.auth import UserOut
-from app.schemas.mcp import McpConfigBundle, McpServerIn, McpServerOut
+from app.schemas.mcp import (
+    McpConfigBundle,
+    McpDeploymentCheckItem,
+    McpRuntimeReport,
+    McpServerIn,
+    McpServerOut,
+)
 from app.services import mcp_service
 
 logger = logging.getLogger(__name__)
@@ -162,3 +170,22 @@ async def import_config(
         resource=",".join(s.name for s in imported), ip=_client_ip(request),
     )
     return imported
+
+
+@router.get("/runtimes", response_model=McpRuntimeReport)
+async def get_runtimes(admin: UserOut = Depends(require_role("admin"))):
+    """(23.5.b) Which launchers (docker/node/npx/uv/uvx/python) are on PATH in
+    this backend image, plus the current stdio guardrail settings."""
+    return mcp_service.runtime_report()
+
+
+@router.post("/deployment-check", response_model=list[McpDeploymentCheckItem])
+async def deployment_check(
+    bundle: McpConfigBundle,
+    admin: UserOut = Depends(require_role("admin")),
+):
+    """(23.5.d) For a pasted ``mcpServers`` bundle, report per-server what this
+    deployment needs (nothing / the Node/uv runtime layer / already satisfied)."""
+    if not bundle.mcpServers:
+        raise HTTPException(status_code=422, detail="'mcpServers' is empty")
+    return mcp_service.deployment_check(bundle)

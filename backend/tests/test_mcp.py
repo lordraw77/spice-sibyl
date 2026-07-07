@@ -183,3 +183,93 @@ def test_tools_endpoint_includes_builtins(client, auth_headers):
     assert resp.status_code == 200
     names = [t["function"]["name"] for t in resp.json()]
     assert "calculator" in names
+
+
+# ── Phase 23.5 — runtimes, guardrails, deployment calculator ──────────────────
+def test_runtimes_endpoint(client, auth_headers):
+    resp = client.get("/api/v1/mcp/runtimes", headers=auth_headers)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["stdio_enabled"] is True
+    assert set(body["runtimes"].keys()) == {"docker", "node", "npx", "uv", "uvx", "python"}
+    assert "docker" in body["allowed_commands"]
+    assert "mcp-proxy" in body["allowed_commands"]
+
+
+def test_runtimes_requires_auth(client):
+    resp = client.get("/api/v1/mcp/runtimes")
+    assert resp.status_code == 401
+
+
+def test_command_allowed_matches_versioned_interpreters():
+    from app.services.mcp_client import _command_allowed
+
+    allowed = {"docker", "npx", "uvx", "uv", "python", "node"}
+    assert _command_allowed("python3.12", allowed)
+    assert _command_allowed("python3", allowed)
+    assert _command_allowed("node", allowed)
+    assert not _command_allowed("bash", allowed)
+    # empty allowlist means "no restriction"
+    assert _command_allowed("bash", set())
+
+
+def test_default_allowlist_permits_mcp_proxy():
+    """Regression: mcp-proxy (stdio bridge to a remote SSE/streamable-HTTP
+    server, e.g. wrapping Home Assistant) must not be blocked by the default
+    allowlist — it's a documented supported deployment path (23.5.d)."""
+    from app.core.config import settings
+    from app.services.mcp_client import _command_allowed
+
+    assert _command_allowed("mcp-proxy", mcp_client._allowed_commands())
+    assert "mcp-proxy" in settings.mcp_allowed_commands
+
+
+def test_stdio_guardrail_blocks_disallowed_command():
+    async def run():
+        with pytest.raises(mcp_client.MCPError, match="MCP_ALLOWED_COMMANDS"):
+            async with mcp_client.open_session(McpServerConfig(command="bash", args=["-c", "echo hi"])):
+                pass
+
+    asyncio.run(run())
+
+
+def test_stdio_guardrail_respects_disabled_flag(monkeypatch):
+    from app.core.config import settings
+
+    async def run():
+        with pytest.raises(mcp_client.MCPError, match="disabled"):
+            async with mcp_client.open_session(_fake_config()):
+                pass
+
+    monkeypatch.setattr(settings, "mcp_stdio_enabled", False)
+    asyncio.run(run())
+
+
+def test_stdio_preflight_missing_launcher():
+    async def run():
+        with pytest.raises(mcp_client.MCPError, match="not found in the backend image"):
+            async with mcp_client.open_session(McpServerConfig(command="uvx", args=["mcp-server-nope"])):
+                pass
+
+    asyncio.run(run())
+
+
+def test_deployment_check(client, auth_headers):
+    bundle = {"mcpServers": {
+        "docker-based": {"command": "docker", "args": ["run", "--rm", "-i", "img"]},
+        "npx-based": {"command": "npx", "args": ["-y", "@scope/server"]},
+        "remote": {"type": "sse", "url": "http://host:9999/mcp/sse"},
+    }}
+    resp = client.post("/api/v1/mcp/deployment-check", json=bundle, headers=auth_headers)
+    assert resp.status_code == 200, resp.text
+    by_name = {item["name"]: item for item in resp.json()}
+    assert by_name["docker-based"]["transport"] == "stdio"
+    assert by_name["docker-based"]["ok"] is True
+    assert by_name["remote"]["transport"] == "sse"
+    assert by_name["remote"]["ok"] is True
+    assert by_name["npx-based"]["requirement"] == "Node runtime"
+
+
+def test_deployment_check_rejects_empty_bundle(client, auth_headers):
+    resp = client.post("/api/v1/mcp/deployment-check", json={"mcpServers": {}}, headers=auth_headers)
+    assert resp.status_code == 422

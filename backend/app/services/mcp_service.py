@@ -18,12 +18,21 @@ any registry mutation, so :func:`call_tool` stays DB-free on the hot path.
 import asyncio
 import json
 import logging
+import os
 import re
+import shutil
 
 import aiosqlite
 
 from app.db import mcp_repository
-from app.schemas.mcp import McpConfigBundle, McpServerConfig, McpServerOut, McpToolInfo
+from app.schemas.mcp import (
+    McpConfigBundle,
+    McpDeploymentCheckItem,
+    McpRuntimeReport,
+    McpServerConfig,
+    McpServerOut,
+    McpToolInfo,
+)
 from app.services import mcp_client
 
 logger = logging.getLogger(__name__)
@@ -177,3 +186,72 @@ async def import_bundle(
     for name, config in bundle.mcpServers.items():
         out.append(await mcp_repository.upsert_server(db, name, config, enabled))
     return out
+
+
+# ── Runtime detection & deployment calculator (Phase 23.5) ────────────────────
+def runtime_report() -> McpRuntimeReport:
+    """What the running backend image can launch stdio servers with."""
+    from app.core.config import settings
+
+    return McpRuntimeReport(
+        stdio_enabled=settings.mcp_stdio_enabled,
+        allowed_commands=sorted(mcp_client._allowed_commands()),
+        runtimes=mcp_client.detect_runtimes(),
+    )
+
+
+def deployment_check(bundle: McpConfigBundle) -> list[McpDeploymentCheckItem]:
+    """For each server in a pasted bundle, say what this deployment needs.
+
+    Backs the ``/mcp`` config calculator (Phase 23.5.d): ``docker run …`` needs
+    only the already-mounted socket, ``npx``/``uvx`` need the Node/uv runtime
+    layers (23.5.a), and a remote ``url`` works unchanged.
+    """
+    report = runtime_report()
+    items: list[McpDeploymentCheckItem] = []
+    for name, config in bundle.mcpServers.items():
+        if config.transport == "sse":
+            items.append(
+                McpDeploymentCheckItem(
+                    name=name, transport="sse", requirement="remote url",
+                    ok=True, detail="Works today over HTTP+SSE — no host changes needed.",
+                )
+            )
+            continue
+
+        command = (config.command or "").strip()
+        base = os.path.basename(command)
+        allowed = set(report.allowed_commands)
+        if not report.stdio_enabled:
+            ok, detail, requirement = False, "stdio transport is disabled (MCP_STDIO_ENABLED=false).", base
+        elif not mcp_client._command_allowed(base, allowed):
+            ok, detail, requirement = (
+                False,
+                f"'{base}' is not in MCP_ALLOWED_COMMANDS ({', '.join(sorted(allowed))}).",
+                base,
+            )
+        elif base == "docker":
+            requirement, ok, detail = "docker socket", True, "Docker socket mount present ✅"
+        elif base in ("npx", "node"):
+            requirement = "Node runtime"
+            ok = report.runtimes.get("node", False) and (base != "npx" or report.runtimes.get("npx", False))
+            detail = "Node runtime available ✅" if ok else "Requires the Node runtime layer (Phase 23.5.a)."
+        elif base in ("uv", "uvx"):
+            requirement = "uv runtime"
+            ok = report.runtimes.get(base, False)
+            detail = "uv runtime available ✅" if ok else "Requires the uv/uvx runtime layer (Phase 23.5.a)."
+        elif base.startswith("python"):
+            requirement, ok = "Python runtime", report.runtimes.get("python", False)
+            detail = "Python runtime available ✅" if ok else "Python not found in the backend image."
+        else:
+            requirement = base or "command"
+            ok = bool(command) and shutil.which(command) is not None
+            detail = "Found on PATH ✅" if ok else "Not found on PATH — verify it's installed in the backend image."
+
+        items.append(
+            McpDeploymentCheckItem(
+                name=name, transport="stdio", command=command,
+                requirement=requirement, ok=ok, detail=detail,
+            )
+        )
+    return items

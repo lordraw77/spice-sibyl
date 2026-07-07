@@ -2,7 +2,13 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
-import { McpService, McpServer, McpConfigBundle } from '../../core/services/mcp.service';
+import {
+  McpService,
+  McpServer,
+  McpConfigBundle,
+  McpRuntimeReport,
+  McpDeploymentCheckItem,
+} from '../../core/services/mcp.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { I18nService } from '../../core/i18n/i18n.service';
 import { TranslatePipe } from '../../core/i18n/translate.pipe';
@@ -29,6 +35,11 @@ export class McpPageComponent implements OnInit {
   readonly importEnabled = signal(true);
   readonly importBusy = signal(false);
 
+  // Phase 23.5.b/d — runtime report + deployment calculator
+  readonly runtimeReport = signal<McpRuntimeReport | null>(null);
+  readonly checkResults = signal<McpDeploymentCheckItem[] | null>(null);
+  readonly checkBusy = signal(false);
+
   readonly placeholder = `{
   "mcpServers": {
     "wikillm": {
@@ -40,6 +51,14 @@ export class McpPageComponent implements OnInit {
 
   ngOnInit(): void {
     this.refresh(true);
+    this.loadRuntimes();
+  }
+
+  loadRuntimes(): void {
+    this.mcp.runtimes().subscribe({
+      next: (report) => this.runtimeReport.set(report),
+      error: () => this.runtimeReport.set(null),
+    });
   }
 
   refresh(probe = false): void {
@@ -117,12 +136,47 @@ export class McpPageComponent implements OnInit {
   isTesting(id: string): boolean { return this.testing().has(id); }
 
   importConfig(): void {
+    const bundle = this.parseImportBundle();
+    if (!bundle) return;
+    this.importBusy.set(true);
+    this.mcp.importConfig(bundle, this.importEnabled()).subscribe({
+      next: (imported) => {
+        this.importBusy.set(false);
+        this.importJson.set('');
+        this.checkResults.set(null);
+        this.notify.add('success', 'MCP', this.i18n.translate('mcp.imported', { n: imported.length }));
+        this.refresh(true);
+      },
+      error: (err) => {
+        this.importBusy.set(false);
+        this.notify.add('error', 'MCP', err?.error?.detail ?? this.i18n.translate('mcp.importFailed'));
+      },
+    });
+  }
+
+  checkDeployment(): void {
+    const bundle = this.parseImportBundle();
+    if (!bundle) return;
+    this.checkBusy.set(true);
+    this.mcp.deploymentCheck(bundle).subscribe({
+      next: (results) => {
+        this.checkBusy.set(false);
+        this.checkResults.set(results);
+      },
+      error: (err) => {
+        this.checkBusy.set(false);
+        this.notify.add('error', 'MCP', err?.error?.detail ?? this.i18n.translate('mcp.checkFailed'));
+      },
+    });
+  }
+
+  private parseImportBundle(): McpConfigBundle | null {
     let parsed: unknown;
     try {
       parsed = JSON.parse(this.importJson());
     } catch {
       this.notify.add('error', 'MCP', this.i18n.translate('mcp.invalidJson'));
-      return;
+      return null;
     }
     // Accept either a full {"mcpServers": {...}} bundle or a bare {name: config} map.
     const obj = parsed as Record<string, unknown>;
@@ -133,21 +187,9 @@ export class McpPageComponent implements OnInit {
 
     if (!bundle.mcpServers || !Object.keys(bundle.mcpServers).length) {
       this.notify.add('error', 'MCP', this.i18n.translate('mcp.noServers'));
-      return;
+      return null;
     }
-    this.importBusy.set(true);
-    this.mcp.importConfig(bundle, this.importEnabled()).subscribe({
-      next: (imported) => {
-        this.importBusy.set(false);
-        this.importJson.set('');
-        this.notify.add('success', 'MCP', this.i18n.translate('mcp.imported', { n: imported.length }));
-        this.refresh(true);
-      },
-      error: (err) => {
-        this.importBusy.set(false);
-        this.notify.add('error', 'MCP', err?.error?.detail ?? this.i18n.translate('mcp.importFailed'));
-      },
-    });
+    return bundle;
   }
 
   exportConfig(): void {
@@ -167,6 +209,11 @@ export class McpPageComponent implements OnInit {
 
   commandLine(server: McpServer): string {
     return [server.config.command, ...(server.config.args ?? [])].join(' ');
+  }
+
+  runtimeEntries(): { name: string; available: boolean }[] {
+    const runtimes = this.runtimeReport()?.runtimes ?? {};
+    return Object.entries(runtimes).map(([name, available]) => ({ name, available }));
   }
 
   private patchServer(updated: McpServer): void {

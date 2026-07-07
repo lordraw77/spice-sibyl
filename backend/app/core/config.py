@@ -81,6 +81,15 @@ class Settings(BaseSettings):
     # Truncate the logged raw output to this many chars (0 = no truncation).
     mcp_log_max_chars: int = 4000
 
+    # Phase 23.5.c: stdio guardrails. Spawning arbitrary commands from the admin
+    # UI is powerful, so it can be switched off entirely, and is otherwise gated
+    # by an allowlist of command basenames (comma-separated). `mcp-proxy` is
+    # included because it's the standard stdio-to-remote-SSE/streamable-HTTP
+    # bridge (e.g. wrapping a Home Assistant MCP endpoint) referenced elsewhere
+    # in the docs as a supported deployment path.
+    mcp_stdio_enabled: bool = True
+    mcp_allowed_commands: str = 'docker,npx,uvx,uv,python,node,mcp-proxy'
+
     # --- Phase 18: sandboxed code interpreter (python_exec built-in tool) ---
     # Runs model-supplied Python in an isolated subprocess with resource limits
     # and no network. Set CODE_INTERPRETER_ENABLED=false to remove the tool.

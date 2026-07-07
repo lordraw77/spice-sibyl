@@ -115,3 +115,22 @@ class McpConfigBundle(BaseModel):
     """The standard ``{"mcpServers": {...}}`` import/export document."""
 
     mcpServers: dict[str, McpServerConfig] = Field(default_factory=dict)
+
+
+class McpRuntimeReport(BaseModel):
+    """Phase 23.5.b — which stdio launchers are present in the running image."""
+
+    stdio_enabled: bool
+    allowed_commands: list[str]
+    runtimes: dict[str, bool]
+
+
+class McpDeploymentCheckItem(BaseModel):
+    """Phase 23.5.d — what one server in a pasted bundle needs from this deployment."""
+
+    name: str
+    transport: str
+    command: str | None = None
+    requirement: str
+    ok: bool
+    detail: str

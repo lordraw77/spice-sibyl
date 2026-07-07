@@ -43,6 +43,23 @@ export interface McpConfigBundle {
   mcpServers: Record<string, McpServerConfig>;
 }
 
+/** Phase 23.5.b — which stdio launchers this backend image has on PATH. */
+export interface McpRuntimeReport {
+  stdio_enabled: boolean;
+  allowed_commands: string[];
+  runtimes: Record<string, boolean>;
+}
+
+/** Phase 23.5.d — what one server in a pasted bundle needs from this deployment. */
+export interface McpDeploymentCheckItem {
+  name: string;
+  transport: 'stdio' | 'sse';
+  command?: string | null;
+  requirement: string;
+  ok: boolean;
+  detail: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class McpService {
   private readonly http = inject(HttpClient);
@@ -86,5 +103,13 @@ export class McpService {
     return this.http.post<McpServer[]>(`${this.base}/import`, bundle, {
       params: { enabled: String(enabled) },
     });
+  }
+
+  runtimes(): Observable<McpRuntimeReport> {
+    return this.http.get<McpRuntimeReport>(`${this.base}/runtimes`);
+  }
+
+  deploymentCheck(bundle: McpConfigBundle): Observable<McpDeploymentCheckItem[]> {
+    return this.http.post<McpDeploymentCheckItem[]>(`${this.base}/deployment-check`, bundle);
   }
 }

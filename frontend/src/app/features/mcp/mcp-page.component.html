@@ -16,6 +16,18 @@
     </div>
   </header>
 
+  <!-- Runtimes (23.5.b) -->
+  <section class="mcp-card" *ngIf="runtimeReport() as report">
+    <div class="card-head"><h2>{{ 'mcp.runtimesTitle' | t }}</h2></div>
+    <p class="muted" *ngIf="!report.stdio_enabled">⚠️ {{ 'mcp.stdioDisabled' | t }}</p>
+    <div class="runtime-chips">
+      <span class="runtime-chip" *ngFor="let r of runtimeEntries()" [class.ok]="r.available" [class.bad]="!r.available">
+        {{ r.available ? '✓' : '✗' }} {{ r.name }}
+      </span>
+    </div>
+    <p class="muted">{{ 'mcp.allowedCommands' | t }}: <code>{{ report.allowed_commands.join(', ') }}</code></p>
+  </section>
+
   <!-- Add / import -->
   <section class="mcp-card">
     <div class="card-head"><h2>{{ 'mcp.addImport' | t }}</h2></div>
@@ -27,17 +39,30 @@
       class="mcp-textarea"
       rows="9"
       [ngModel]="importJson()"
-      (ngModelChange)="importJson.set($event)"
+      (ngModelChange)="importJson.set($event); checkResults.set(null)"
       [placeholder]="placeholder"
       spellcheck="false"></textarea>
+
+    <div class="check-results" *ngIf="checkResults() as results">
+      <div class="check-item" *ngFor="let r of results" [class.ok]="r.ok" [class.bad]="!r.ok">
+        <strong>{{ r.name }}</strong> ({{ r.transport }}{{ r.command ? ': ' + r.command : '' }}) —
+        {{ r.detail }}
+      </div>
+    </div>
+
     <div class="form-row">
       <label class="check">
         <input type="checkbox" [ngModel]="importEnabled()" (ngModelChange)="importEnabled.set($event)" />
         {{ 'mcp.enableOnImport' | t }}
       </label>
-      <button class="btn" (click)="importConfig()" [disabled]="importBusy() || !importJson().trim()">
-        {{ importBusy() ? 'Import…' : ('mcp.import' | t) }}
-      </button>
+      <div class="head-actions">
+        <button class="btn-ghost" (click)="checkDeployment()" [disabled]="checkBusy() || !importJson().trim()">
+          {{ checkBusy() ? ('common.loading' | t) : ('mcp.checkDeployment' | t) }}
+        </button>
+        <button class="btn" (click)="importConfig()" [disabled]="importBusy() || !importJson().trim()">
+          {{ importBusy() ? 'Import…' : ('mcp.import' | t) }}
+        </button>
+      </div>
     </div>
   </section>
 

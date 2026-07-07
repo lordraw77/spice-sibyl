@@ -144,6 +144,29 @@ code { font-family: monospace; font-size: .82em; background: var(--bg-surface-ho
 .switch input:checked + .slider { background: var(--accent-bg); border-color: var(--accent); }
 .switch input:checked + .slider::before { transform: translateX(18px); background: var(--accent); }
 
+/* runtime report (23.5.b) */
+.runtime-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .3rem 0; }
+.runtime-chip {
+  font-family: monospace;
+  font-size: .78rem;
+  padding: .18rem .5rem;
+  border-radius: .35rem;
+  border: 1px solid var(--border);
+}
+.runtime-chip.ok { background: rgba(107, 205, 123, .18); color: #4caf50; border-color: transparent; }
+.runtime-chip.bad { background: var(--bg-surface-hover); color: var(--text-muted); }
+
+/* deployment calculator results (23.5.d) */
+.check-results { display: flex; flex-direction: column; gap: .3rem; margin-top: .6rem; }
+.check-item {
+  font-size: .8rem;
+  padding: .4rem .6rem;
+  border-radius: .4rem;
+  border: 1px solid var(--border);
+}
+.check-item.ok { color: #4caf50; border-color: rgba(107, 205, 123, .35); background: rgba(107, 205, 123, .08); }
+.check-item.bad { color: #e05656; border-color: rgba(205, 107, 107, .35); background: rgba(205, 107, 107, .08); }
+
 @media (max-width: 700px) {
   .mcp-shell { padding: 1rem; }
 }

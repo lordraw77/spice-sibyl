@@ -21,6 +21,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 from contextlib import asynccontextmanager
 from urllib.parse import urljoin
 
@@ -41,6 +42,41 @@ DEFAULT_CALL_TIMEOUT = 120.0
 
 class MCPError(RuntimeError):
     """Raised when an MCP server errors, times out, or speaks malformed JSON-RPC."""
+
+
+# Phase 23.5.b — launchers a stdio MCP server's `command` might name, reported
+# by GET /v1/mcp/runtimes so operators can see what the running image supports.
+KNOWN_RUNTIMES = ("docker", "node", "npx", "uv", "uvx", "python")
+
+
+def detect_runtimes() -> dict[str, bool]:
+    """Which known stdio launchers are present on PATH in this image."""
+    return {name: shutil.which(name) is not None for name in KNOWN_RUNTIMES}
+
+
+def _allowed_commands() -> set[str]:
+    from app.core.config import settings
+
+    return {c.strip() for c in settings.mcp_allowed_commands.split(",") if c.strip()}
+
+
+def _command_allowed(command_name: str, allowed: set[str]) -> bool:
+    """True if ``command_name`` matches an allowlist entry.
+
+    Matches versioned interpreter names too (``python3.12`` / ``node20`` match
+    the ``python`` / ``node`` allowlist entries) since ``sys.executable`` and
+    distro packages rarely ship the bare name.
+    """
+    if not allowed:
+        return True
+    if command_name in allowed:
+        return True
+    for entry in allowed:
+        if command_name.startswith(entry) and (
+            len(command_name) == len(entry) or not command_name[len(entry)].isalpha()
+        ):
+            return True
+    return False
 
 
 # ── Shared JSON-RPC protocol surface ──────────────────────────────────────────
@@ -317,6 +353,26 @@ async def open_session(config: McpServerConfig, connect_timeout: float = DEFAULT
 
 @asynccontextmanager
 async def _open_stdio(config: McpServerConfig, connect_timeout: float):
+    from app.core.config import settings
+
+    # Phase 23.5.c — guardrails before spawning anything.
+    if not settings.mcp_stdio_enabled:
+        raise MCPError("stdio MCP servers are disabled (MCP_STDIO_ENABLED=false)")
+    command_name = os.path.basename(config.command or "")
+    allowed = _allowed_commands()
+    if not _command_allowed(command_name, allowed):
+        raise MCPError(
+            f"command '{command_name}' is not in MCP_ALLOWED_COMMANDS "
+            f"({', '.join(sorted(allowed))})"
+        )
+    # Phase 23.5.b — PATH preflight so a missing runtime gives an actionable
+    # error instead of a raw OSError from create_subprocess_exec.
+    if shutil.which(config.command or "") is None:
+        raise MCPError(
+            f"'{config.command}' not found in the backend image — enable the "
+            "corresponding runtime layer (Phase 23.5.a), or use the docker/mcp-proxy transport"
+        )
+
     env = dict(os.environ)
     env.update(config.env or {})
     try:
