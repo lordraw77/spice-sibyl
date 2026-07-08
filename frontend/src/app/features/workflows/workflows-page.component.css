@@ -146,3 +146,29 @@
 @media (max-width: 700px) {
   .wf-shell { padding: 1rem; }
 }
+
+/* Phase 24.a — Examples gallery */
+.wf-ex-head { display: flex; align-items: center; justify-content: space-between; }
+.wf-ex-sub { margin: 0 0 .8rem; font-size: .82rem; }
+.wf-ex-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: .8rem;
+}
+.wf-ex-card {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  border: 1px solid var(--border);
+  border-radius: .5rem;
+  padding: .8rem .9rem;
+  background: var(--bg-surface);
+}
+.wf-ex-card.imported { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.wf-ex-name { font-size: .92rem; margin: 0; color: var(--text-primary); }
+.wf-ex-desc { font-size: .8rem; line-height: 1.45; color: var(--text-secondary); margin: 0; flex: 1; }
+.wf-ex-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; }
+.wf-ex-toollabel { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.wf-ex-tool { font-size: .72rem; color: var(--accent); background: var(--accent-bg); padding: .05rem .4rem; border-radius: .3rem; }
+.wf-ex-foot { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.wf-ex-foot .muted { font-size: .74rem; }

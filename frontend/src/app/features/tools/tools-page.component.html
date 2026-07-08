@@ -89,6 +89,37 @@
     </div>
   </section>
 
+  <!-- Phase 24.b — Examples gallery -->
+  <section class="tools-card" *ngIf="examples().length">
+    <div class="card-head tools-ex-head">
+      <h2>{{ 'tools.ex.title' | t }}</h2>
+      <button class="btn-ghost" (click)="toggleExamples()">
+        {{ (examplesOpen() ? 'common.hide' : 'tools.ex.show') | t }}
+      </button>
+    </div>
+    <p class="muted tools-ex-sub">{{ 'tools.ex.subtitle' | t }}</p>
+
+    <div class="tools-ex-grid" *ngIf="examplesOpen()">
+      <article class="tools-ex-card" *ngFor="let ex of examples()">
+        <div class="tools-ex-top">
+          <h3 class="tools-ex-name">{{ ex.title }}</h3>
+          <span class="tools-ex-api mono">{{ ex.api }}</span>
+        </div>
+        <p class="tools-ex-desc">{{ ex.description }}</p>
+        <div class="tools-ex-meta">
+          <code class="mono">{{ ex.tool.endpoint.method }} custom__{{ ex.tool.name }}</code>
+        </div>
+        <div class="tools-ex-foot">
+          <span class="muted" *ngIf="ex.tool.endpoint.auth?.type === 'bearer'">🔑 {{ 'tools.ex.bearer' | t }}</span>
+          <span *ngIf="ex.tool.endpoint.auth?.type !== 'bearer'"></span>
+          <button class="btn" (click)="importExample(ex)" [disabled]="isImporting(ex.id)">
+            {{ (isImporting(ex.id) ? 'tools.ex.importing' : 'tools.ex.import') | t }}
+          </button>
+        </div>
+      </article>
+    </div>
+  </section>
+
   <!-- Tool list -->
   <section class="tools-card">
     <div class="card-head"><h2>{{ 'tools.registered' | t: { n: tools().length } }}</h2></div>

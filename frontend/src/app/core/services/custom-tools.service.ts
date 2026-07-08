@@ -48,6 +48,17 @@ export interface CustomToolTestResult {
   result: string;
 }
 
+/** Phase 24.b — a curated, importable custom-tool definition (Examples gallery). */
+export interface CustomToolExample {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  api: string;
+  tool: CustomToolIn;
+  test_arguments: Record<string, unknown>;
+}
+
 @Injectable({ providedIn: 'root' })
 export class CustomToolsService {
   private readonly http = inject(HttpClient);
@@ -59,6 +70,10 @@ export class CustomToolsService {
 
   list(): Observable<CustomTool[]> {
     return this.http.get<CustomTool[]>(this.base);
+  }
+
+  examples(): Observable<CustomToolExample[]> {
+    return this.http.get<CustomToolExample[]>(`${this.base}/examples`);
   }
 
   create(body: CustomToolIn): Observable<CustomTool> {

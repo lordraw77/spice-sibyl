@@ -21,7 +21,9 @@ from app.db import audit_repository, custom_tool_repository
 from app.db.database import get_db
 from app.dependencies.auth import get_current_user, resolve_profile
 from app.schemas.auth import UserOut
+from app.examples import list_custom_tool_examples
 from app.schemas.custom_tools import (
+    CustomToolExample,
     CustomToolIn,
     CustomToolOut,
     CustomToolTestRequest,
@@ -66,6 +68,16 @@ async def list_tools(
 
 
 # ── Phase 18: user-defined custom tools ──────────────────────────────────────
+@router.get("/custom/examples", response_model=list[CustomToolExample])
+async def list_custom_tool_examples_route():
+    """Phase 24.b — the curated "Examples" gallery for one-click import.
+
+    Static catalog; declared before ``/custom/{tool_id}`` routes so it isn't
+    treated as a tool id.
+    """
+    return list_custom_tool_examples()
+
+
 @router.get("/custom", response_model=list[CustomToolOut])
 async def list_custom_tools(
     db: aiosqlite.Connection = Depends(get_db),

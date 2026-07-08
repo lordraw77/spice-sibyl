@@ -50,6 +50,33 @@
     </div>
   </section>
 
+  <!-- Phase 24.a — Examples gallery -->
+  <section class="wf-card" *ngIf="examples().length">
+    <div class="card-head wf-ex-head">
+      <h2>{{ 'wf.ex.title' | t }}</h2>
+      <button class="btn-ghost" (click)="toggleExamples()">
+        {{ (examplesOpen() ? 'common.hide' : 'wf.ex.show') | t }}
+      </button>
+    </div>
+    <p class="muted wf-ex-sub">{{ 'wf.ex.subtitle' | t }}</p>
+
+    <div class="wf-ex-grid" *ngIf="examplesOpen()">
+      <article class="wf-ex-card" *ngFor="let ex of examples()"
+               [class.imported]="importedId() === ex.id">
+        <h3 class="wf-ex-name">{{ ex.title }}</h3>
+        <p class="wf-ex-desc">{{ ex.description }}</p>
+        <div class="wf-ex-tools">
+          <span class="wf-ex-toollabel">{{ 'wf.ex.needs' | t }}</span>
+          <code class="wf-ex-tool mono" *ngFor="let tname of ex.required_tools">{{ tname }}</code>
+        </div>
+        <div class="wf-ex-foot">
+          <span class="muted">{{ 'wf.ex.steps' | t: { n: ex.max_steps } }}</span>
+          <button class="btn" (click)="importExample(ex)">{{ 'wf.ex.import' | t }}</button>
+        </div>
+      </article>
+    </div>
+  </section>
+
   <!-- Run list -->
   <section class="wf-card">
     <div class="card-head"><h2>Run ({{ runs().length }})</h2></div>

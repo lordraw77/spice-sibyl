@@ -47,6 +47,18 @@ export interface AgentRunCreate {
   system_prompt?: string;
 }
 
+/** Phase 24.a — a curated, importable workflow definition (Examples gallery). */
+export interface WorkflowExample {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  required_tools: string[];
+  max_steps: number;
+  goal: string;
+  system_prompt?: string | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class WorkflowService {
   private readonly http = inject(HttpClient);
@@ -62,6 +74,10 @@ export class WorkflowService {
 
   list(): Observable<AgentRun[]> {
     return this.http.get<AgentRun[]>(this.base);
+  }
+
+  examples(): Observable<WorkflowExample[]> {
+    return this.http.get<WorkflowExample[]>(`${this.base}/examples`);
   }
 
   get(id: string): Observable<AgentRun> {

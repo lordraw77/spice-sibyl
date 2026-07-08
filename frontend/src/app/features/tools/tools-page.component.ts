@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 
 import {
   CustomTool,
+  CustomToolExample,
   CustomToolIn,
   CustomToolsService,
 } from '../../core/services/custom-tools.service';
@@ -37,6 +38,11 @@ export class ToolsPageComponent implements OnInit {
 
   readonly tools = signal<CustomTool[]>([]);
   readonly loading = signal(false);
+
+  // Phase 24.b — importable Examples gallery
+  readonly examples = signal<CustomToolExample[]>([]);
+  readonly examplesOpen = signal(false);
+  readonly importing = signal<Set<string>>(new Set());
 
   // Available tools exposed to the model (built-in + MCP servers + custom),
   // grouped by MCP server for display.
@@ -100,6 +106,36 @@ export class ToolsPageComponent implements OnInit {
   ngOnInit(): void {
     this.refresh();
     this.loadAvailableTools();
+    this.toolsApi.examples().subscribe({
+      next: (list) => this.examples.set(list),
+      error: () => {},
+    });
+  }
+
+  toggleExamples(): void {
+    this.examplesOpen.update((v) => !v);
+  }
+
+  isImporting(id: string): boolean {
+    return this.importing().has(id);
+  }
+
+  /** Phase 24.b — create the example tool, then open it with its sample test
+   *  payload pre-loaded into the inline test panel so it can be run at once. */
+  importExample(ex: CustomToolExample): void {
+    this.importing.update((s) => new Set(s).add(ex.id));
+    this.toolsApi.create(ex.tool).subscribe({
+      next: (created) => {
+        this.importing.update((s) => { const n = new Set(s); n.delete(ex.id); return n; });
+        this.testArgsJson = JSON.stringify(ex.test_arguments ?? {}, null, 2);
+        this.expanded.update((s) => new Set(s).add(created.id));
+        this.notify.add('success', 'Tools', this.i18n.translate('tools.saved', { name: created.name }));
+        this.refresh();
+      },
+      error: () => {
+        this.importing.update((s) => { const n = new Set(s); n.delete(ex.id); return n; });
+      },
+    });
   }
 
   refresh(): void {

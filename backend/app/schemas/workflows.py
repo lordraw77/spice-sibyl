@@ -51,3 +51,20 @@ class AgentRunOut(BaseModel):
     created_at: int
     updated_at: int
     steps: list[AgentRunStep] | None = None
+
+
+class WorkflowExample(BaseModel):
+    """Phase 24.a — a curated, importable workflow definition.
+
+    Read-only catalog data (no ``model`` — the user picks one at import time).
+    ``required_tools`` are the built-in tool names the example exercises.
+    """
+
+    id: str
+    title: str
+    description: str
+    category: str
+    required_tools: list[str]
+    max_steps: int
+    goal: str
+    system_prompt: str | None = None

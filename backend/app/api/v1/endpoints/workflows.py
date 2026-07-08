@@ -21,7 +21,8 @@ from app.db import audit_repository, workflow_repository
 from app.db.database import get_db
 from app.dependencies.auth import get_current_user, resolve_profile
 from app.schemas.auth import UserOut
-from app.schemas.workflows import AgentRunCreate, AgentRunOut
+from app.examples import list_workflow_examples
+from app.schemas.workflows import AgentRunCreate, AgentRunOut, WorkflowExample
 from app.services import workflow_service
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,16 @@ async def list_runs(
 ):
     runs = await workflow_repository.list_runs(db, profile_id)
     return [await workflow_service.reconcile(db, r) for r in runs]
+
+
+@router.get("/examples", response_model=list[WorkflowExample])
+async def list_examples():
+    """Phase 24.a — the curated "Examples" gallery for one-click import.
+
+    Static catalog; declared before ``/{run_id}`` so it isn't swallowed by the
+    dynamic run-id route.
+    """
+    return list_workflow_examples()
 
 
 @router.get("/{run_id}", response_model=AgentRunOut)

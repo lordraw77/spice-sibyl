@@ -9,6 +9,7 @@ import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import {
   AgentRun,
   AgentRunStatus,
+  WorkflowExample,
   WorkflowService,
 } from '../../core/services/workflow.service';
 
@@ -34,6 +35,11 @@ export class WorkflowsPageComponent implements OnInit, OnDestroy {
   readonly expanded = signal<string | null>(null);
   readonly detail = signal<AgentRun | null>(null);
 
+  // Phase 24.a — importable Examples gallery
+  readonly examples = signal<WorkflowExample[]>([]);
+  readonly examplesOpen = signal(false);
+  readonly importedId = signal<string | null>(null);
+
   // Create form
   goal = '';
   model = '';
@@ -50,6 +56,10 @@ export class WorkflowsPageComponent implements OnInit, OnDestroy {
         this.models.set(ids);
         if (!this.model && ids.length) this.model = ids[0];
       },
+      error: () => {},
+    });
+    this.workflows.examples().subscribe({
+      next: (list) => this.examples.set(list),
       error: () => {},
     });
     this.pollTimer = setInterval(() => this.pollActive(), 3000);
@@ -102,6 +112,21 @@ export class WorkflowsPageComponent implements OnInit, OnDestroy {
         },
         error: () => this.creating.set(false),
       });
+  }
+
+  toggleExamples(): void {
+    this.examplesOpen.update((v) => !v);
+  }
+
+  /** Phase 24.a — pre-fill the create form from a curated example. The user
+   *  still picks the model and clicks "Start run" (nothing runs on import). */
+  importExample(ex: WorkflowExample): void {
+    this.goal = ex.goal;
+    this.systemPrompt = ex.system_prompt ?? '';
+    this.maxSteps = ex.max_steps;
+    this.importedId.set(ex.id);
+    this.notify.add('info', 'Workflow', this.i18n.translate('wf.ex.imported'));
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   toggleExpand(id: string): void {

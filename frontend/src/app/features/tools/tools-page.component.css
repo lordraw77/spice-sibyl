@@ -197,3 +197,28 @@ code { font-family: monospace; font-size: .82em; background: var(--bg-surface-ho
   .tools-shell { padding: 1rem; }
   .mcp-grid { grid-template-columns: 1fr; }
 }
+
+/* Phase 24.b — Examples gallery */
+.tools-ex-head { display: flex; align-items: center; justify-content: space-between; }
+.tools-ex-sub { margin: 0 0 .8rem; font-size: .82rem; }
+.tools-ex-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: .8rem;
+}
+.tools-ex-card {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  border: 1px solid var(--border);
+  border-radius: .5rem;
+  padding: .8rem .9rem;
+  background: var(--bg-surface);
+}
+.tools-ex-top { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.tools-ex-name { font-size: .92rem; margin: 0; color: var(--text-primary); }
+.tools-ex-api { font-size: .7rem; color: var(--text-muted); white-space: nowrap; }
+.tools-ex-desc { font-size: .8rem; line-height: 1.45; color: var(--text-secondary); margin: 0; flex: 1; }
+.tools-ex-meta code { font-size: .72rem; color: var(--accent); background: var(--accent-bg); padding: .1rem .4rem; border-radius: .3rem; }
+.tools-ex-foot { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.tools-ex-foot .muted { font-size: .74rem; }

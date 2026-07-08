@@ -15,6 +15,8 @@ call time — no in-memory routing cache to keep coherent across profiles.
 
 import json
 import logging
+import re
+import urllib.parse
 
 import aiosqlite
 import httpx
@@ -29,6 +31,28 @@ _TOOL_PREFIX = "custom"
 _SEP = "__"
 
 _MAX_RESULT_CHARS = 8000
+
+_PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def _apply_path_params(url: str, arguments: dict) -> tuple[str, dict]:
+    """Substitute ``{name}`` placeholders in the URL from ``arguments``.
+
+    A path-templated REST endpoint (e.g. Wikipedia's
+    ``…/page/summary/{title}`` or Nager.Date's ``…/{year}/{countryCode}``)
+    can then be driven by a custom tool. Consumed arguments are removed from the
+    returned dict so they are not *also* sent as query params / JSON body.
+    Placeholders without a matching argument are left untouched.
+    """
+    remaining = dict(arguments or {})
+
+    def _sub(match: re.Match) -> str:
+        key = match.group(1)
+        if key in remaining:
+            return urllib.parse.quote(str(remaining.pop(key)), safe="")
+        return match.group(0)
+
+    return _PLACEHOLDER.sub(_sub, url), remaining
 
 
 def namespaced(tool_name: str) -> str:
@@ -70,18 +94,21 @@ async def invoke(tool: CustomToolOut, arguments: dict) -> str:
     elif ep.auth.type == "header" and ep.auth.name:
         headers[ep.auth.name] = ep.auth.value or ""
 
+    # Fill any {name} path placeholders first; the rest ride as query/body.
+    url, args = _apply_path_params(ep.url, arguments)
+
     try:
         async with httpx.AsyncClient(timeout=ep.timeout, follow_redirects=True) as client:
             if ep.method == "GET":
                 # Flatten arguments into query params (JSON-encode nested values).
                 params = {
                     k: v if isinstance(v, (str, int, float, bool)) else json.dumps(v)
-                    for k, v in (arguments or {}).items()
+                    for k, v in args.items()
                 }
-                resp = await client.get(ep.url, params=params, headers=headers)
+                resp = await client.get(url, params=params, headers=headers)
             else:
                 resp = await client.request(
-                    ep.method, ep.url, json=arguments or {}, headers=headers
+                    ep.method, url, json=args, headers=headers
                 )
     except (httpx.HTTPError, OSError) as exc:
         logger.warning("Custom tool '%s' request failed: %s", tool.name, exc)

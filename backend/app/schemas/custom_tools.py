@@ -112,6 +112,22 @@ class CustomToolOut(BaseModel):
     updated_at: int
 
 
+class CustomToolExample(BaseModel):
+    """Phase 24.b — a curated, importable custom-tool definition.
+
+    ``tool`` is the ready-to-import payload (a ``CustomToolIn``); ``test_arguments``
+    pre-fills the inline test panel; ``api`` labels the upstream service.
+    """
+
+    id: str
+    title: str
+    description: str
+    category: str
+    api: str
+    tool: CustomToolIn
+    test_arguments: dict = Field(default_factory=dict)
+
+
 class CustomToolTestRequest(BaseModel):
     """Payload for POST /tools/custom/{id}/test — sample arguments to invoke with."""
 
