@@ -774,6 +774,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
                       capabilities: (metaMsg['capabilities'] as string[] | undefined) ?? [],
                       free: metaMsg['free'] as boolean | undefined,
                       cached: (data['cached'] ?? metaMsg['cached']) as boolean | undefined,
+                      cached_semantic: (data['cached_semantic'] ?? metaMsg['cached_semantic']) as boolean | undefined,
                     }
                   : m
               )

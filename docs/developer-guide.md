@@ -264,8 +264,8 @@ On every boot: tables are created (idempotently), migrations applied (including 
 | `ADMIN_EMAIL` | — | Bootstrap admin email (first boot) |
 | `ADMIN_PASSWORD` | — | Bootstrap admin password (first boot) |
 | `JWT_SECRET_KEY` | `change-me-jwt` | HS256 signing secret for JWT tokens |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | JWT access token lifetime |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | `14` | Refresh token lifetime |
+| `JWT_ACCESS_TTL_MINUTES` | `30` | JWT access token lifetime |
+| `JWT_REFRESH_TTL_DAYS` | `14` | Refresh token lifetime |
 | `RATE_LIMIT_DEFAULT` | `60/minute` | Per-user sliding-window rate limit |
 | `OPENAI_API_KEY` | `dummy` | OpenAI (default for unprefixed models) |
 | `GROQ_API_KEY` | — | Groq Cloud |
@@ -971,7 +971,7 @@ services:
     depends_on: [backend]
 ```
 
-`FRONTEND_API_URL` is the only variable the frontend container reads.
+The frontend container reads a single variable, **`API_URL`** — the Docker entrypoint substitutes it into `config/app-config.json` (consumed by `AppConfigService`). In the compose example above it is fed from the host-side `FRONTEND_API_URL` (default `http://192.168.0.215:8000/api/v1`). If `app-config.json` is absent or fails to load, the app falls back to the built-in relative default `/api/v1` (same-origin, e.g. behind a reverse proxy).
 
 ---
 

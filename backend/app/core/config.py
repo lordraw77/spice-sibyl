@@ -224,6 +224,18 @@ class Settings(BaseSettings):
     response_cache_ttl_seconds: int = 600
     response_cache_max_entries: int = 256
 
+    # --- Phase 26: semantic response cache (extends 19.c) ---
+    # On an exact-match miss, embed the normalized last user message and replay a
+    # cached reply from the same (model, temperature, max_tokens) bucket whose
+    # stored embedding is within SEMANTIC_CACHE_THRESHOLD (cosine). Degrades
+    # silently to exact-match-only when no embedding provider is reachable.
+    semantic_cache_enabled: bool = False
+    semantic_cache_threshold: float = 0.92
+    # Upper bound on how many of the most-recent cache entries the semantic scan
+    # considers per lookup — caps the cosine cost independently of the overall
+    # (LRU) cache size.
+    semantic_cache_max_entries: int = 256
+
     # IANA timezone used for Telegram reminder parsing and display (/remind).
     # Keeps reminders correct regardless of the container's system TZ.
     timezone: str = "Europe/Rome"

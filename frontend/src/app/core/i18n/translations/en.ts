@@ -145,6 +145,7 @@ export const en: TranslationMap = {
   'chat.chip.memory': 'memory',
   'chat.chip.memoryTitle': 'Reply personalized with the profile\'s memory',
   'chat.chip.cacheTitle': 'Reply served from cache (no model call)',
+  'chat.chip.semanticCacheTitle': 'Reply served from the semantic cache (similar question, no model call)',
   'chat.sources': 'Sources:',
   'chat.action.speak': 'Read aloud',
   'chat.action.unpin': 'Unpin',

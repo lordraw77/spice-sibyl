@@ -47,6 +47,7 @@ async def service_info():
             "memory": settings.memory_enabled,
             "auto_title": settings.auto_title_enabled,
             "response_cache": settings.response_cache_enabled,
+            "semantic_cache": settings.semantic_cache_enabled,
             "code_interpreter": settings.code_interpreter_enabled,
             "telegram_bot": bool(settings.telegram_bot_token),
             "backup": settings.backup_enabled,

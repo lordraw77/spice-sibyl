@@ -36,6 +36,12 @@ API: `GET/POST /v1/memories`, `PATCH/DELETE /v1/memories/{id}`, `DELETE /v1/memo
 
 **Configuration.** `RESPONSE_CACHE_ENABLED` (default `true`), `RESPONSE_CACHE_TTL_SECONDS` (default `600`), `RESPONSE_CACHE_MAX_ENTRIES` (default `256`). Hit/miss stats are visible on the **Info** page.
 
+## Semantic response cache
+
+**What it does.** Extends the exact-match cache with *fuzzy* matching. On an exact miss, the last user message is embedded (via the same embedding chain used for RAG) and compared by cosine similarity against recent cached replies in the same model + temperature + max-tokens bucket. A match at or above the threshold replays the stored reply with the **⚡~ cache** chip — so paraphrases like "How do I reset my password?" and "How can I reset my password?" reuse one answer with no provider call. The same exclusions apply (tools, `agent/*`, multimodal), and it degrades silently to exact-match-only when no embedding provider is reachable.
+
+**Configuration.** `SEMANTIC_CACHE_ENABLED` (default `false`), `SEMANTIC_CACHE_THRESHOLD` (cosine, default `0.92`), `SEMANTIC_CACHE_MAX_ENTRIES` (scan window, default `256`). Semantic hit/miss counts appear next to the exact ones in the **Info** page's cache stats.
+
 ## Reply feedback (👍/👎)
 
 **What it does.** Every persisted assistant reply can be rated thumbs up/down (optional note on 👎). Ratings feed an exportable dataset for offline model evaluation.

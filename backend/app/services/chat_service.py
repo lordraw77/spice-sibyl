@@ -173,11 +173,40 @@ class ChatService:
         return {"event": "memory_context", "data": json.dumps({"used": True})}
 
     @staticmethod
-    def _cached_reply_frames(request: ChatCompletionRequest, cached: dict) -> list[dict]:
-        """Replay a cached completion as a single chunk + meta + done."""
+    def _cached_completion(request: ChatCompletionRequest, cached: dict, semantic: bool = False) -> dict:
+        """Build a non-streaming completion response replayed from cache.
+
+        `semantic` flags a Phase 26 fuzzy hit (⚡~ chip) vs an exact 19.c hit.
+        """
+        now = int(time.time())
+        message = {"role": "assistant", "content": cached["content"], "cached": True}
+        if semantic:
+            message["cached_semantic"] = True
+        return {
+            "id": f"cached-{now}",
+            "object": "chat.completion",
+            "created": now,
+            "model": request.model,
+            "cached": True,
+            "cached_semantic": semantic,
+            "choices": [{"index": 0, "finish_reason": "stop", "message": message}],
+            "usage": (cached.get("meta") or {}).get("usage") or {},
+            "metrics": {"latency_ms": 0, "cached": True, "cached_semantic": semantic},
+        }
+
+    @staticmethod
+    def _cached_reply_frames(
+        request: ChatCompletionRequest, cached: dict, semantic: bool = False
+    ) -> list[dict]:
+        """Replay a cached completion as a single chunk + meta + done.
+
+        `semantic` flags a Phase 26 fuzzy hit (⚡~ chip) vs an exact 19.c hit.
+        """
         meta = dict(cached.get("meta") or {})
         meta_msg = dict((meta.get("choices") or [{}])[0].get("message") or {}) if meta else {}
         meta_msg.update({"content": cached["content"], "cached": True})
+        if semantic:
+            meta_msg["cached_semantic"] = True
         now = int(time.time())
         frames = [
             {
@@ -196,9 +225,10 @@ class ChatService:
                     "created": now,
                     "model": request.model,
                     "cached": True,
+                    "cached_semantic": semantic,
                     "choices": [{"index": 0, "finish_reason": "stop", "message": meta_msg}],
                     "usage": meta.get("usage") or {},
-                    "metrics": {"latency_ms": 0, "cached": True},
+                    "metrics": {"latency_ms": 0, "cached": True, "cached_semantic": semantic},
                 }),
             },
             {"event": "done", "data": "[DONE]"},
@@ -251,28 +281,27 @@ class ChatService:
         cached = cache_service.get(cache_key)
         if cached is not None:
             logger.info("Response cache hit (complete) for model=%s", request.model)
-            now = int(time.time())
-            return {
-                "id": f"cached-{now}",
-                "object": "chat.completion",
-                "created": now,
-                "model": request.model,
-                "cached": True,
-                "choices": [{
-                    "index": 0,
-                    "finish_reason": "stop",
-                    "message": {"role": "assistant", "content": cached["content"], "cached": True},
-                }],
-                "usage": (cached.get("meta") or {}).get("usage") or {},
-                "metrics": {"latency_ms": 0, "cached": True},
-            }
+            return self._cached_completion(request, cached, semantic=False)
+
+        # Exact-match miss: try the semantic layer, reusing its query embedding on
+        # the ensuing put() so a store never costs a second embedding call.
+        query_embedding: list[float] | None = None
+        embed_model: str | None = None
+        bucket: str | None = None
+        if cache_key is not None and settings.semantic_cache_enabled:
+            sem, query_embedding, embed_model, bucket = await cache_service.semantic_get(request)
+            if sem is not None:
+                return self._cached_completion(request, sem, semantic=True)
 
         provider = ProviderFactory.get_provider(request.model)
         response = await provider.complete(request)
         try:
             choices = response.get("choices") or []
             content = ((choices[0].get("message") or {}).get("content") or "") if choices else ""
-            cache_service.put(cache_key, content, {"usage": response.get("usage") or {}})
+            cache_service.put(
+                cache_key, content, {"usage": response.get("usage") or {}},
+                embedding=query_embedding, embed_model=embed_model, bucket=bucket,
+            )
         except (AttributeError, TypeError, KeyError, IndexError):
             pass  # non-dict/odd provider response — skip caching
         return response
@@ -315,6 +344,18 @@ class ChatService:
                         yield frame
                     return
 
+                # Exact-match miss: try the semantic layer, reusing its query
+                # embedding on the ensuing put() to avoid a second embedding call.
+                query_embedding: list[float] | None = None
+                embed_model: str | None = None
+                bucket: str | None = None
+                if cache_key is not None and settings.semantic_cache_enabled:
+                    sem, query_embedding, embed_model, bucket = await cache_service.semantic_get(request)
+                    if sem is not None:
+                        for frame in self._cached_reply_frames(request, sem, semantic=True):
+                            yield frame
+                        return
+
                 full_content = ""
                 meta_chunk: dict = {}
                 produced = False
@@ -343,7 +384,8 @@ class ChatService:
                             yield {"event": event, "data": json.dumps(chunk)}
                         metrics.provider_requests_total.labels(provider_label, model, "success").inc()
                         cache_service.put(
-                            cache_key, full_content, {"usage": meta_chunk.get("usage") or {}}
+                            cache_key, full_content, {"usage": meta_chunk.get("usage") or {}},
+                            embedding=query_embedding, embed_model=embed_model, bucket=bucket,
                         )
                         yield {"event": "done", "data": "[DONE]"}
                         return

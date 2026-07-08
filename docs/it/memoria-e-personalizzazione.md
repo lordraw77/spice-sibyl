@@ -36,6 +36,12 @@ API: `GET/POST /v1/memories`, `PATCH/DELETE /v1/memories/{id}`, `DELETE /v1/memo
 
 **Configurazione.** `RESPONSE_CACHE_ENABLED` (default `true`), `RESPONSE_CACHE_TTL_SECONDS` (default `600`), `RESPONSE_CACHE_MAX_ENTRIES` (default `256`). Le statistiche hit/miss sono visibili nella pagina **Info**.
 
+## Cache semantica delle risposte
+
+**Cosa fa.** Estende la cache a corrispondenza esatta con una corrispondenza *approssimata*. In caso di miss esatto, l'ultimo messaggio utente viene trasformato in embedding (con la stessa catena di embedding usata per il RAG) e confrontato per similarità coseno con le risposte recenti in cache nello stesso bucket modello + temperatura + max token. Una corrispondenza pari o superiore alla soglia riproduce la risposta salvata con il chip **⚡~ cache** — così parafrasi come «Come reimposto la password?» e «Come posso reimpostare la password?» riusano un'unica risposta senza chiamare il provider. Valgono le stesse esclusioni (tool, `agent/*`, multimodale) e degrada silenziosamente alla sola corrispondenza esatta quando nessun provider di embedding è raggiungibile.
+
+**Configurazione.** `SEMANTIC_CACHE_ENABLED` (default `false`), `SEMANTIC_CACHE_THRESHOLD` (coseno, default `0.92`), `SEMANTIC_CACHE_MAX_ENTRIES` (finestra di scansione, default `256`). I conteggi hit/miss semantici compaiono accanto a quelli esatti nelle statistiche cache della pagina **Info**.
+
 ## Feedback sulle risposte (👍/👎)
 
 **Cosa fa.** Ogni risposta salvata dell'assistente può essere valutata con pollice su/giù (con nota opzionale sul 👎). Le valutazioni alimentano un dataset esportabile per la valutazione offline dei modelli.

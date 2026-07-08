@@ -36,6 +36,12 @@ API : `GET/POST /v1/memories`, `PATCH/DELETE /v1/memories/{id}`, `DELETE /v1/mem
 
 **Configuration.** `RESPONSE_CACHE_ENABLED` (défaut `true`), `RESPONSE_CACHE_TTL_SECONDS` (défaut `600`), `RESPONSE_CACHE_MAX_ENTRIES` (défaut `256`). Les stats hit/miss sont visibles sur la page **Informations**.
 
+## Cache sémantique des réponses
+
+**Ce que ça fait.** Étend le cache à correspondance exacte avec une correspondance *approximative*. En cas de miss exact, le dernier message utilisateur est vectorisé (via la même chaîne d'embedding que le RAG) et comparé par similarité cosinus aux réponses récentes en cache dans le même bucket modèle + température + max tokens. Une correspondance au-dessus du seuil rejoue la réponse stockée avec la puce **⚡~ cache** — ainsi des paraphrases comme « Comment réinitialiser mon mot de passe ? » et « Comment puis-je réinitialiser mon mot de passe ? » réutilisent une seule réponse sans appel au fournisseur. Les mêmes exclusions s'appliquent (outils, `agent/*`, multimodal) et le système retombe silencieusement sur la seule correspondance exacte lorsqu'aucun fournisseur d'embedding n'est joignable.
+
+**Configuration.** `SEMANTIC_CACHE_ENABLED` (défaut `false`), `SEMANTIC_CACHE_THRESHOLD` (cosinus, défaut `0.92`), `SEMANTIC_CACHE_MAX_ENTRIES` (fenêtre de balayage, défaut `256`). Les compteurs hit/miss sémantiques apparaissent à côté des exacts dans les stats de cache de la page **Informations**.
+
 ## Feedback sur les réponses (👍/👎)
 
 **Ce que ça fait.** Chaque réponse persistée de l'assistant peut être notée pouce haut/bas (note facultative sur 👎). Les évaluations alimentent un jeu de données exportable pour l'évaluation hors ligne des modèles.

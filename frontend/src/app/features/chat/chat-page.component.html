@@ -416,7 +416,8 @@
         <!-- Phase 19: memory-grounded / cached reply chips -->
         <div class="rag-sources" *ngIf="message.memory_used || message.cached">
           <span class="rag-chip memory-chip" *ngIf="message.memory_used" [title]="'chat.chip.memoryTitle' | t">🧠 {{ 'chat.chip.memory' | t }}</span>
-          <span class="rag-chip cache-chip" *ngIf="message.cached" [title]="'chat.chip.cacheTitle' | t">⚡ cache</span>
+          <span class="rag-chip cache-chip" *ngIf="message.cached && !message.cached_semantic" [title]="'chat.chip.cacheTitle' | t">⚡ cache</span>
+          <span class="rag-chip cache-chip" *ngIf="message.cached_semantic" [title]="'chat.chip.semanticCacheTitle' | t">⚡~ cache</span>
         </div>
 
         <!-- RAG citations: knowledge-base chunks used to ground this reply -->

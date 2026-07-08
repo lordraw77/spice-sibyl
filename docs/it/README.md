@@ -17,7 +17,7 @@ Guida puntuale a tutte le funzionalità di SpiceSibyl: cosa fanno, come si usano
 | ⚖️ Confronto | [Confronto modelli](confronto-modelli.md) | Prompt identico su 2–4 modelli in parallelo |
 | 📊 Statistiche | [Statistiche d'uso](statistiche.md) | Token, latenza, costi; grafici giornalieri |
 | ✈️ Telegram | [Bot Telegram](telegram.md) | Comandi, voce, foto, documenti, knowledge base (RAG), memoria, promemoria, link col profilo web |
-| 🧠 Memoria | [Memoria e personalizzazione](memoria-e-personalizzazione.md) | Memoria persistente, titoli automatici, cache risposte, feedback 👍/👎, pagina Info |
+| 🧠 Memoria | [Memoria e personalizzazione](memoria-e-personalizzazione.md) | Memoria persistente, titoli automatici, cache risposte (esatta + semantica), feedback 👍/👎, pagina Info |
 | 👥 Collaborazione | [Workspace e collaborazione](workspace-e-collaborazione.md) | Workspace condivisi, accesso basato sui ruoli, conversazioni/documenti condivisi, commenti in thread |
 | 🖥 UI | [Interfaccia e UX](interfaccia.md) | Temi, PWA, mobile, onboarding, scorciatoie da tastiera |
 | ⚙️ Ops | [Osservabilità e operazioni](operazioni.md) | Health/readiness, metriche Prometheus, log strutturati, backup |

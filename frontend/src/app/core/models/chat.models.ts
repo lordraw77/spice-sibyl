@@ -54,6 +54,8 @@ export interface ChatMessage {
   memory_used?: boolean;
   /** UI-only: this reply was served from the response cache */
   cached?: boolean;
+  /** UI-only: Phase 26 — served from the semantic (fuzzy) cache layer (⚡~) */
+  cached_semantic?: boolean;
 }
 
 /** Phase 19: a persistent per-profile memory entry. */

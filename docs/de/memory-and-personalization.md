@@ -36,6 +36,12 @@ API: `GET/POST /v1/memories`, `PATCH/DELETE /v1/memories/{id}`, `DELETE /v1/memo
 
 **Konfiguration.** `RESPONSE_CACHE_ENABLED` (Standard `true`), `RESPONSE_CACHE_TTL_SECONDS` (Standard `600`), `RESPONSE_CACHE_MAX_ENTRIES` (Standard `256`). Hit/Miss-Statistiken sind auf der **Info**-Seite sichtbar.
 
+## Semantischer Antwort-Cache
+
+**Was es macht.** Erweitert den exakten Cache um eine *unscharfe* Übereinstimmung. Bei einem exakten Miss wird die letzte Nutzernachricht als Embedding berechnet (über dieselbe Embedding-Kette wie beim RAG) und per Kosinus-Ähnlichkeit mit den jüngsten gecachten Antworten im selben Bucket aus Modell + Temperatur + Max-Tokens verglichen. Eine Übereinstimmung ab dem Schwellenwert gibt die gespeicherte Antwort mit dem Chip **⚡~ Cache** wieder — so teilen sich Umformulierungen wie „Wie setze ich mein Passwort zurück?" und „Wie kann ich mein Passwort zurücksetzen?" eine Antwort ohne Anbieteraufruf. Es gelten dieselben Ausschlüsse (Tools, `agent/*`, multimodal), und es fällt still auf reine exakte Übereinstimmung zurück, wenn kein Embedding-Anbieter erreichbar ist.
+
+**Konfiguration.** `SEMANTIC_CACHE_ENABLED` (Standard `false`), `SEMANTIC_CACHE_THRESHOLD` (Kosinus, Standard `0.92`), `SEMANTIC_CACHE_MAX_ENTRIES` (Scan-Fenster, Standard `256`). Semantische Hit/Miss-Zähler erscheinen neben den exakten in den Cache-Statistiken der **Info**-Seite.
+
 ## Antwort-Feedback (👍/👎)
 
 **Was es macht.** Jede persistierte Assistenten-Antwort kann mit Daumen hoch/runter bewertet werden (optionale Notiz bei 👎). Die Bewertungen speisen einen exportierbaren Datensatz für die Offline-Modellbewertung.
