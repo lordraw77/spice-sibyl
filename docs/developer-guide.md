@@ -590,6 +590,23 @@ Routing rules evaluated in order on the model-ID prefix:
 - `GET /mcp/config` — export current registry as standard `{"mcpServers": {...}}` bundle
 - `POST /mcp/import` — bulk import from `{"mcpServers": {...}}` bundle
 
+#### Graph workflows (`/api/v1/graph-workflows/`) — Phase 29 visual DAG engine
+- `GET /graph-workflows/node-types` — palette catalog (static nodes + one `tool.<name>` per registry tool)
+- `GET /graph-workflows` — list the profile's workflows
+- `POST /graph-workflows` — `{ name, description?, graph: { nodes, edges } }`
+- `GET /graph-workflows/{id}` — one workflow (+ triggers)
+- `PATCH /graph-workflows/{id}` — `{ name?, description?, graph?, active? }` (a graph change bumps the version)
+- `DELETE /graph-workflows/{id}`
+- `POST /graph-workflows/{id}/activate` · `/deactivate`
+- `POST /graph-workflows/{id}/run` — `{ payload }` (manual trigger) → `{ run_id }`
+- `GET /graph-workflows/{id}/runs` — recent runs
+- `GET /graph-workflows/{id}/versions` · `POST /graph-workflows/{id}/versions/{v}/restore`
+- `POST /graph-workflows/{id}/triggers` — `{ type: manual|schedule|webhook|event, config?, enabled? }`
+- `POST /graph-workflows/triggers/{tid}/enable` · `/disable` · `DELETE /graph-workflows/triggers/{tid}`
+- `GET /graph-workflows/runs/{rid}` — one run with its node runs
+- `GET /graph-workflows/runs/{rid}/stream` — SSE live run view (snapshot + per-node events)
+- `POST /api/v1/wf/hooks/{token}` — **public** token-scoped webhook receiver; JSON body → `$trigger`
+
 #### Stats
 - `GET /api/v1/stats?profile_id=` — global totals, per-profile/provider/model breakdown, Telegram counters
 - `GET /api/v1/stats/daily?range=7d|30d|90d` — daily time-series for tokens + cost charts

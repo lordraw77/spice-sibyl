@@ -15,6 +15,10 @@ from app.examples.custom_tool_examples import (
     CUSTOM_TOOL_EXAMPLES,
     list_custom_tool_examples,
 )
+from app.examples.graph_workflow_examples import (
+    GRAPH_WORKFLOW_EXAMPLES,
+    list_graph_workflow_examples,
+)
 from app.examples.workflow_examples import WORKFLOW_EXAMPLES, list_workflow_examples
 
 __all__ = [
@@ -22,4 +26,6 @@ __all__ = [
     "list_workflow_examples",
     "CUSTOM_TOOL_EXAMPLES",
     "list_custom_tool_examples",
+    "GRAPH_WORKFLOW_EXAMPLES",
+    "list_graph_workflow_examples",
 ]

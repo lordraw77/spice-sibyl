@@ -70,17 +70,20 @@ SpiceSibyl's backend is a **FastAPI async gateway** that exposes an OpenAI-compa
 
 **Working examples & cookbook (Phase 24)** — curated, one-click-importable Phase 18 **workflow** definitions (Examples gallery on `/workflows`: morning news digest, website watcher, KB research report, weather-aware reminder) and **custom-tool** definitions using keyless public APIs (currency, Wikipedia, public holidays, geocoding + a bearer-auth template on `/tools`), each verified end-to-end by CI smoke tests. Documented in [`examples/workflows.md`](examples/workflows.md) and [`examples/custom-tools.md`](examples/custom-tools.md).
 
+**Visual node-graph workflow engine (Phase 29)** — a deterministic **DAG engine** (`workflow_graph_service.py`) that runs **alongside** the Phase 18 agent runs; the agent loop is exposed as the `llm.agent` node. `graph_json` (`{nodes, edges}`) is the source of truth. A **topological scheduler** runs in waves: each ready node (all incoming edges resolved, ≥1 live) resolves its params, executes, persists a `workflow_node_run`, checkpoints the run context, then activates its output handles — independent ready nodes run in parallel via `asyncio.gather`, branch nodes (`if`/`switch`) light a single handle and exclusive targets on dead handles are recorded `skipped`, and per-node `retry`/`backoff`/`continueOnFail` bound failures. Node kinds: `manual`/`schedule`/`webhook`/`event` triggers, `tool.<name>` (a generic wrapper over **any** registry tool — zero new code per tool), `set`/`if`/`switch`/`merge`/`filter`/`code`, `llm.completion` and `llm.agent`. The standalone, unit-tested **`expression_resolver.py`** resolves `={{ … }}` params by **walking a Python AST over a whitelist (no `eval`/`exec`)** — path navigation (`$node.<id>.output.<path>`, `$json`, `$trigger`, `$env`, `$now`), whitelisted functions, operators and a `=py:` `python_exec`-sandbox escape hatch. **Triggers**: `schedule` (cron/RRULE/NL via `reminder_parsing`, driven by `start_scheduler()`'s poll loop with `next_run_at` recompute — absorbs Phase 27), public token-scoped `webhook` (`POST /v1/wf/hooks/{token}`), and internal `event` dispatch. New tables `workflows` / `workflow_versions` (immutable history) / `workflow_runs` / `workflow_node_runs` / `workflow_triggers`. REST under **`/v1/graph-workflows`** (CRUD + versioning + run + triggers + SSE `runs/{rid}/stream`), plus four curated, one-click-importable **example graphs** (`GET /v1/graph-workflows/examples`, `app/examples/graph_workflow_examples.py`). Covered by `tests/test_phase29.py`.
+
 ## Structure
 
 ```
 app/
 ├── api/v1/endpoints/   chat · images · knowledge (RAG) · conversations (+ export + pins + branches) ·
 │                       profiles · providers · stats · tools · discovery ×8 · auth · admin ·
-│                       metrics · health · mcp · tags · templates · sharing · telegram_link
+│                       metrics · health · mcp · tags · templates · sharing · telegram_link ·
+│                       workflows (agent runs) · graph_workflows (visual DAG) · reminders · notifications
 ├── core/               pydantic-settings (env / .env) · logging_context · metrics
 ├── db/                 SQLite schema + indexes (+ sqlite-vec `vec0`) · conversation / profile / vault / stats / search /
 │                       kb (+ chunk_vec / wiki / graph) / tag / template / share / audit / token / user / mcp /
-│                       reminder / notification / telegram_link / telegram_prefs repositories
+│                       reminder / notification / telegram_link / telegram_prefs / workflow / graph_workflow repositories
 ├── dependencies/       provider_factory · auth · rate_limit
 ├── middleware/         request_context (request_id ContextVar, X-Request-ID header)
 ├── providers/          BaseProvider · LiteLLM · Gemini · OpenRouter · Cloudflare ·
@@ -91,7 +94,8 @@ app/
 │                       EmbeddingService · RagService · AuthService · BackupService ·
 │                       CacheService (exact + semantic) · NotificationService ·
 │                       ReminderService (+ reminder_parsing) · WikiService · GraphService ·
-│                       GraphRAGService · document_converter · mcp_client · mcp_service · provider_factory
+│                       GraphRAGService · WorkflowService · WorkflowGraphService (+ expression_resolver) ·
+│                       document_converter · mcp_client · mcp_service · provider_factory
 ├── tools/              ToolRegistry · built-in tools (get_datetime · calculator · web_search · read_url) · custom tools
 └── telegram/           bot handlers and lifecycle · i18n (it/en/fr/de/es)
 ```

@@ -614,6 +614,7 @@ export class NavbarComponent {
       children: [
         { label: 'nav.tools', route: '/tools', icon: ICONS.tools },
         { label: 'nav.workflows', route: '/workflows', icon: ICONS.workflow },
+        { label: 'nav.graphWorkflows', route: '/graph-workflows', icon: ICONS.workflow },
         { label: 'nav.reminders', route: '/reminders', icon: ICONS.reminders },
         { label: 'nav.mcp', route: '/mcp', icon: ICONS.mcp, adminOnly: true },
         { label: 'nav.workspaces', route: '/workspaces', icon: ICONS.workspace },

@@ -435,6 +435,90 @@ CREATE TABLE IF NOT EXISTS agent_run_steps (
 
 CREATE INDEX IF NOT EXISTS idx_agent_run_steps_run ON agent_run_steps(run_id, step_index);
 
+-- Phase 29: visual node-graph workflow engine (n8n-style). Coexists with the
+-- Phase 18 agent runs above; the agent loop becomes one node type (llm.agent).
+-- `graph_json` ({nodes, edges}) is the source of truth for a workflow; each
+-- activation snapshots an immutable row into workflow_versions.
+CREATE TABLE IF NOT EXISTS workflows (
+    id          TEXT    PRIMARY KEY,
+    profile_id  TEXT    NOT NULL DEFAULT 'default',
+    name        TEXT    NOT NULL,
+    description TEXT    NOT NULL DEFAULT '',
+    graph_json  TEXT    NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    active      INTEGER NOT NULL DEFAULT 0,
+    version     INTEGER NOT NULL DEFAULT 1,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflows_profile ON workflows(profile_id, updated_at DESC);
+
+-- Immutable version history: one row per saved graph revision.
+CREATE TABLE IF NOT EXISTS workflow_versions (
+    id          TEXT    PRIMARY KEY,
+    workflow_id TEXT    NOT NULL,
+    version     INTEGER NOT NULL,
+    graph_json  TEXT    NOT NULL,
+    created_at  INTEGER NOT NULL,
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_versions_wf ON workflow_versions(workflow_id, version DESC);
+
+-- One execution of a workflow graph (evolves agent_runs). `context_json` holds
+-- the resolvable run context (per-node outputs) so a run can be inspected/resumed.
+CREATE TABLE IF NOT EXISTS workflow_runs (
+    id           TEXT    PRIMARY KEY,
+    workflow_id  TEXT    NOT NULL,
+    profile_id   TEXT    NOT NULL DEFAULT 'default',
+    status       TEXT    NOT NULL DEFAULT 'pending',  -- pending|running|completed|failed|cancelled
+    trigger_type TEXT    NOT NULL DEFAULT 'manual',    -- manual|schedule|webhook|event
+    graph_json   TEXT    NOT NULL,                     -- snapshot of the graph executed
+    context_json TEXT,                                 -- JSON: {node_id: output, $trigger: ...}
+    error        TEXT,
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL,
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_wf ON workflow_runs(workflow_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_profile ON workflow_runs(profile_id, created_at DESC);
+
+-- Per-node execution record within a run (evolves agent_run_steps).
+CREATE TABLE IF NOT EXISTS workflow_node_runs (
+    id          TEXT    PRIMARY KEY,
+    run_id      TEXT    NOT NULL,
+    node_id     TEXT    NOT NULL,
+    node_type   TEXT    NOT NULL,
+    status      TEXT    NOT NULL DEFAULT 'pending',    -- pending|running|ok|error|skipped
+    input_json  TEXT,
+    output_json TEXT,
+    error       TEXT,
+    started_at  INTEGER,
+    finished_at INTEGER,
+    FOREIGN KEY (run_id) REFERENCES workflow_runs(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_node_runs_run ON workflow_node_runs(run_id, started_at);
+
+-- Triggers attached to a workflow: schedule (cron/RRULE/NL), webhook (token),
+-- event (notification_events subscription). `next_run_at` drives the schedule poll.
+CREATE TABLE IF NOT EXISTS workflow_triggers (
+    id          TEXT    PRIMARY KEY,
+    workflow_id TEXT    NOT NULL,
+    type        TEXT    NOT NULL,                      -- manual|schedule|webhook|event
+    config_json TEXT    NOT NULL DEFAULT '{}',
+    token       TEXT,                                  -- webhook: public URL token
+    next_run_at INTEGER,                               -- schedule: next fire time
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  INTEGER NOT NULL,
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_triggers_wf ON workflow_triggers(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_triggers_sched ON workflow_triggers(type, enabled, next_run_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_triggers_token ON workflow_triggers(token);
+
 -- Phase 19: per-profile persistent memory. One row per remembered fact;
 -- auto-extracted after each exchange (MEMORY_EXTRACTION_MODEL) or added
 -- manually from the UI / Telegram. Injected into the system prompt when the

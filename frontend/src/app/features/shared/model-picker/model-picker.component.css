@@ -1,0 +1,158 @@
+:host {
+  display: block;
+  position: relative;
+}
+
+.mp-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.82rem;
+  text-align: left;
+}
+.mp-trigger.placeholder {
+  color: var(--text-tertiary);
+}
+.mp-current {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp-caret {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.mp-pop {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  padding: 0.5rem;
+  max-height: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+/* Inline mode: expand in the normal flow so the rest of the panel stays visible
+   and is pushed down (no floating overlay). */
+.mp-pop.inline {
+  position: static;
+  box-shadow: none;
+  margin-top: 4px;
+  background: var(--bg-input);
+  max-height: 300px;
+}
+
+.mp-search,
+.mp-select {
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+}
+.mp-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.mp-select {
+  flex: 1;
+}
+.mp-free {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.mp-providers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.mp-prov {
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.7rem;
+}
+.mp-prov.on {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.mp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+}
+.mp-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.mp-list li:hover {
+  background: var(--bg-surface-hover);
+}
+.mp-list li.selected {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+.mp-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+.mp-prov-tag {
+  font-size: 0.66rem;
+  color: var(--text-tertiary);
+}
+.mp-badge.free {
+  font-size: 0.62rem;
+  padding: 0.02rem 0.3rem;
+  border-radius: 4px;
+  background: #14351f;
+  color: #5ad07f;
+}
+.mp-empty {
+  padding: 0.5rem;
+  color: var(--text-tertiary);
+  font-size: 0.78rem;
+  text-align: center;
+}

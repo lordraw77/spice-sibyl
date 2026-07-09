@@ -1,0 +1,60 @@
+<div class="mp">
+  <button type="button" class="mp-trigger" (click)="toggle()" [class.placeholder]="!value">
+    <span class="mp-current">{{ currentLabel() }}</span>
+    <span class="mp-caret">▾</span>
+  </button>
+
+  <div class="mp-pop" [class.inline]="inline" *ngIf="open()">
+    <input
+      class="mp-search"
+      type="text"
+      [ngModel]="search()"
+      (ngModelChange)="search.set($event)"
+      [placeholder]="t('mp.search')"
+      autofocus
+    />
+
+    <div class="mp-filters">
+      <select class="mp-select" [ngModel]="capability()" (ngModelChange)="capability.set($event)">
+        <option *ngFor="let c of availableCapabilities()" [value]="c">
+          {{ c === 'all' ? t('mp.allCapabilities') : c }}
+        </option>
+      </select>
+      <label class="mp-free">
+        <input
+          type="checkbox"
+          [ngModel]="availability() === 'free'"
+          (ngModelChange)="availability.set($event ? 'free' : 'all')"
+        />
+        {{ t('mp.freeOnly') }}
+      </label>
+    </div>
+
+    <div class="mp-providers" *ngIf="selectableProviders().length > 1">
+      <button
+        type="button"
+        class="mp-prov"
+        *ngFor="let p of selectableProviders()"
+        [class.on]="isProviderOn(p.id)"
+        (click)="toggleProvider(p.id)"
+      >
+        {{ p.label || p.id }}
+      </button>
+    </div>
+
+    <ul class="mp-list">
+      <li
+        *ngFor="let m of filtered()"
+        [class.selected]="m.id === value"
+        (click)="pick(m.id)"
+      >
+        <span class="mp-name">{{ m.label || m.id }}</span>
+        <span class="mp-meta">
+          <span class="mp-prov-tag" *ngIf="m.provider">{{ m.provider }}</span>
+          <span class="mp-badge free" *ngIf="m.free">free</span>
+        </span>
+      </li>
+      <li *ngIf="!filtered().length" class="mp-empty">{{ t('mp.none') }}</li>
+    </ul>
+  </div>
+</div>

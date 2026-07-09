@@ -12,7 +12,7 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Fallback release version when APP_VERSION isn't stamped into the build.
-_DEFAULT_VERSION = '2.0.0'
+_DEFAULT_VERSION = '2.2.0'
 
 
 class Settings(BaseSettings):
@@ -109,6 +109,12 @@ class Settings(BaseSettings):
     # Default / hard cap on agent-loop iterations for a workflow run.
     workflow_default_max_steps: int = 20
     workflow_max_steps_limit: int = 100
+
+    # --- Phase 29: visual node-graph workflow engine ---
+    # Enable the schedule-trigger polling loop (started at app startup).
+    graph_workflow_scheduler_enabled: bool = True
+    # Hard cap on nodes per graph to bound a single run.
+    graph_workflow_max_nodes: int = 200
 
     # SQLite database path for conversation persistence
     db_path: str = "spice_sibyl.db"

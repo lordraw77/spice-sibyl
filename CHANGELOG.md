@@ -7,7 +7,25 @@ correspond to the project's git tags.
 
 ## [Unreleased]
 
-_No unreleased changes. The latest tagged release is [2.1.0]._
+_No unreleased changes. The latest tagged release is [2.2.0]._
+
+---
+
+## [2.2.0] — 2026-07-09
+
+### Added — Phase 29: Visual node-graph workflow engine (n8n-style)
+- **DAG engine + expression resolver (29.a)** — a deterministic **topological scheduler** (`workflow_graph_service.py`) executes a graph of typed nodes: each ready node resolves its params, runs, persists a `workflow_node_run`, checkpoints the run context and activates its output handles; independent ready nodes run in parallel via `asyncio.gather`, nodes with no live input are `skipped`, and per-node `retry`/`backoff`/`continueOnFail` bound failures. Runs are durable and stream live over SSE. New tables `workflows`, `workflow_versions`, `workflow_runs`, `workflow_node_runs`, `workflow_triggers` (same SQLite). Coexists with the Phase 18 agent runs — the agent loop becomes the `llm.agent` node
+- **Safe expression resolver (29.a)** — a standalone, unit-tested `expression_resolver.py` resolves `={{ … }}` expressions by **walking a Python AST over a whitelist (no `eval`/`exec`)**: path navigation (`$node.<id>.output.<path>`, `$json`, `$trigger`, `$env`, `$now`), whitelisted functions (`default`/`upper`/`lower`/`len`/`join`/`slice`/`first`/`last`/`get`/…), operators/comparisons/ternary, native-type passthrough and string interpolation, plus a `=py:` escape hatch into the `python_exec` sandbox for real logic
+- **Node kinds** — `manual`/`schedule`/`webhook`/`event` triggers, `tool.<name>` (a generic wrapper over **any** registry tool — built-in/MCP/custom, zero new code per tool), `set`, `if`, `switch`, `merge`, `filter`, `code` (sandbox), `llm.completion` and `llm.agent` (runs the Phase 18 agent loop). `GET /v1/graph-workflows/node-types` exposes the full palette catalog
+- **Triggers (29.b)** — `schedule` (cron/RRULE/NL via `reminder_parsing`, fired from a `reminder_service`-style poll loop with `next_run_at` recompute — absorbs Phase 27), public token-scoped `webhook` (`POST /v1/wf/hooks/{token}`, body → `$trigger`), and internal `event` dispatch; enable/pause/delete + "run now"
+- **Visual canvas (29.c)** — an Angular editor on the new **`/graph-workflows`** page: a dependency-free **SVG canvas** with draggable nodes, bézier edges and click-to-connect handles, a categorised **node palette**, a schema-driven per-node **inspector**, and a **run & triggers panel** that colours nodes live from the SSE stream. Five-locale labels (en/it/es/fr/de)
+- **Versioning (29.d)** — every graph save snapshots an immutable `workflow_versions` row; `GET /{id}/versions` + `POST /{id}/versions/{v}/restore` roll back
+- **Examples gallery** — four curated, one-click-importable graph workflows (`GET /v1/graph-workflows/examples`): RSS morning digest, weather-aware greeting, webhook → knowledge-base answer, and a branching page keyword watcher. Import creates a new workflow from the example graph and opens it on the canvas. Documented in [`docs/examples/graph-workflows.md`](docs/examples/graph-workflows.md); a CI guard asserts every node type/tool an example uses still exists
+- **MCP & custom tools in flows** — the `/node-types` palette is now discovered per profile: every configured **MCP server tool** (`tool.mcp__*`) and the profile's **custom HTTP tools** (`tool.custom__*`) appear as drag-in nodes (new **MCP & custom** palette group) and run natively via the existing `tool.<name>` executor. The `llm.agent` node is handed the full tool set (built-in + MCP + custom), matching the Phase 18 agent
+- **Model picker in AI nodes** — `llm.completion` / `llm.agent` model params render a reusable `ModelPickerComponent` with the **same catalog and filters as the chat page** (provider / capability / free-only, name search, and models hidden on `/providers`), reading the shared `UserPreferencesService`; it expands inline in the inspector
+- **Loop constructs** — `for` (for-each over an array, `$item`/`$index` in scope) and `repeat` (N times) control nodes with `loop`/`done` outputs: the engine runs the body subgraph once per iteration, collects each result, and continues on `done` with `{items, count}` (iterations capped)
+- **Palette UX** — the node palette's category sections are collapsible, and the **MCP & custom** group has two collapse levels (MCP server → its tools). The AI-node model picker expands inline instead of as a floating popup
+- **REST** — `GET/POST/PATCH/DELETE /v1/graph-workflows` (CRUD + auto-versioning, audited), `POST /{id}/run`, `POST /{id}/activate|deactivate`, `GET /{id}/runs`, `GET /runs/{rid}` (+ node_runs), `GET /runs/{rid}/stream` (SSE), trigger CRUD. Settings `GRAPH_WORKFLOW_SCHEDULER_ENABLED`, `GRAPH_WORKFLOW_MAX_NODES`. Backend covered by `tests/test_phase29.py` (resolver unit tests + end-to-end engine/trigger tests)
 
 ---
 

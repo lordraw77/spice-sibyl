@@ -13,6 +13,7 @@ Guida puntuale a tutte le funzionalità di SpiceSibyl: cosa fanno, come si usano
 | 🔌 Provider | [Provider e modelli](provider-e-modelli.md) | Gestione provider, vault chiavi API, discovery modelli, fallback automatico |
 | 🛠 Tool | [Tool calling](tool-calling.md) | Tool integrati, tool custom HTTP, code interpreter sandbox |
 | 🤖 Agenti | [MCP e agenti](mcp-e-agenti.md) | Gestione server MCP, orchestratore Multi-MCP, workflow persistenti |
+| 🔀 Flussi | [Workflow visuali](visual-workflows.md) | Editor a grafo di nodi stile n8n: nodi tipizzati, espressioni, trigger schedule/webhook, esecuzioni live |
 | 📚 RAG | [Knowledge base e RAG](knowledge-rag.md) | Ingestione documenti/URL, ricerca ibrida, reranking, citazioni |
 | ⚖️ Confronto | [Confronto modelli](confronto-modelli.md) | Prompt identico su 2–4 modelli in parallelo |
 | 📊 Statistiche | [Statistiche d'uso](statistiche.md) | Token, latenza, costi; grafici giornalieri |

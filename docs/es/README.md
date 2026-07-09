@@ -13,6 +13,7 @@ Una guía función por función de SpiceSibyl: qué hace cada función, cómo se
 | 🔌 Proveedores | [Proveedores y modelos](providers-and-models.md) | Gestión de proveedores, almacén de claves API, descubrimiento de modelos, fallback automático |
 | 🛠 Herramientas | [Llamadas a herramientas](tool-calling.md) | Herramientas integradas, herramientas HTTP personalizadas, intérprete de código en sandbox |
 | 🤖 Agentes | [MCP y agentes](mcp-and-agents.md) | Gestión de servidores MCP, orquestador Multi-MCP, workflows persistentes |
+| 🔀 Flujos | [Workflows visuales](visual-workflows.md) | Editor de grafo de nodos estilo n8n: nodos tipados, expresiones, disparadores schedule/webhook, ejecuciones en vivo |
 | 📚 RAG | [Base de conocimiento y RAG](knowledge-rag.md) | Ingesta de documentos/URL, búsqueda híbrida, reranking, citas |
 | ⚖️ Comparación | [Comparación de modelos](model-comparison.md) | El mismo prompt en 2–4 modelos en paralelo |
 | 📊 Estadísticas | [Estadísticas de uso](statistics.md) | Tokens, latencia, costes; gráficos diarios |

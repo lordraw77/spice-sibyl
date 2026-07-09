@@ -65,13 +65,17 @@ FastAPI gateway  (/api/v1)   ── routing by model prefix ──►
       │                            optional LLM rerank, citations
       ├── Workflow service     ──► durable multi-step agent runs (background asyncio loop,
       │                            pause/resume/cancel, checkpointed)
+      ├── Graph workflow engine──► deterministic DAG of typed nodes (topological scheduler,
+      │                            expression resolver, schedule/webhook/event triggers, SSE)
       ├── Notification service ──► cross-channel bridge: Telegram ⇄ web (SSE) event fan-out
       │
       └── SQLite (aiosqlite)
             ├── users + profiles + refresh_tokens + audit_log
             ├── conversations + messages  (history per profile, FTS5-indexed)
             ├── kb_documents + kb_chunks  (RAG)
-            ├── agent_runs + agent_run_steps  (workflows)
+            ├── agent_runs + agent_run_steps  (agent workflows)
+            ├── workflows + workflow_versions + workflow_runs + workflow_node_runs
+            │                              + workflow_triggers  (graph workflows)
             ├── workspaces + workspace_members  (collaboration)
             ├── mcp_servers + custom_tools
             ├── notification_events
@@ -444,6 +448,7 @@ Beyond the Multi-MCP orchestrator sidecar below, SpiceSibyl has its own built-in
 - **User-defined custom tools** — HTTP-backed tools registered from the `/tools` page (name, JSON-schema parameters, endpoint, auth) with no code changes, merged into the tool loop namespaced `custom__<name>`.
 - **MCP server management** — configure standard `mcpServers` JSON (stdio or remote) on the admin-only `/mcp` page; a built-in JSON-RPC client discovers each server's tools (`mcp__<server>__<tool>`) and injects them into the shared tool loop.
 - **Persistent multi-step workflows** — durable, resumable agent runs (`/workflows`) that work toward a goal using the full tool registry for far more iterations than the 5-step chat loop; every step is checkpointed so runs survive pauses, cancellation, and restarts.
+- **Visual node-graph workflows (n8n-style)** — a deterministic DAG engine (`/graph-workflows`) where a trigger drives typed nodes wired on a drag-and-drop SVG canvas: `tool.<name>` action nodes over any registry tool, `if`/`switch`/`merge`/`filter` control-flow, `code`/`set` data nodes, and `llm.completion`/`llm.agent` AI nodes. Params use a safe `={{ … }}` expression resolver (AST-walked, no `eval`) with a `=py:` sandbox escape hatch; schedule/webhook/event triggers, immutable versioning, and a live SSE run view that colours nodes as they execute. Runs alongside the agent workflows above.
 - **Sandboxed code interpreter** — the `python_exec` tool runs untouched user/model code in an isolated, rlimited subprocess with no network access.
 
 Full detail: [docs/en/mcp-and-agents.md](docs/en/mcp-and-agents.md) · [docs/en/tool-calling.md](docs/en/tool-calling.md).

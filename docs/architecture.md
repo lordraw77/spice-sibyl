@@ -218,6 +218,26 @@ api_keys (provider_id TEXT PK, encrypted_key TEXT, updated_at INT)
 -- MCP servers
 mcp_servers (id TEXT PK, name TEXT UNIQUE, config TEXT JSON, enabled BOOL, created_at INT, updated_at INT)
 
+-- Agent workflows (Phase 18)
+agent_runs (id TEXT PK, profile_id TEXT, goal TEXT, model TEXT, status TEXT, max_steps INT,
+            current_step INT, messages TEXT JSON, result TEXT, error TEXT, created_at INT, updated_at INT)
+agent_run_steps (id TEXT PK, run_id TEXT REFERENCES agent_runs ON DELETE CASCADE,
+                 step_index INT, kind TEXT, name TEXT, content TEXT, created_at INT)
+
+-- Visual node-graph workflows (Phase 29)
+workflows (id TEXT PK, profile_id TEXT, name TEXT, description TEXT, graph_json TEXT JSON,
+           active BOOL, version INT, created_at INT, updated_at INT)
+workflow_versions (id TEXT PK, workflow_id TEXT REFERENCES workflows ON DELETE CASCADE,
+                   version INT, graph_json TEXT JSON, created_at INT)          -- immutable history
+workflow_runs (id TEXT PK, workflow_id TEXT REFERENCES workflows ON DELETE CASCADE, profile_id TEXT,
+               status TEXT, trigger_type TEXT, graph_json TEXT, context_json TEXT, error TEXT,
+               created_at INT, updated_at INT)
+workflow_node_runs (id TEXT PK, run_id TEXT REFERENCES workflow_runs ON DELETE CASCADE,
+                    node_id TEXT, node_type TEXT, status TEXT, input_json TEXT, output_json TEXT,
+                    error TEXT, started_at INT, finished_at INT)
+workflow_triggers (id TEXT PK, workflow_id TEXT REFERENCES workflows ON DELETE CASCADE, type TEXT,
+                   config_json TEXT, token TEXT UNIQUE, next_run_at INT, enabled BOOL, created_at INT)
+
 -- Telegram
 telegram_links (profile_id TEXT PK, telegram_user_id INT, username TEXT, linked_at INT)
 telegram_prefs (chat_id INT PK, locale TEXT, ...)
@@ -343,6 +363,49 @@ ToolRegistry.execute(name, arguments)
   ▼
 messages updated with tool and tool_result, then final provider call
 ```
+
+---
+
+## Visual node-graph workflow engine (Phase 29)
+
+A deterministic DAG engine that coexists with the Phase 18 agent runs (the agent loop is
+the `llm.agent` node). `graph_json` (`{nodes, edges}`) is the source of truth.
+
+```
+POST /v1/graph-workflows/{id}/run  (or schedule/webhook/event trigger)
+  │
+  ▼
+workflow_graph_service._execute(run_id, profile_id, graph, trigger_type, payload)
+  │  build incoming/outgoing adjacency; seed ctx = {node:{}, trigger, env, now}
+  │
+  ▼  wave loop (repeat until the graph is drained)
+  │    runnable = nodes with every incoming edge resolved AND ≥1 live incoming edge (roots always runnable)
+  │    nodes with all inputs resolved but none live      → recorded 'skipped'
+  │    for each runnable node, in parallel (asyncio.gather):
+  │        input  = primary live input ($json)   (merge = all live inputs)
+  │        params = expression_resolver.resolve_params(node.params, {...ctx, json:input})
+  │        output = dispatch(node.type):
+  │           trigger        → payload
+  │           tool.<name>    → execute_tool(name, params)            (built-in/MCP/custom)
+  │           set/if/switch/merge/filter/code
+  │           llm.completion → one provider call
+  │           llm.agent      → Phase 18 agent loop to completion
+  │        persist workflow_node_run; checkpoint workflow_runs.context_json
+  │        activate output handle(s) → matching outgoing edges go 'live', others 'dead'
+  │        retry/backoff on failure; continueOnFail keeps the graph going
+  │
+  ▼
+run status completed|failed; every step streamed to subscribers over SSE
+GET /v1/graph-workflows/runs/{rid}/stream  (snapshot + live node events)
+```
+
+**Expression resolver** (`expression_resolver.py`) is standalone and unit-tested. `={{ … }}`
+is parsed with `ast` and evaluated over a whitelist — names map to context vars
+(`$node`/`$json`/`$trigger`/`$env`/`$now`), only whitelisted functions may be called, and
+disallowed nodes (imports, arbitrary calls) raise. **No `eval`/`exec`.** `=py:` routes to the
+`python_exec` sandbox. **Triggers**: a schedule poll loop (`start_scheduler()`, reuses
+`reminder_parsing`) recomputes `next_run_at`; `POST /v1/wf/hooks/{token}` is a public webhook;
+`dispatch_event()` fans internal events out to subscribed workflows.
 
 ---
 

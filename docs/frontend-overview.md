@@ -96,7 +96,9 @@ src/app/
 │   ├── tags/          TagsPageComponent — tag CRUD (v2.0)
 │   ├── templates/     TemplatesPageComponent — prompt template CRUD (v2.0)
 │   ├── tools/         ToolsPageComponent — custom tools + MCP-grouped available tools
-│   ├── workflows/     WorkflowsPageComponent — persistent multi-step workflows
+│   ├── workflows/     WorkflowsPageComponent — persistent multi-step (agent) workflows
+│   │                  GraphWorkflowPageComponent — visual node-graph editor (Phase 29):
+│   │                  dependency-free SVG canvas, node palette, inspector, live SSE run panel
 │   └── workspaces/    WorkspacesPageComponent — shared workspaces & comments
 ├── layout/            NavbarComponent
 └── shared/
@@ -116,6 +118,7 @@ src/app/
 /compare         → ComparePageComponent     (authGuard)
 /tools           → ToolsPageComponent       (authGuard)
 /workflows       → WorkflowsPageComponent   (authGuard)
+/graph-workflows → GraphWorkflowPageComponent (authGuard)   ← v2.2 (Phase 29)
 /workspaces      → WorkspacesPageComponent  (authGuard)
 /templates       → TemplatesPageComponent   (authGuard)   ← v2.0
 /tags            → TagsPageComponent        (authGuard)   ← v2.0

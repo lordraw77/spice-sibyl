@@ -24,6 +24,7 @@ from app.api.v1.endpoints import (
     knowledge,
     admin,
     feedback,
+    graph_workflows,
     info,
     mcp,
     memories,
@@ -61,6 +62,9 @@ api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 # sharing exposes the public read-only GET /shared/{token}; the share/unshare
 # mutations it also defines are gated inside the endpoint via get_current_user.
 api_router.include_router(sharing.router, tags=["sharing"])
+# Phase 29: public token-scoped webhook receiver (POST /v1/wf/hooks/{token}).
+# Kept off the JWT/rate guard so external systems can call it; auth is the token.
+api_router.include_router(graph_workflows.public_router, prefix="/wf", tags=["graph-workflows"])
 
 # --- Protected routers (JWT required) ---
 api_router.include_router(models.router, prefix="/models", tags=["models"], dependencies=_protected)
@@ -82,6 +86,7 @@ api_router.include_router(telegram_link.router, prefix="/telegram", tags=["teleg
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"], dependencies=_protected)
 api_router.include_router(mcp.router, prefix="/mcp", tags=["mcp"], dependencies=_protected)
 api_router.include_router(workflows.router, prefix="/workflows", tags=["workflows"], dependencies=_protected)
+api_router.include_router(graph_workflows.router, prefix="/graph-workflows", tags=["graph-workflows"], dependencies=_protected)
 api_router.include_router(memories.router, prefix="/memories", tags=["memories"], dependencies=_protected)
 api_router.include_router(feedback.router, prefix="/feedback", tags=["feedback"], dependencies=_protected)
 api_router.include_router(info.router, prefix="/info", tags=["info"], dependencies=_protected)

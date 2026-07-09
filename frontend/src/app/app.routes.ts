@@ -64,6 +64,14 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'graph-workflows',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/workflows/graph-workflow-page.component').then(
+        (m) => m.GraphWorkflowPageComponent
+      ),
+  },
+  {
     path: 'reminders',
     canActivate: [authGuard],
     loadComponent: () =>

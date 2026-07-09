@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" font-family="ui-sans-serif, system-ui, sans-serif">
+  <style>
+    .bg { fill: #0f1420; }
+    .panel { fill: #161c2b; stroke: #263041; }
+    .canvas { fill: #10151f; }
+    .muted { fill: #7b8798; }
+    .txt { fill: #e6ebf2; }
+    .head { fill: #9aa6b6; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+    .node { stroke-width: 1.5; rx: 10; }
+    .edge { fill: none; stroke: #4b5568; stroke-width: 2; }
+    .label { font-size: 12px; font-weight: 600; }
+    .sub { font-size: 9.5px; }
+    .pill { rx: 6; }
+  </style>
+
+  <rect class="bg" width="960" height="560"/>
+
+  <!-- header -->
+  <rect class="panel" x="0" y="0" width="960" height="48"/>
+  <text class="txt label" x="20" y="30" font-size="15">Visual workflows</text>
+  <rect class="pill" x="560" y="14" width="120" height="22" fill="#1d2636" stroke="#39445a"/>
+  <rect class="pill" x="560" y="14" width="118" height="22" fill="#1d2636" stroke="#39445a"/>
+  <text class="txt sub" x="572" y="29">morning-digest</text>
+  <rect class="pill" x="690" y="14" width="56" height="22" fill="#14351f" stroke="#2f7d4f"/>
+  <text x="702" y="29" font-size="10.5" fill="#5ad07f">Active</text>
+  <rect class="pill" x="756" y="14" width="54" height="22" fill="#1d2636" stroke="#39445a"/>
+  <text class="txt sub" x="770" y="29">Save</text>
+  <rect class="pill" x="820" y="14" width="118" height="22" fill="#2b5cff" stroke="#2b5cff"/>
+  <text x="852" y="29" font-size="10.5" fill="#fff" font-weight="600">Run now ▶</text>
+
+  <!-- left: workflows + palette -->
+  <rect class="panel" x="0" y="48" width="200" height="512"/>
+  <text class="head" x="16" y="74">Workflows</text>
+  <rect class="pill" x="12" y="84" width="176" height="26" fill="#1f2a3d"/>
+  <circle cx="26" cy="97" r="4" fill="#5ad07f"/>
+  <text class="txt sub" x="38" y="101">morning-digest</text>
+  <text class="muted sub" x="26" y="126">website-watcher</text>
+
+  <text class="head" x="16" y="160">Node palette</text>
+  <g font-size="10.5">
+    <text class="muted" x="16" y="182" font-size="9">TRIGGERS</text>
+    <rect class="pill" x="12" y="188" width="176" height="20" fill="#1a2233" stroke="#8b5cf6"/>
+    <text class="txt" x="20" y="202">Schedule</text>
+    <text class="muted" x="16" y="228" font-size="9">ACTIONS</text>
+    <rect class="pill" x="12" y="234" width="176" height="20" fill="#1a2233" stroke="#3b82f6"/>
+    <text class="txt" x="20" y="248">fetch_rss</text>
+    <rect class="pill" x="12" y="258" width="176" height="20" fill="#1a2233" stroke="#3b82f6"/>
+    <text class="txt" x="20" y="272">create_reminder</text>
+    <text class="muted" x="16" y="298" font-size="9">LOGIC / AI</text>
+    <rect class="pill" x="12" y="304" width="86" height="20" fill="#1a2233" stroke="#f59e0b"/>
+    <text class="txt" x="20" y="318">if</text>
+    <rect class="pill" x="102" y="304" width="86" height="20" fill="#1a2233" stroke="#ec4899"/>
+    <text class="txt" x="110" y="318">llm.agent</text>
+  </g>
+
+  <!-- canvas -->
+  <rect class="canvas" x="200" y="48" width="540" height="512"/>
+  <g opacity="0.5">
+    <circle cx="230" cy="90" r="1" fill="#2a3446"/><circle cx="260" cy="90" r="1" fill="#2a3446"/>
+    <circle cx="290" cy="90" r="1" fill="#2a3446"/><circle cx="320" cy="90" r="1" fill="#2a3446"/>
+  </g>
+
+  <!-- edges -->
+  <path class="edge" d="M 360 150 C 400 150, 400 250, 440 250"/>
+  <path class="edge" d="M 600 250 C 640 250, 640 200, 680 200" stroke="#5ad07f"/>
+  <path class="edge" d="M 600 250 C 640 250, 640 320, 680 320"/>
+
+  <!-- node: schedule -->
+  <rect class="node" x="240" y="122" width="120" height="56" fill="#161c2b" stroke="#8b5cf6"/>
+  <text class="txt label" x="252" y="146">Schedule</text>
+  <text class="muted sub" x="252" y="164">schedule</text>
+  <circle cx="360" cy="150" r="5" fill="#0f1420" stroke="#9aa6b6"/>
+
+  <!-- node: fetch_rss (running) -->
+  <rect class="node" x="440" y="222" width="160" height="56" fill="#161c2b" stroke="#3b82f6" stroke-dasharray="5 3"/>
+  <text class="txt label" x="452" y="246">RSS feed</text>
+  <text class="muted sub" x="452" y="264">tool.fetch_rss</text>
+  <circle cx="440" cy="250" r="5" fill="#0f1420" stroke="#9aa6b6"/>
+  <circle cx="600" cy="250" r="5" fill="#0f1420" stroke="#9aa6b6"/>
+
+  <!-- node: if (ok) -->
+  <rect class="node" x="680" y="172" width="52" height="52" fill="#161c2b" stroke="#22c55e"/>
+  <text class="txt label" x="692" y="202">if</text>
+
+  <!-- node: agent -->
+  <rect class="node" x="680" y="292" width="52" height="52" fill="#161c2b" stroke="#ec4899"/>
+  <text class="txt sub" x="686" y="322">agent</text>
+
+  <!-- right: inspector -->
+  <rect class="panel" x="740" y="48" width="220" height="512"/>
+  <text class="head" x="756" y="74">Node inspector</text>
+  <text class="muted sub" x="756" y="94">tool.fetch_rss</text>
+  <text class="txt sub" x="756" y="120">url</text>
+  <rect x="756" y="126" width="188" height="24" fill="#0f1420" stroke="#39445a"/>
+  <rect x="756" y="126" width="188" height="24" fill="#0f1420" stroke="#39445a"/>
+  <text class="txt" x="764" y="142" font-size="10" font-family="ui-monospace, monospace">https://news…/rss</text>
+  <text class="txt sub" x="756" y="172">max_entries</text>
+  <rect x="756" y="178" width="188" height="24" fill="#0f1420" stroke="#39445a"/>
+  <text class="txt" x="764" y="194" font-size="10" font-family="ui-monospace, monospace">={{ $trigger.count }}</text>
+
+  <text class="head" x="756" y="240">Live run</text>
+  <g font-size="10.5">
+    <circle cx="762" cy="262" r="4" fill="#22c55e"/><text class="txt" x="774" y="266">Schedule</text><text x="924" y="266" text-anchor="end" fill="#5ad07f" font-size="9">ok</text>
+    <circle cx="762" cy="284" r="4" fill="#3b82f6"/><text class="txt" x="774" y="288">RSS feed</text><text x="924" y="288" text-anchor="end" fill="#6ba3ff" font-size="9">running</text>
+    <circle cx="762" cy="306" r="4" fill="#7b8798"/><text class="muted" x="774" y="310">if</text><text x="924" y="310" text-anchor="end" fill="#7b8798" font-size="9">—</text>
+    <circle cx="762" cy="328" r="4" fill="#7b8798"/><text class="muted" x="774" y="332">agent</text><text x="924" y="332" text-anchor="end" fill="#7b8798" font-size="9">—</text>
+  </g>
+</svg>

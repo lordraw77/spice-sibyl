@@ -62,6 +62,11 @@ async def lifespan(application: FastAPI):
     from app.services import reminder_service
     reminder_service.start()
 
+    # Phase 29: schedule-trigger polling loop for the visual workflow engine.
+    if settings.graph_workflow_scheduler_enabled:
+        from app.services import workflow_graph_service
+        workflow_graph_service.start_scheduler()
+
     # Start Telegram bot if a token is configured
     tg_app = None
     if settings.telegram_bot_token:
@@ -75,6 +80,10 @@ async def lifespan(application: FastAPI):
     yield
 
     await reminder_service.stop()
+
+    if settings.graph_workflow_scheduler_enabled:
+        from app.services import workflow_graph_service
+        await workflow_graph_service.stop_scheduler()
 
     if backup_task:
         backup_task.cancel()
