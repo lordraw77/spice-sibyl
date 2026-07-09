@@ -49,7 +49,24 @@ Zahlen, Kosten und Daten werden gemäß der aktiven Sprache über die `Intl`-API
 
 ## Dokumentation und Screenshots
 
-Die Dokumente und ihre Screenshots sind pro Sprache: `docs/<lang>/*.md` + `docs/<lang>/screenshots/*.png` für jede von `en`, `it`, `fr`, `de`, `es`. Die **In-App-Hilfe** (`/help`) lädt das Dokumentset passend zur aktiven UI-Sprache, mit Rückfall auf Englisch, falls ein Set fehlt; Screenshots verweisen auf `docs/<lang>/screenshots/`. Screenshots werden mit Playwright von [`frontend/scripts/screenshots.mjs`](../../frontend/scripts/screenshots.mjs) erzeugt.
+Die Dokumente und ihre Screenshots sind pro Sprache: `docs/<lang>/*.md` +
+`docs/<lang>/screenshots/*.png` für jede von `en`, `it`, `fr`, `de`, `es`. Alle fünf
+Sprachsätze sind vollständig übersetzt (passend zur *App-UI*, die in allen fünf
+lokalisiert ist); Screenshots werden pro Sprache in der aktiven UI-Sprache aufgenommen.
+
+- **In-App-Hilfe** (`/help`) lädt das Dokumentset passend zur aktiven UI-Sprache,
+  mit Rückfall auf Englisch, falls ein Set fehlt; Screenshots verweisen auf
+  `docs/<lang>/screenshots/`. Die Veröffentlichung erfolgt zur Build-Zeit durch
+  [`frontend/scripts/copy-docs.mjs`](../../frontend/scripts/copy-docs.mjs) (fünf Sprachen).
+- **Screenshots werden mit Playwright** gegen eine laufende Instanz von
+  [`frontend/scripts/screenshots.mjs`](../../frontend/scripts/screenshots.mjs) erzeugt:
+  es meldet sich an, wechselt die UI-Sprache und erfasst jede Seite in `docs/<lang>/screenshots/`.
+
+  ```bash
+  # die App muss laufen (Standard http://localhost:8888)
+  ADMIN_EMAIL=… ADMIN_PASSWORD=… node frontend/scripts/screenshots.mjs        # alle 5 Sprachen
+  node frontend/scripts/screenshots.mjs de es                                 # eine Teilmenge
+  ```
 
 ## Konfiguration
 

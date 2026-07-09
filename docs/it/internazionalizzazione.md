@@ -51,9 +51,9 @@ Numeri, costi e date sono resi secondo la lingua attiva tramite l'API `Intl` con
 
 I documenti delle funzionalità e i relativi screenshot sono per-lingua:
 `docs/<lang>/*.md` + `docs/<lang>/screenshots/*.png` per ciascuna di `en`, `it`,
-`fr`, `de`, `es`. Inglese e italiano sono scritti a mano; `fr`/`de`/`es` per ora
-sono impalcature in inglese (banner 🚧 nel README) in attesa di traduzione,
-mentre la *UI dell'app* è già completamente localizzata in tutte e cinque.
+`fr`, `de`, `es`. Tutti e cinque i set linguistici sono completamente tradotti
+(in linea con la *UI dell'app*, localizzata in tutte e cinque); gli screenshot
+sono catturati per-lingua nella lingua attiva della UI.
 
 - **Guida in-app** (`/help`) carica il set di documenti corrispondente alla
   lingua attiva, con fallback all'inglese se un set manca; gli screenshot puntano

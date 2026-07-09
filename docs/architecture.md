@@ -350,10 +350,14 @@ messages updated with tool and tool_result, then final provider call
 
 ```
 POST /api/v1/knowledge/documents  (multipart/form-data)
-  │  EmbeddingService.ingest(file, profile_id)
-  │    extract text → chunk (800 chars / 120 overlap)
+  │  RagService.ingest(file, profile_id)
+  │    MarkItDown → canonical Markdown (kb_documents.markdown)   [Phase 28]
+  │    structure-aware chunking within heading sections
+  │      (section_path + char offsets for citation deep-linking)
   │    embed via EMBEDDING_CHAIN (Ollama → Gemini → Mistral)
-  │    store in kb_documents + kb_chunks (embedding as float32 BLOB)
+  │    store in kb_documents + kb_chunks (float32 BLOB)
+  │      + mirror into kb_chunk_vec (sqlite-vec vec0 ANN)         [Phase 28]
+  │    wiki_service → kb_wiki_pages · graph_service → kb_graph_*  [Phase 28]
   ▼
 POST /api/v1/chat/completions  { rag: true, profile_id: "..." }
   │
@@ -361,19 +365,29 @@ POST /api/v1/chat/completions  { rag: true, profile_id: "..." }
 ChatService.stream()
   │  RagService.retrieve(last_user_message, profile_id, top_k)
   │    if RAG_HYBRID:
-  │      vector arm: cosine similarity scan over kb_chunks
+  │      vector arm: sqlite-vec ANN KNN (numpy cosine fallback)
   │      lexical arm: kb_chunks_fts FTS5 BM25 search
   │      Reciprocal Rank Fusion merge
   │    else:
   │      vector arm only
+  │    if RAG_GRAPH_EXPAND: 1-hop knowledge-graph expansion       [Phase 28]
   │    if RAG_RERANK=llm:
   │      LLM reranker reorders fused candidates
   │    inject top-k chunk texts into last user message
-  │    emit event: rag_context { sources: [...] }
+  │    emit event: rag_context { sources: [... section_path, entities] }
   ▼
 Provider sees enriched context → answer is grounded in KB content
-Frontend: citation chips below assistant bubble with filename + chunk index
+Frontend: citation chips below assistant bubble with filename + section
 ```
+
+> **GraphRAG (Phase 28.d)** adds an optional global-search path on the *same*
+> `kb_graph_*` / `kb_wiki_pages` tables: `graphrag_service` runs LLM entity/
+> relationship extraction, dependency-free label-propagation community detection
+> and community summaries, then a map-reduce **global search** over those summaries
+> (`POST /graph/global-search`). Per-document **Wiki** (`GET /documents/{id}/wiki`)
+> and a profile-wide knowledge-**graph** view (`GET /graph`, communities via
+> `GET /graph/communities`) are exposed on the Knowledge page. Every LLM call is
+> best-effort and cost-bounded, degrading to the LLM-free extractor on error.
 
 ---
 

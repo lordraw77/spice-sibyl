@@ -9,12 +9,12 @@
 | Befehl | Was er macht |
 |--------|--------------|
 | `/start` | Begrüßungsnachricht |
-| `/new` | neue Unterhaltung (setzt den Chat-Kontext zurück) |
+| `/new` | startet eine neue Unterhaltung (verknüpfte Nutzer: bei der nächsten Nachricht wird eine neue persistierte Unterhaltung erstellt) |
 | `/model` | Modellauswahl über eine **zweistufige Inline-Tastatur** (Anbieter → Modell, mit Zurück-Navigation und ✅ am aktuellen Modell) |
 | `/models` | listet verfügbare Modelle |
 | `/agent` · `/chat` | wechselt zwischen Agentenmodus (Multi-MCP-Orchestrator) und normalem Chat |
 | `/imagine <prompt>` | erzeugt ein Bild (`IMAGE_GENERATION_CHAIN`) und sendet es als Foto mit Anbieter/Modell-Beschriftung |
-| `/history` | die letzten 20 Nachrichten der aktuellen Sitzung |
+| `/history` | **verknüpfte Nutzer:** aktuelle Unterhaltungen über beide Kanäle, mit einer Inline-Tastatur zum Wiederaufnehmen; **nicht verknüpft:** die letzten 20 Nachrichten der aktuellen Sitzung |
 | `/search <suche>` | Volltextsuche (FTS5) über alle gespeicherten Unterhaltungen: Titel + Auszüge |
 | `/link` · `/unlink` | erzeugt den Code zum Verknüpfen/Trennen des Web-Profils (siehe [Authentifizierung und Profile](authentication-and-profiles.md)) |
 | `/remind` | Erinnerungen: `/remind 15:50 Backups prüfen` oder relativ `/remind +30m …`, `2h`, `1d` |
@@ -32,6 +32,17 @@
 - **Fotos** an den Bot → werden vom aktiven Modell automatisch per Vision beschrieben.
 - **Sprach-/Audionachrichten** → transkribiert mit Groq Whisper (`whisper-large-v3`); der Bot zeigt die Transkription und streamt dann die Antwort auf den transkribierten Text.
 - **Dokumente** PDF / TXT / DOCX / MD → der Text wird extrahiert (auf 8.000 Zeichen gekürzt) und als **einmaliger** Kontext fürs Modell verwendet, zusammen mit einer etwaigen Bildunterschrift. Mit einer `/kb`-Bildunterschrift wird das Dokument stattdessen **in die Wissensdatenbank aufgenommen** (siehe unten).
+
+## Geteilter Unterhaltungsverlauf (Phase 23.a)
+
+Für ein **verknüpftes Web-Profil** (`/link`) ist Telegram kein separater In-Memory-Chat mehr: jeder Austausch wird als reguläre Profil-Unterhaltung persistiert, sodass der Verlauf über beide Kanäle geteilt wird.
+
+- **Persistenz** — jeder erfolgreiche Zug (Text, Sprache, Foto, Dokument) wird in der *aktiven Unterhaltung* des Chats gespeichert, die bei der ersten Nachricht mit automatisch erzeugtem Titel angelegt wird. Die Unterhaltung ist mit `channel='telegram'` markiert und erscheint in der **Web-Sidebar mit einem ✈️-Badge**; umgekehrt lassen sich im Web begonnene Unterhaltungen von Telegram aus fortsetzen.
+- **`/history`** — listet die neuesten Unterhaltungen des Profils (beide Kanäle) als Inline-Tastatur; tippe eine an, um sie fortzusetzen (die aktive ist mit ✅ markiert). Der volle Kontext wird rehydriert, sodass das Modell dort weitermacht, wo du aufgehört hast — sogar über einen Bot-Neustart hinweg.
+- **`/new`** — löst die aktive Unterhaltung; die nächste Nachricht startet eine neue. Modellwechsel (`/model`) oder Moduswechsel (`/agent` / `/chat`) bewirken dasselbe.
+- **Nicht verknüpfte Chats** behalten die bisherige In-Memory-Sitzung (letzte 40 Nachrichten), ohne kanalübergreifende Synchronisation — mit `/link` aktivieren.
+
+Implementierung: `telegram_prefs.active_conversation_id` (beim Start warm gecacht), `conversation_repository.append_messages` und die neue Spalte `conversations.channel`.
 
 ## Wissensdatenbank (RAG)
 

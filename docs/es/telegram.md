@@ -9,12 +9,12 @@
 | Comando | Qué hace |
 |---------|----------|
 | `/start` | mensaje de bienvenida |
-| `/new` | nueva conversación (reinicia el contexto del chat) |
+| `/new` | inicia una conversación nueva (usuarios vinculados: se crea una conversación persistida nueva en el siguiente mensaje) |
 | `/model` | selección de modelo mediante un **teclado inline en dos pasos** (proveedor → modelo, con navegación atrás y ✅ en el modelo actual) |
 | `/models` | lista los modelos disponibles |
 | `/agent` · `/chat` | alterna entre modo agente (orquestador Multi-MCP) y chat normal |
 | `/imagine <prompt>` | genera una imagen (`IMAGE_GENERATION_CHAIN`) y la envía como foto con pie de proveedor/modelo |
-| `/history` | los últimos 20 mensajes de la sesión actual |
+| `/history` | **usuarios vinculados:** conversaciones recientes en ambos canales, con un teclado inline para reanudar cualquiera; **no vinculados:** los últimos 20 mensajes de la sesión actual |
 | `/search <consulta>` | búsqueda de texto completo (FTS5) en todas las conversaciones guardadas: títulos + fragmentos |
 | `/link` · `/unlink` | genera el código para vincular/desvincular el perfil web (véase [Autenticación y perfiles](authentication-and-profiles.md)) |
 | `/remind` | recordatorios: `/remind 15:50 Revisar backups` o relativo `/remind +30m …`, `2h`, `1d` |
@@ -32,6 +32,17 @@
 - **Fotos** enviadas al bot → descritas automáticamente por el modelo activo mediante visión.
 - **Mensajes de voz/audio** → transcritos con Groq Whisper (`whisper-large-v3`); el bot muestra la transcripción y luego transmite la respuesta al texto transcrito.
 - **Documentos** PDF / TXT / DOCX / MD → se extrae el texto (truncado a 8 000 caracteres) y se usa como contexto **puntual** para el modelo, junto con el pie si lo hay. Con un pie `/kb` el documento se **ingiere en la base de conocimiento** (véase abajo).
+
+## Historial de conversación compartido (Fase 23.a)
+
+Para un **perfil web vinculado** (`/link`), Telegram deja de ser un chat en memoria separado: cada intercambio se persiste como una conversación de perfil normal, de modo que el historial se comparte entre ambos canales.
+
+- **Persistencia** — cada turno exitoso (texto, voz, foto, documento) se guarda en la *conversación activa* del chat, creada de forma diferida en el primer mensaje con un título autogenerado. La conversación se marca con `channel='telegram'` y aparece en la **barra lateral web con una insignia ✈️**; a la inversa, las conversaciones iniciadas en la web pueden reanudarse desde Telegram.
+- **`/history`** — lista las conversaciones más recientes del perfil (ambos canales) como teclado inline; toca una para reanudarla (la activa está marcada con ✅). El contexto completo se rehidrata para que el modelo continúe donde lo dejaste — incluso tras un reinicio del bot.
+- **`/new`** — desvincula la conversación activa; el siguiente mensaje inicia una nueva. Cambiar de modelo (`/model`) o de modo (`/agent` / `/chat`) hace lo mismo.
+- **Los chats no vinculados** conservan la sesión en memoria anterior (últimos 40 mensajes), sin sincronización entre canales — usa `/link` para activarla.
+
+Implementación: `telegram_prefs.active_conversation_id` (cacheado en caliente al arrancar), `conversation_repository.append_messages` y la nueva columna `conversations.channel`.
 
 ## Base de conocimiento (RAG)
 

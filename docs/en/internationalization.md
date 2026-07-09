@@ -50,10 +50,9 @@ Numbers, costs and dates render per the active locale via the `Intl` API keyed o
 ## Documentation & screenshots
 
 The feature docs and their screenshots are per-language: `docs/<lang>/*.md` +
-`docs/<lang>/screenshots/*.png` for each of `en`, `it`, `fr`, `de`, `es`. English
-and Italian are hand-written; `fr`/`de`/`es` currently ship as English scaffolds
-(🚧 banner in their README) pending translation, while the *app UI* is already
-fully localized in all five.
+`docs/<lang>/screenshots/*.png` for each of `en`, `it`, `fr`, `de`, `es`. All five
+language sets are fully translated (matching the *app UI*, which is localized in all
+five); screenshots are captured per language in the active UI locale.
 
 - **In-app Help** (`/help`) loads the doc set matching the active UI language,
   falling back to English if a set is missing; screenshots resolve to

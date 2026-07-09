@@ -7,9 +7,68 @@ correspond to the project's git tags.
 
 ## [Unreleased]
 
-### Added — Phase 23: Telegram ↔ web convergence
-- **MCP tools from Telegram (23.b)** — the Telegram bot can now run the **full tool loop**. When tools are enabled for a chat, the built-in tools, the linked profile's custom tools and every discovered `mcp__<server>__<tool>` are merged into the completion request and executed through the **shared** `ChatService._stream_with_tools`, so tool behavior is identical to the web chat. New `/tools` command lists the available tools grouped by kind (🧩 built-in / 🔌 MCP / 🛠 custom) with an inline ON/OFF button; `/tools on|off` flips it directly. The toggle is persisted in a new `telegram_prefs.tools` column (migration) and warm-cached at boot (OFF by default). Tool-call progress is shown live in the streaming reply (⚙ tool name → ✅ on result). Agent mode (`agent/*`) is left to orchestrate its own tools. MCP discovery is cached in `mcp_service` and only re-probed on `/tools` listing / cold cache. Five-locale bot strings + a `/tools` command-menu entry added
+_No unreleased changes. The latest tagged release is [2.1.0]._
+
+---
+
+## [2.1.0] — 2026-07-08
+
+### Added — Phase 26: Semantic response cache (extends 19.c)
+- **Semantic cache** — when `SEMANTIC_CACHE_ENABLED`, on an exact-match miss `cache_service` embeds the normalized last user message and compares it (cosine) against stored embeddings of recent entries in the same `(model, temperature, max_tokens)` bucket; a hit above `SEMANTIC_CACHE_THRESHOLD` replays the saved reply flagged `cached_semantic` (⚡~ chip). Same 19.c exclusions (tools, `agent/*`, multimodal); degrades silently to exact-match-only when no embedding provider is reachable. Settings `SEMANTIC_CACHE_ENABLED`/`_THRESHOLD`/`_MAX_ENTRIES`; `cache_service.stats()` (in `/info`) reports semantic vs exact hits
+
+---
+
+## [2.0.9] — 2026-07-08
+
+### Added — Phase 24: Working examples & cookbook
+- **Example workflows & custom tools** — curated, one-click-importable Phase 18 workflow definitions (Examples gallery on `/workflows`: morning news digest, website watcher, KB research report, weather-aware reminder) and custom-tool definitions using keyless public APIs (currency, Wikipedia, public holidays, geocoding + a bearer-auth template on `/tools`), each verified end-to-end by CI smoke tests. Documented in `docs/examples/workflows.md` and `docs/examples/custom-tools.md`
+
+---
+
+## [2.0.8] — 2026-07-07
+
+### Added — Phase 23.5: Local stdio MCP servers (self-hosted runtimes)
+- **Bundled runtimes + guardrails** — the backend image can bundle optional **Node.js** (`npx`) and **uv** (`uvx`) layers (`--build-arg INSTALL_NODE`/`INSTALL_UV`) so pasted `mcpServers` stdio entries work beyond the `docker run` (DooD) path; the `app` user gets a real writable `$HOME`. `GET /v1/mcp/runtimes` reports which launchers are on `PATH` (chips on `/mcp`); `_open_stdio` preflights with `shutil.which` and enforces `MCP_STDIO_ENABLED` + an `MCP_ALLOWED_COMMANDS` allowlist; `POST /v1/mcp/deployment-check` computes what a pasted bundle needs per server. Documented in `docs/mcp-deployment.md`
+
+---
+
+## [2.0.7] — 2026-07-07
+
+### Added — Phase 28: wikillm enhanced knowledge base (MarkItDown + KG + sqlite-vec)
+- **Structure-aware ingestion (28.a)** — `document_converter.py` wraps Microsoft **MarkItDown**, converting every upload (PDF, DOCX, PPTX, XLSX, CSV, HTML, EPUB, JSON, XML, TXT/MD) and fetched URLs to canonical **Markdown** (`kb_documents.markdown`), replacing the old `PyPDF2`/`python-docx`/regex-HTML extraction. Chunking happens *within* heading sections (`chunk_markdown_with_offsets`), tagging each chunk with a `section_path`/`heading` breadcrumb and char offsets for citation deep-linking
+- **sqlite-vec ANN store (28.b)** — chunk vectors are mirrored into a `vec0` virtual table (`kb_chunk_vec`, cosine) loaded as a SQLite extension, so retrieval's vector arm is an ANN KNN (`knn_chunks`) instead of an O(n) numpy scan; degrades gracefully to the numpy fallback when the extension is unavailable (`RAG_USE_SQLITE_VEC`). Still one SQLite file
+- **Wiki + knowledge graph (28.c)** — `wiki_service.py` builds a per-document section tree (`kb_wiki_pages`); `graph_service.py` (LLM-free) extracts a deduped entity graph (`kb_graph_nodes`/`kb_graph_edges` + `kb_chunk_entities`), with optional 1-hop expansion at retrieval (`RAG_GRAPH_EXPAND`). New `GET /documents/{id}/wiki`, `GET /graph`, `POST /reingest`; web Wiki/Graph inspectors + a profile-wide force-directed graph view
+- **GraphRAG (28.d)** — optional LLM entity/relationship extraction, dependency-free label-propagation community detection + community summaries, and map-reduce **global search** on the *same* tables (no schema change). New `graphrag_service.py`; `GET /graph/status`, `GET /graph/communities`, `POST /graph/communities/rebuild`, `POST /graph/global-search`; a "GraphRAG" panel on the Knowledge page. Every LLM call is best-effort and cost-bounded
+
+---
+
+## [2.0.6] — 2026-07-06
+
+### Added — Phase 23.d: Extended cross-channel reminders
+- **Extended reminders (23.d)** — the Phase 14 Telegram-only `telegram_reminders` table is replaced by a channel-agnostic `reminders` table (auto-migrated) + shared `reminder_parsing.py`: relative (`+30m`/`2h`/`1d`), absolute, **recurrence** (`every day HH:MM`, `every <weekday>`, `cron:…`) and IT/EN **natural-language** phrasings, with an LLM parse fallback. Firing moved to a channel-agnostic ~20s polling loop in `reminder_service.py` (fires whether or not the bot is connected). New `/remindai` creates **smart reminders** (a bounded tool loop generates the content at fire time). Fired Telegram reminders carry a 💤/🔁/🗑 inline keyboard. REST `GET/POST/PATCH/DELETE /v1/reminders` (+ `snooze`/`repeat`) backs a web Reminders panel with per-reminder delivery channel (`telegram`/`web`/`both`) and timezone override
+
+---
+
+## [2.0.5] — 2026-07-06
+
+### Added — Phase 23.c: Cross-channel notifications (UI ↔ Telegram)
+- **Cross-channel notifications (23.c)** — `notification_service.py` bridges events between channels for linked users: web→Telegram push on workflow/image/long-reply completion (forwarded via `POST /v1/notifications/trigger`), and web toast/badge on Telegram events (reminder fired, `/kb` ingest), persisted in `notification_events` and streamed live over `GET /v1/notifications/stream` (fetch-based SSE). Per-event-type opt-in matrix in a "Notifications" sidebar panel (`NotificationPrefsService`, roaming via the `preferences` blob); a per-chat `/notify on|off` mutes the web→Telegram direction
+
+---
+
+## [2.0.4] — 2026-07-05
+
+### Added — Phase 23.a/b: Telegram ↔ web convergence
 - **Shared conversation history across Telegram and web (23.a)** — for a **linked profile** (`/link`), Telegram exchanges are now persisted as regular profile conversations instead of the in-memory per-chat buffer. A per-chat *active conversation* is tracked in `telegram_prefs.active_conversation_id` (warm-cached at boot); each successful turn (text/voice/photo/document) is appended via `conversation_repository.append_messages`, creating the conversation lazily on the first message with an auto-generated title (`title_service`). `/history` now lists the profile's recent conversations across **both** channels with an inline keyboard to resume any of them (`resume:<id>` callback — rehydrates the full context, even across a bot restart); `/new` and every model/mode switch detach the active conversation so the next message starts a fresh one. Telegram-started conversations surface in the **web sidebar with an ✈️ badge** (new `conversations.channel` column + `ConversationSummary.channel`). Quick-action refinements stay in-memory only; unlinked chats keep the legacy in-memory session. Five-locale bot strings (`history_*`) + a web catalog label (`chat.conversations.viaTelegram`) added
+- **MCP tools from Telegram (23.b)** — the Telegram bot can now run the **full tool loop**. When tools are enabled for a chat, the built-in tools, the linked profile's custom tools and every discovered `mcp__<server>__<tool>` are merged into the completion request and executed through the **shared** `ChatService._stream_with_tools`, so tool behavior is identical to the web chat. New `/tools` command lists the available tools grouped by kind (🧩 built-in / 🔌 MCP / 🛠 custom) with an inline ON/OFF button; `/tools on|off` flips it directly. The toggle is persisted in a new `telegram_prefs.tools` column (migration) and warm-cached at boot (OFF by default). Tool-call progress is shown live in the streaming reply (⚙ tool name → ✅ on result). Agent mode (`agent/*`) is left to orchestrate its own tools. MCP discovery is cached in `mcp_service` and only re-probed on `/tools` listing / cold cache. Five-locale bot strings + a `/tools` command-menu entry added
+
+### Changed
+- `conversations` gains a `channel` column (default `'web'`; migration + `ConversationSummary` schema) and `telegram_prefs` gains `active_conversation_id`, for cross-channel Telegram history (23.a)
+- `telegram_prefs` gains a `tools` column (default `0`; migration) backing the per-chat `/tools` toggle (23.b)
+
+---
+
+## [2.0.3] — 2026-07-05
 
 ### Added — Phase 22: Internationalization (i18n)
 - **Web UI multi-language (22.a)** — dependency-free runtime i18n layer under `frontend/src/app/core/i18n/`: `Locale` metadata (en/fr/de/it/es with native labels + BCP-47 tags), one flat catalog per locale (**560 keys**), an `I18nService` (active-locale signal, first-visit browser-language auto-detection, `translate()` with `{placeholder}` interpolation and `active → default(it) → key` fallback), and an impure `TranslatePipe` (`| t`) so switching language re-renders instantly without a reload. A 🌐 language switcher in the navbar; the choice is persisted in `localStorage` **and** per profile via the new `PATCH /api/v1/profiles/{id}` (`locale`), adopted on profile select/restore. **Full UI coverage** — every surface is localized: navbar/menus + tooltips, the entire chat page & sidebar (labels, actions, toasts, notifications, slash commands), login, and all feature pages (Providers, Discovery, Compare, Stats, Tools, Workflows, MCP, Workspaces + threaded comments, Templates, Tags, Knowledge, Memory, Ops, Info, Help, profile modal, shared view). TTS and voice input now follow the active locale's BCP-47 tag (previously hardcoded `it-IT`)
@@ -19,15 +78,27 @@ correspond to the project's git tags.
 - **Tests / CI (22.e)** — `backend/tests/test_i18n.py` (Telegram 5-locale key parity, formattability, fallback chain, profile-locale endpoint) + a runnable web catalog check (`frontend/scripts/check-i18n.mjs`, `npm run i18n:check`); both wired into a new `.github/workflows/ci.yml`
 - **Login page localized** — the login card (subtitle, field labels, placeholder, button, error messages) now uses the i18n catalog (`auth.*` keys, all 5 locales)
 - **Per-language documentation & screenshots** — docs restructured to `docs/en/` + `docs/it/` (renamed from `features/`/`funzionalita/`) plus new `docs/fr/`, `docs/de/`, `docs/es/`, **each fully translated** (all 15 feature pages + README index + i18n page per language); each language ships its own `screenshots/`. `copy-docs.mjs` now publishes all 5 languages with per-language screenshots; the `/help` page loads the doc set for the active UI language (English fallback). New `frontend/scripts/screenshots.mjs` (Playwright) captures each page per language against a running instance
+- **Roaming preferences** — user and profile settings (theme/accent, notification opt-ins, and other UI preferences) are persisted server-side in a `preferences` blob and roam across devices/sessions rather than living only in `localStorage`
 
 ### Fixed
 - **Help page now follows a live language switch** — the `/help` page fixed its doc language once at construction, so switching the UI language left the currently-shown guide in the old language until a reload. It now reacts to the active locale (via an `effect`) and reloads the manifest + current doc on change. All per-language screenshots regenerated against the fully-localized build
 
 ### Changed
-- `conversations` gains a `channel` column (default `'web'`; migration + `ConversationSummary` schema) and `telegram_prefs` gains `active_conversation_id`, for cross-channel Telegram history (23.a)
-- `telegram_prefs` gains a `tools` column (default `0`; migration) backing the per-chat `/tools` toggle (23.b)
 - `profiles` gains a nullable `locale` column (migration + `Profile` schema); `PATCH /api/v1/profiles/{id}` validates against the 5 supported locales
 - The shared `docs/screenshots/` folder was removed in favour of per-language `docs/<lang>/screenshots/`; doc image references updated accordingly
+
+---
+
+## [2.0.2] — 2026-07-04
+
+### Added — Telegram knowledge base (RAG)
+- **`/kb` and `/rag` in the Telegram bot** — the web profile's knowledge base is extended to the Telegram channel (requires a linked profile via `/link`): send a PDF/TXT/DOCX/MD file with a `/kb` caption to ingest it through the same `rag_service.ingest` pipeline (with sha256 duplicate detection); `/kb list`/`/kb del <id>` manage documents; `/rag on|off` toggles knowledge-base injection per chat (persisted in `telegram_prefs.rag`, OFF by default), folding retrieved chunks into the reply with a 📚 sources footer
+
+---
+
+## [2.0.1] — 2026-07-04
+
+- Re-tag of [2.0.0] (release/CI fixup); no code changes.
 
 ---
 
@@ -45,6 +116,14 @@ correspond to the project's git tags.
 
 ### Removed
 - The Provider / Templates / Tags / Knowledge-list / Memory-list panels were removed from the chat sidebar (moved to dedicated pages); dead component state, methods and preferences were cleaned up (`UserPreferences.sectionsOpen` reduced to `model` / `system` / `params`; new `hiddenModels` preference added)
+
+---
+
+## [1.9.4] — 2026-07-04
+
+### Added — Phase 20: Collaboration
+- **Shared workspaces (20.a)** — team-scoped workspaces (`workspaces` + `workspace_members`) owned by a user, with role-based access (`owner` > `admin` > `editor` > `viewer`). Members are invited by email; conversations and knowledge-base documents (owned by an individual profile) are *shared into* a workspace via join tables (`workspace_conversations` / `workspace_documents`), making them visible to every member. `GET/POST/PATCH/DELETE /v1/workspaces` + `/{ws}/members`, `/{ws}/conversations`, `/{ws}/documents` — sharing requires editor+ and ownership of the resource, membership management requires admin+, deletion is owner-only, any member may self-leave. Web UI: a "Workspace" page with a workspace list/create sidebar and a detail pane for members and shared conversations/documents
+- **Annotations & comments (20.b)** — threaded comments on shared conversations (`comments` table, `parent_id` threading, `message_id` per-message anchoring, soft-deleted so replies keep their anchor). Access mirrors conversation reach — the owner or any member of a workspace it is shared into can read/post; editing/deleting is restricted to the comment's author. `GET/POST/PATCH/DELETE /v1/conversations/{id}/comments`. Web UI: a collapsible threaded comment panel under each shared conversation
 
 ---
 

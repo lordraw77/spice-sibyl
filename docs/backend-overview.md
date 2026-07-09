@@ -22,6 +22,10 @@ SpiceSibyl's backend is a **FastAPI async gateway** that exposes an OpenAI-compa
 
 **RAG / knowledge base (Phase 14)** — `EmbeddingService` extracts text from PDF, TXT, DOCX, Markdown files, chunks it (800 chars / 120 overlap), embeds it via a provider fallback chain (`EMBEDDING_CHAIN`: Ollama `nomic-embed-text` → Gemini → Mistral), and stores float32 BLOB vectors in SQLite (`kb_documents` / `kb_chunks`). `RagService` retrieves top-k chunks by cosine similarity and, when `RAG_HYBRID=true`, fuses results from an FTS5 lexical arm via Reciprocal Rank Fusion; an optional LLM reranker (`RAG_RERANK=llm`, `RAG_RERANK_MODEL`) reorders candidates before context injection. The top-k chunks are folded into the last user message and sources streamed as `event: rag_context`. Endpoints: `GET/POST/DELETE /v1/knowledge/documents`, `POST /v1/knowledge/search`, `POST /v1/knowledge/documents/{id}/reembed`, `GET /v1/knowledge/documents/{id}/chunks`, `GET /v1/knowledge/documents/{id}/source`, `POST /v1/knowledge/urls` (web ingestion).
 
+**wikillm — enhanced knowledge base (Phase 28)** — the chunk-only extraction is replaced by structure-aware ingestion: `document_converter.py` wraps Microsoft **MarkItDown** to convert every upload (PDF, DOCX, PPTX, XLSX, CSV, HTML, EPUB, JSON, XML, TXT/MD) and fetched URLs into canonical **Markdown** (`kb_documents.markdown`); chunking happens *within* heading sections (`chunk_markdown_with_offsets`), tagging each chunk with a section breadcrumb and char offsets for citation deep-linking. Vectors are mirrored into a **sqlite-vec** `vec0` virtual table (`kb_chunk_vec`, cosine) so the retrieval vector arm is an ANN KNN instead of an O(n) numpy scan, degrading gracefully to the numpy fallback when the extension is unavailable (`RAG_USE_SQLITE_VEC`). `wiki_service.py` builds a per-document section tree (`kb_wiki_pages`), and `graph_service.py` (LLM-free) extracts a searchable **knowledge graph** (`kb_graph_nodes`/`kb_graph_edges`, entities deduped across documents) with optional 1-hop graph expansion at retrieval (`RAG_GRAPH_EXPAND`). **GraphRAG (28.d)** layers optional LLM entity/relationship extraction, dependency-free label-propagation community detection, community summaries and map-reduce **global search** on the *same* tables (no schema change). Endpoints: `GET /documents/{id}/wiki`, `GET /graph`, `GET /graph/status`, `GET /graph/communities`, `POST /graph/global-search`, `POST /graph/communities/rebuild`, `POST /reingest` (batch rebuild of pre-wikillm docs). Every LLM call is best-effort and cost-bounded, so ingestion/search never hard-fail on the graph layer.
+
+**Semantic response cache (Phase 26)** — extends Phase 19's exact-match cache: when `SEMANTIC_CACHE_ENABLED`, on an exact miss `cache_service` embeds the normalized last user message and compares it (cosine) against stored embeddings of recent entries in the same `(model, temperature, max_tokens)` bucket; a hit above `SEMANTIC_CACHE_THRESHOLD` replays the saved reply flagged `cached_semantic` (⚡~ chip). Same exclusions as 19.c (tools, `agent/*`, multimodal); degrades silently to exact-match-only when no embedding provider is reachable. `cache_service.stats()` (surfaced in `/info`) reports semantic vs exact hit counts.
+
 **Prometheus metrics (Phase 16)** — `GET /api/v1/metrics` (OpenMetrics text format) exposes `sibyl_http_requests_total`, `sibyl_http_request_duration_seconds`, `sibyl_provider_requests_total`, `sibyl_provider_tokens_total{kind}`, `sibyl_provider_latency_seconds`, `sibyl_active_sse_streams`; optional `METRICS_TOKEN` bearer guard. `RequestContextMiddleware` generates a `request_id` (ContextVar) per request, reusing inbound `X-Request-ID` and echoing it on the response for end-to-end tracing. `LOG_FORMAT=json` enables structured JSON logging with the request ID bound.
 
 **Automatic provider fallback for chat completions** — `CHAT_FALLBACK_CHAIN` (same `provider:model` format as image/embedding chains); when a provider errors or times out before emitting any output, the gateway retries the next entry and emits `event: provider_switch` (`{ from, to }`), surfaced as a notice in the web UI. Once tokens have streamed, the error is propagated (no duplicate output).
@@ -58,7 +62,13 @@ SpiceSibyl's backend is a **FastAPI async gateway** that exposes an OpenAI-compa
 
 **Vision (image-to-text)** — `ChatMessage.content` accepts the OpenAI multipart format. Images are base64-encoded by the client and forwarded to vision-capable models through the existing provider pipeline.
 
-**Telegram bot** — polling-based bot that shares the same provider factory and key resolver as the HTTP API. Supports per-chat conversation history, streams replies by progressively editing the Telegram message, inline keyboards for model selection, voice transcription (Groq Whisper), quick action buttons, document upload, inline query mode, scheduled reminders, and multi-language support (it/en). Access can be restricted with `TELEGRAM_ALLOWED_USERS`.
+**Telegram bot** — polling-based bot that shares the same provider factory and key resolver as the HTTP API. Supports per-chat conversation history, streams replies by progressively editing the Telegram message, inline keyboards for model selection, voice transcription (Groq Whisper), quick action buttons, document upload, inline query mode, scheduled reminders, and multi-language support (**it/en/fr/de/es**, per-chat `/lang`). Access can be restricted with `TELEGRAM_ALLOWED_USERS`.
+
+**Telegram ↔ web convergence (Phase 23)** — for a **linked profile** (`/link`) the two channels become one experience. *Shared history (23.a)*: Telegram exchanges are persisted as regular profile conversations (new `conversations.channel` column, ✈️ sidebar badge), tracked via `telegram_prefs.active_conversation_id`; `/history` resumes any conversation across both channels and context survives a bot restart. *MCP tools from Telegram (23.b)*: `/tool on` runs the shared `ChatService._stream_with_tools` loop with built-in + custom + `mcp__*` tools. *Cross-channel notifications (23.c)*: `notification_service.py` bridges events both ways (web→Telegram push on workflow/image/long-reply completion; Telegram→web toast on reminder fired / `/kb` ingest), persisted in `notification_events` and streamed live over `GET /v1/notifications/stream` (fetch-based SSE), with a per-event opt-in matrix and a per-chat `/notify on|off`. *Extended reminders (23.d)*: the Telegram-only table is replaced by a channel-agnostic `reminders` table + shared `reminder_parsing.py` (relative/absolute/**recurrence** cron+weekly / IT-EN **natural language**, with an LLM parse fallback), fired by a ~20s polling loop in `reminder_service.py` (works whether or not the bot is connected); `/remindai` creates **smart reminders** that run a bounded tool loop at fire time. REST surface `GET/POST/PATCH/DELETE /v1/reminders` (+ `snooze`/`repeat`) backs a web Reminders panel with per-reminder delivery channel and timezone override.
+
+**Local stdio MCP runtimes (Phase 23.5)** — the backend image (`python:3.12-slim` + Docker CLI) can bundle optional **Node.js** (`npx`) and **uv** (`uvx`) layers (`--build-arg INSTALL_NODE/INSTALL_UV`) so pasted `mcpServers` stdio entries "just work" beyond the `docker run` (Docker-out-of-Docker) path. `GET /v1/mcp/runtimes` reports which launchers are on `PATH`; `_open_stdio` preflights with `shutil.which` and enforces `MCP_STDIO_ENABLED` + an `MCP_ALLOWED_COMMANDS` allowlist; `POST /v1/mcp/deployment-check` computes what a pasted bundle needs per server. See [`mcp-deployment.md`](mcp-deployment.md).
+
+**Working examples & cookbook (Phase 24)** — curated, one-click-importable Phase 18 **workflow** definitions (Examples gallery on `/workflows`: morning news digest, website watcher, KB research report, weather-aware reminder) and **custom-tool** definitions using keyless public APIs (currency, Wikipedia, public holidays, geocoding + a bearer-auth template on `/tools`), each verified end-to-end by CI smoke tests. Documented in [`examples/workflows.md`](examples/workflows.md) and [`examples/custom-tools.md`](examples/custom-tools.md).
 
 ## Structure
 
@@ -68,9 +78,9 @@ app/
 │                       profiles · providers · stats · tools · discovery ×8 · auth · admin ·
 │                       metrics · health · mcp · tags · templates · sharing · telegram_link
 ├── core/               pydantic-settings (env / .env) · logging_context · metrics
-├── db/                 SQLite schema + indexes · conversation / profile / vault / stats / search /
-│                       kb / tag / template / share / audit / token / user / mcp /
-│                       telegram_link / telegram_prefs / telegram_reminder repositories
+├── db/                 SQLite schema + indexes (+ sqlite-vec `vec0`) · conversation / profile / vault / stats / search /
+│                       kb (+ chunk_vec / wiki / graph) / tag / template / share / audit / token / user / mcp /
+│                       reminder / notification / telegram_link / telegram_prefs repositories
 ├── dependencies/       provider_factory · auth · rate_limit
 ├── middleware/         request_context (request_id ContextVar, X-Request-ID header)
 ├── providers/          BaseProvider · LiteLLM · Gemini · OpenRouter · Cloudflare ·
@@ -79,9 +89,11 @@ app/
 │                       tags · templates · providers
 ├── services/           ChatService · ImageService · VaultService · KeyResolver ·
 │                       EmbeddingService · RagService · AuthService · BackupService ·
-│                       mcp_client · mcp_service · provider_factory
-├── tools/              ToolRegistry · built-in tools (get_datetime · calculator · web_search · read_url)
-└── telegram/           bot handlers and lifecycle · i18n (it/en)
+│                       CacheService (exact + semantic) · NotificationService ·
+│                       ReminderService (+ reminder_parsing) · WikiService · GraphService ·
+│                       GraphRAGService · document_converter · mcp_client · mcp_service · provider_factory
+├── tools/              ToolRegistry · built-in tools (get_datetime · calculator · web_search · read_url) · custom tools
+└── telegram/           bot handlers and lifecycle · i18n (it/en/fr/de/es)
 ```
 
 ## Technology choices

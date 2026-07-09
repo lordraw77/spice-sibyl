@@ -9,9 +9,9 @@
  *   public/docs/<lang>/*.md            verbatim copies of docs/<lang>/*.md
  *   public/docs/<lang>/screenshots/    per-language screenshots (docs/<lang>/screenshots/)
  *
- * Languages: it, en, fr, de, es (fr/de/es ship as English scaffolds until
- * translated — see the 🚧 banner in their README). Screenshots are captured
- * per language by frontend/scripts/screenshots.mjs.
+ * Languages: it, en, fr, de, es — all five sets are fully translated (matching
+ * the app UI). Screenshots are captured per language by
+ * frontend/scripts/screenshots.mjs.
  *
  * Inside the Docker builds the repo-root docs/ is NOT in the build context:
  * the Makefile runs this script on the host first, so here we just detect the
@@ -36,7 +36,7 @@ const LANGUAGES = {
 };
 
 // Display order per slug set. Italian uses translated slugs; the other four
-// share the English slug set (fr/de/es are English scaffolds).
+// share the English slug set (en/fr/de/es all use the English filenames).
 const ORDER_IT = [
   'README', 'autenticazione-e-profili', 'chat', 'provider-e-modelli', 'tool-calling',
   'mcp-e-agenti', 'knowledge-rag', 'confronto-modelli', 'statistiche', 'telegram',

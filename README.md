@@ -139,9 +139,14 @@ cp backend/.env.example backend/.env
 docker compose up --build
 ```
 
-- Angular app: **http://localhost:4200**
-- API: **http://localhost:8000/api/v1**
-- Interactive docs: **http://localhost:8000/docs**
+The stack runs two services: **nginx** (serves the prebuilt Angular app and reverse-proxies `/api/v1` to the backend) and **backend** (FastAPI/uvicorn). The `frontend` service is commented out — in Docker the UI is served by nginx, not `ng serve`.
+
+- App (via nginx): **http://localhost:8888**
+- API (via nginx proxy): **http://localhost:8888/api/v1**
+- API (direct, backend port): **http://localhost:8800/api/v1**
+- Interactive docs: **http://localhost:8800/docs**
+
+> `make up` rebuilds only the backend and reuses the prebuilt `lordraw/spice-sibyl-nginx` image. To rebuild the frontend/nginx image from source (e.g. after UI or docs changes) run `make dev-build` (or `make dev`).
 
 ### Local development
 
@@ -152,6 +157,8 @@ make install-frontend  # npm install
 make backend    # uvicorn on :8000 with hot-reload
 make frontend   # ng serve on :4200
 ```
+
+In pure local dev (no Docker) the Angular app is at **http://localhost:4200** and the API at **http://localhost:8000/api/v1**.
 
 ---
 

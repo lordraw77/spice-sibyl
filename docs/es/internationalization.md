@@ -49,7 +49,25 @@ Números, costes y fechas se renderizan según el idioma activo mediante la API 
 
 ## Documentación y capturas de pantalla
 
-Los documentos y sus capturas son por idioma: `docs/<lang>/*.md` + `docs/<lang>/screenshots/*.png` para cada uno de `en`, `it`, `fr`, `de`, `es`. La **Ayuda en la app** (`/help`) carga el conjunto de documentos correspondiente al idioma activo de la interfaz, con repliegue al inglés si falta un conjunto; las capturas apuntan a `docs/<lang>/screenshots/`. Las capturas se generan con Playwright mediante [`frontend/scripts/screenshots.mjs`](../../frontend/scripts/screenshots.mjs).
+Los documentos y sus capturas son por idioma: `docs/<lang>/*.md` +
+`docs/<lang>/screenshots/*.png` para cada uno de `en`, `it`, `fr`, `de`, `es`. Los
+cinco conjuntos de idioma están completamente traducidos (en línea con la *UI de la
+app*, localizada en los cinco); las capturas se toman por idioma en el idioma activo
+de la interfaz.
+
+- **Ayuda en la app** (`/help`) carga el conjunto de documentos correspondiente al
+  idioma activo de la interfaz, con repliegue al inglés si falta un conjunto; las
+  capturas apuntan a `docs/<lang>/screenshots/`. La publicación se hace en tiempo de
+  build mediante [`frontend/scripts/copy-docs.mjs`](../../frontend/scripts/copy-docs.mjs) (cinco idiomas).
+- **Las capturas se generan con Playwright** contra una instancia en ejecución
+  mediante [`frontend/scripts/screenshots.mjs`](../../frontend/scripts/screenshots.mjs):
+  inicia sesión, cambia el idioma de la interfaz y captura cada página en `docs/<lang>/screenshots/`.
+
+  ```bash
+  # la app debe estar en ejecución (por defecto http://localhost:8888)
+  ADMIN_EMAIL=… ADMIN_PASSWORD=… node frontend/scripts/screenshots.mjs        # los 5 idiomas
+  node frontend/scripts/screenshots.mjs de es                                 # un subconjunto
+  ```
 
 ## Configuración
 

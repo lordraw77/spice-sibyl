@@ -223,14 +223,15 @@ Il volume `/opt/data` persiste il database SQLite (conversazioni, profili, chiav
 cp backend/.env.example backend/.env
 # edita backend/.env con APP_ENV=development e le chiavi che vuoi usare
 
-make up          # docker compose up --build  (hot-reload backend + ng serve frontend)
+make up          # docker compose up --build  (ricostruisce solo il backend)
+make dev-build   # ricostruisce anche l'immagine nginx (frontend Angular da sorgente)
 make down        # ferma tutto
 make logs        # segui i log
 ```
 
-In dev, frontend e backend girano su porte separate (4200 e 8000). Il file `app-config.json` punta a `http://localhost:8000/api/v1`.
+Con Docker (`make up`) la UI è servita da **nginx su http://localhost:8888** (il servizio `frontend`/`ng serve` è commentato in `docker-compose.yml`) e il backend è mappato su `8800:8000`. `make up` ricostruisce solo il backend e riusa l'immagine `lordraw/spice-sibyl-nginx` prebuilt — usa `make dev-build`/`make dev` per rigenerare frontend + nginx da sorgente.
 
-Oppure senza Docker:
+Senza Docker, invece, frontend e backend girano su porte separate (4200 e 8000) e `app-config.json` punta a `http://localhost:8000/api/v1`:
 
 ```bash
 make install-backend   # crea venv + pip install
@@ -249,8 +250,8 @@ make frontend   # ng serve :4200
 - Base: `python:3.12-slim`
 - Utente non-root (`app`)
 - Volume `/data` → SQLite DB (impostare `DB_PATH=/data/spice_sibyl.db`)
-- Healthcheck su `GET /api/v1/health`
-- Porta `8000` (interna)
+- Healthcheck su `GET /api/v1/ready` (readiness; `docker-compose` attende `service_healthy`)
+- Porta `8000` (interna; mappata su `8800` dal `docker-compose.yml` di sviluppo)
 
 ### Nginx (`spice-sibyl-nginx`)
 
