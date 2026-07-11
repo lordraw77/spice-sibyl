@@ -13,7 +13,7 @@ SpiceSibyl has two complementary automation engines:
 
 ![Visual workflow editor](screenshots/visual-workflow-editor.svg)
 
-> **In a hurry?** Click ✨ on the `/graph-workflows` page and **Import** one of the four
+> **In a hurry?** Click ✨ on the `/graph-workflows` page and **Import** one of the six
 > ready-made [example graphs](../examples/graph-workflows.md) — it opens on the canvas
 > ready to edit and run.
 
@@ -26,23 +26,33 @@ The editor is a three-pane layout:
   `tool.<name>` action node — no new code per tool.
 - **Center** — a dependency-free **SVG canvas**. Drag nodes to lay them out; drag from a
   node's **output handle** (right) to another node's **input handle** (left) to connect
-  them. Click an edge to delete it.
+  them. **Click an edge** to inspect it: the right panel shows source → target, the
+  **data that flowed through it on the last run**, and a flattened list of **available
+  fields with their ready-made expression paths** (e.g. `$node.weather.output.result`) —
+  click a field to copy it as a `{{ … }}` expression. A delete button removes the
+  connection.
+  When a node fails, its **error message** appears in red under the node in the live run
+  panel (and in the Runs view detail).
 - **Right** — the **inspector** for the selected node (its parameters, rendered from the
   node type's schema), or, when nothing is selected, the **run & triggers panel**.
 
 Save with **Save**, flip **Active** to let triggers fire, and **Run now** to execute the
 graph immediately — nodes light up green/blue/red/grey (ok/running/error/skipped) live as
-the engine streams progress over SSE.
+the engine streams progress over SSE. The run panel has an optional **Run payload** JSON
+box: its object becomes `$trigger` for the run, so graphs that read
+`={{ $trigger.<field> }}` (like the webhook and subworkflow examples) can be exercised
+manually without a webhook call.
 
 ## Node types
 
 | Category | Nodes |
 |----------|-------|
 | **Trigger** | `manual`, `schedule`, `webhook`, `event` |
-| **Action** | `tool.<name>` — any **built-in** tool (RSS, read_url, weather, kb_search, http_request, python_exec…) |
+| **Action** | `tool.<name>` — any **built-in** tool (RSS, read_url, weather, kb_search, http_request, python_exec…) · `http.request` (generic HTTP call) · `subworkflow` (run another workflow inline) |
 | **MCP & custom** | every **discovered MCP server tool** (`tool.mcp__<server>__<tool>`) and the profile's **custom HTTP tools** (`tool.custom__<name>`) appear as drag-in nodes — no code per tool |
 | **Logic** | `if` (true/false branch), `switch` (case branches), `merge` (collect inputs), `for` (for-each over an array), `repeat` (N times) |
 | **Data** | `set` (build an object), `filter` (keep matching array items), `code` (Python sandbox) |
+| **Notify** | `notify.telegram` (linked Telegram chat), `notify.email` (SMTP), `notify.webhook` (Slack/Discord/ntfy/any webhook), `notify.inapp` (web UI bell, zero config) |
 | **AI** | `llm.completion` (one provider call), `llm.agent` (the full Phase 18 agent loop, with access to built-in + MCP + custom tools) |
 
 > **MCP in flows** — the palette is discovered per profile, so any MCP server configured
@@ -55,6 +65,81 @@ the engine streams progress over SSE.
 > same catalog and filters as the chat page** (provider / capability / free-only filters,
 > name search, and the models you hid on `/providers`), so you pick a model here exactly
 > as you do in chat. It expands inline in the inspector (not a floating popup).
+
+### HTTP requests — `http.request`
+
+A first-class node for calling **any external HTTP API** (no tool definition needed).
+Parameters: `method`, `url`, `query` / `headers` (JSON objects), `body` (a JSON value is
+sent as JSON, anything else as raw text), `timeout` (seconds, capped at 120). The output
+is `{ status, ok, headers, json, text }` — `json` is parsed when the response is JSON, so
+downstream nodes can read `={{ $node.api.output.json.<field> }}`.
+
+By default a **non-2xx response raises**, which means the node's retry and *On error*
+policies apply (see below) — ideal for "retry twice, then alert" patterns. Set
+`allow_errors` to a truthy value to receive the response unchanged regardless of status.
+
+### Composition — `subworkflow`
+
+Runs **another workflow of the same profile inline** as a child run and returns when it
+finishes. Parameters: `workflow_id` and an optional `payload` (JSON object) that becomes
+the child's `$trigger`; without a payload, this node's input is passed as
+`{ input: … }`. The output is `{ run_id, workflow_id, status, output }`, where `output`
+is the child's **sink node output** (or a map of them when the child has several sinks).
+The child executes as a normal, fully observable run (`trigger_type: subworkflow`) with
+its own node records and SSE stream. Nesting is capped at **5 levels** and self-recursion
+fails the run rather than looping forever.
+
+### Notifications — `notify.*`
+
+Four sink nodes deliver a workflow's result to a channel; combine them with the error
+branch for "alert me when it breaks" flows:
+
+- **`notify.telegram`** — sends `text` to the **Telegram chat linked to the profile**
+  (Settings → Telegram, same bridge as reminder notifications). Fails when no chat is
+  linked; a muted chat (`/notify off`) is a silent no-op.
+- **`notify.email`** — plain-text email (`to`, `subject`, `body`) through the SMTP
+  server configured via `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` /
+  `SMTP_FROM` / `SMTP_STARTTLS`. Unconfigured SMTP fails the node, so retry / On error
+  apply.
+- **`notify.webhook`** — POSTs a JSON `payload` (defaults to the node's input) to any
+  external webhook URL — Slack/Discord incoming webhooks, ntfy, home automation, …
+- **`notify.inapp`** — pushes `title`/`body` to the **web UI notification bell**
+  (persisted and streamed live over SSE). Needs zero configuration — the safe default.
+
+### The Runs view — execution registry
+
+The designer keeps only a lightweight live panel; the durable record lives in the
+**Runs** page (`/graph-workflows/runs` — its own navbar entry under Tools, gated by the
+same `graph_workflows` feature flag as the designer, and also reachable via "Runs →" in
+the editor header). It lists every run of the profile across all workflows — status,
+trigger, start time, duration — filterable by workflow and status, auto-refreshing while
+something is executing. From the same toolbar you can **start a workflow** (pick it,
+optionally paste a `$trigger` JSON payload, press Run) and **stop** any pending/running
+run (`POST /v1/graph-workflows/runs/{id}/cancel` — the engine cancels the task and the
+run settles as `cancelled`). Selecting a run shows its per-node results (status, error,
+output) and, when the run is still going, follows it **live over SSE**; "Open in
+designer" jumps back to the graph.
+Switching workflows in the designer no longer loses an execution: the editor re-attaches
+to the latest running run when you re-open its workflow, and the Runs view is always the
+source of truth (`GET /v1/graph-workflows/runs`).
+
+### Error handling — retries and the error branch
+
+Every node has three failure controls in the inspector's **Advanced** section:
+
+- **Retries** / backoff — re-run the node up to N times, waiting `backoff` seconds
+  between attempts.
+- **On error** — what happens once retries are exhausted:
+  - **Stop the run** (default) — the run fails.
+  - **Continue on main** — the node reports `{ error }` on its `main` output and the
+    flow continues (the legacy `continueOnFail` flag behaves the same).
+  - **Route to error branch** — the node grows a dedicated **`error` output handle**;
+    on failure, `{ error, input }` flows down that branch while the `main` branch is
+    skipped (and vice versa on success). This gives you try/catch shapes on the canvas:
+    wire the happy path to `main` and a fallback/alert chain to `error`.
+
+The node run is still recorded (and coloured) as an **error** when it routes to the
+error branch, so run history stays truthful while the run itself completes.
 
 ### Loops — `for` and `repeat`
 
@@ -95,7 +180,13 @@ Any parameter can be a literal **or** an expression. Two forms are dispatched by
   (list comprehensions, etc.). `ctx`, `input`, `node`, `trigger` are available; the last
   expression (or a `result` variable) becomes the value.
 
-Anything not starting with `=` is a plain literal.
+Anything not starting with `=` is a plain literal — with one forgiving exception: a bare
+`{{ … }}` (without the leading `=`) is such a common slip that it resolves exactly like
+`={{ … }}`.
+
+> **Unwired nodes don't run** — only *trigger* nodes are entry points. A node dropped on
+> the canvas but not connected to the flow is recorded as `skipped` at run time instead
+> of firing on its own.
 
 ## Triggers
 
@@ -114,6 +205,24 @@ Every save snapshots an immutable version; you can list versions and roll back. 
 stores the executed graph, the resolved run context, and a per-node record (input, output,
 error, timing) you can inspect after the fact.
 
+Because every value is persisted, the editor doesn't need a live run to show data:
+opening a workflow loads the **latest recorded output of each node across all past runs**
+(`GET /{id}/node-outputs`), so clicking an arrow shows the fields and payload that flowed
+through it historically — with a "data from a past execution" note and its timestamp.
+A fresh run simply replaces those values with live ones.
+
+**Export**: the *Export* button (or `GET /{id}/export`) downloads the workflow as a
+portable JSON snapshot (`{ kind, schema_version, name, description, graph, … }`); the same
+body is re-importable via `POST /v1/graph-workflows`.
+
+**Import**: the 📥 button next to **New** (top of the workflow list) picks a
+`.workflow.json` file from disk — the exact file **Export** produces — and creates a new
+workflow from it, opened immediately for editing. It reads only `name`, `description` and
+`graph`; the export-only fields (`kind`, `schema_version`, `exported_at`, …) are accepted
+and ignored, so any file previously downloaded via Export (from this instance or another
+one) round-trips cleanly. A malformed or non-workflow JSON file is rejected client-side
+with an error toast instead of being sent to the server.
+
 ## API
 
 Everything the UI does is available under `/v1/graph-workflows` (JWT-protected), so a graph
@@ -128,7 +237,11 @@ PATCH  /v1/graph-workflows/{id}            { name?, description?, graph?, active
 DELETE /v1/graph-workflows/{id}
 POST   /v1/graph-workflows/{id}/activate | /deactivate
 POST   /v1/graph-workflows/{id}/run        { payload }
+GET    /v1/graph-workflows/runs         ?status=&workflow_id=&limit=   (profile-wide registry)
+POST   /v1/graph-workflows/runs/{rid}/cancel   (stop a pending/running run)
 GET    /v1/graph-workflows/{id}/runs
+GET    /v1/graph-workflows/{id}/node-outputs   (latest persisted output per node, all past runs)
+GET    /v1/graph-workflows/{id}/export         (portable JSON snapshot)
 GET    /v1/graph-workflows/{id}/versions
 POST   /v1/graph-workflows/{id}/versions/{v}/restore
 POST   /v1/graph-workflows/{id}/triggers   { type, config?, enabled? }

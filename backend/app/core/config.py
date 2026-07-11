@@ -116,6 +116,16 @@ class Settings(BaseSettings):
     # Hard cap on nodes per graph to bound a single run.
     graph_workflow_max_nodes: int = 200
 
+    # --- SMTP (notify.email workflow node) — leave host empty to disable ---
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    # Sender address; falls back to smtp_user when unset.
+    smtp_from: str | None = None
+    # STARTTLS on the connection (disable only for trusted local relays).
+    smtp_starttls: bool = True
+
     # SQLite database path for conversation persistence
     db_path: str = "spice_sibyl.db"
 

@@ -90,6 +90,78 @@ _STATIC_NODES: list[NodeTypeInfo] = [
         description="Runs Python in the sandbox with `input` in scope; prints become the output.",
         params_schema=[_param("code", "Python code", "code")],
     ),
+    # ── action ──
+    NodeTypeInfo(
+        type="http.request", category="action", label="HTTP Request", outputs=["main"],
+        description=(
+            "Calls an external HTTP API. Non-2xx responses raise (so retry / On error "
+            "apply) unless 'Allow non-2xx' is set. Output: {status, ok, headers, json, text}."
+        ),
+        params_schema=[
+            _param("method", "Method (GET/POST/…)", "text"),
+            _param("url", "URL (expression)", "expression"),
+            _param("query", "Query params (JSON object)", "json"),
+            _param("headers", "Headers (JSON object)", "json"),
+            _param("body", "Body (JSON or raw text)", "json"),
+            _param("timeout", "Timeout (seconds, max 120)", "number"),
+            _param("allow_errors", "Allow non-2xx (true/false)", "text"),
+        ],
+    ),
+    NodeTypeInfo(
+        type="subworkflow", category="action", label="Subworkflow", outputs=["main"],
+        description=(
+            "Runs another workflow inline as a child run and returns its sink output(s). "
+            "The payload (or this node's input) becomes the child's $trigger. Max nesting: 5."
+        ),
+        params_schema=[
+            _param("workflow_id", "Workflow", "workflow"),
+            _param("payload", "Payload (JSON object → child $trigger)", "json"),
+        ],
+    ),
+    # ── notify ──
+    NodeTypeInfo(
+        type="notify.telegram", category="notify", label="Telegram", outputs=["main"],
+        description=(
+            "Sends a message to the Telegram chat linked to this profile (Settings → "
+            "Telegram). Fails if no chat is linked; muted chats are a silent no-op."
+        ),
+        params_schema=[_param("text", "Message (expression)", "expression")],
+    ),
+    NodeTypeInfo(
+        type="notify.email", category="notify", label="Email", outputs=["main"],
+        description=(
+            "Sends a plain-text email via the configured SMTP server (SMTP_* settings). "
+            "Fails when SMTP is not configured, so retry / On error apply."
+        ),
+        params_schema=[
+            _param("to", "To (comma-separated)", "text"),
+            _param("subject", "Subject (expression)", "expression"),
+            _param("body", "Body (expression)", "expression"),
+        ],
+    ),
+    NodeTypeInfo(
+        type="notify.webhook", category="notify", label="Webhook out", outputs=["main"],
+        description=(
+            "POSTs a JSON payload to an external webhook URL (Slack/Discord/ntfy/…). "
+            "Defaults to this node's input when 'payload' is empty."
+        ),
+        params_schema=[
+            _param("url", "URL (expression)", "expression"),
+            _param("payload", "Payload (JSON)", "json"),
+            _param("headers", "Headers (JSON object)", "json"),
+        ],
+    ),
+    NodeTypeInfo(
+        type="notify.inapp", category="notify", label="In-app", outputs=["main"],
+        description=(
+            "Pushes a notification to the web UI bell (persisted, live over SSE). "
+            "Works with zero configuration."
+        ),
+        params_schema=[
+            _param("title", "Title", "text"),
+            _param("body", "Body (expression)", "expression"),
+        ],
+    ),
     # ── ai ──
     NodeTypeInfo(
         type="llm.completion", category="ai", label="LLM Completion", outputs=["main"],

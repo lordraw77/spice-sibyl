@@ -15,7 +15,11 @@ inputs are resolved — independent ready nodes run **in parallel** via
 
 Branch nodes (``if``/``switch``) activate a single handle; edges on the other
 handles go *dead* and their exclusive targets are recorded as ``skipped``.
-Per-node ``retry``/``backoff`` and ``continueOnFail`` bound failures. Runs are
+Per-node ``retry``/``backoff`` and the ``onError`` policy (stop | continue |
+branch — the latter routes ``{error, input}`` through a dedicated ``error``
+handle; ``continueOnFail`` is the legacy alias of ``continue``) bound failures.
+``http.request`` calls external APIs directly and ``subworkflow`` runs another
+workflow inline as an observable child run (nesting capped). Runs are
 durable (every node run + the run context are persisted) and stream live over
 SSE (``subscribe``/``publish``), mirroring the Phase 23.c notification stream.
 
@@ -44,6 +48,8 @@ _TRIGGER_TYPES = frozenset({"manual", "schedule", "webhook", "event"})
 _LOOP_TYPES = frozenset({"for", "repeat"})
 _TOOL_RESULT_MAX_CHARS = 12000
 _MAX_LOOP_ITERATIONS = 1000
+_MAX_SUBWORKFLOW_DEPTH = 5
+_HTTP_MAX_TIMEOUT = 120.0
 _SCHEDULE_POLL_SECONDS = 20
 _ENV_WHITELIST_PREFIX = "WF_"  # only WF_*-prefixed env vars are exposed as $env
 
@@ -51,6 +57,8 @@ _ENV_WHITELIST_PREFIX = "WF_"  # only WF_*-prefixed env vars are exposed as $env
 _subscribers: dict[str, list[asyncio.Queue]] = {}
 # Fire-and-forget run tasks so they aren't garbage-collected.
 _run_tasks: set[asyncio.Task] = set()
+# run id → its task, so a run can be cancelled from the registry.
+_tasks_by_run: dict[str, asyncio.Task] = {}
 _poll_task: asyncio.Task | None = None
 
 
@@ -132,7 +140,30 @@ def _spawn(
         _execute(run_id, profile_id, graph, trigger_type, trigger_payload)
     )
     _run_tasks.add(task)
-    task.add_done_callback(_run_tasks.discard)
+    _tasks_by_run[run_id] = task
+
+    def _cleanup(t: asyncio.Task) -> None:
+        _run_tasks.discard(t)
+        _tasks_by_run.pop(run_id, None)
+
+    task.add_done_callback(_cleanup)
+
+
+async def cancel_run(db: aiosqlite.Connection, run_id: str) -> bool:
+    """Stop a run from the registry. Cancels the live task when this process
+    owns it; otherwise (stale row after a restart) marks the run cancelled
+    directly. Returns False when the run is already in a terminal state."""
+    task = _tasks_by_run.get(run_id)
+    if task is not None and not task.done():
+        task.cancel()
+        return True
+    status = await repo.get_run_status(db, run_id)
+    if status in ("pending", "running"):
+        await repo.set_run_status(db, run_id, "cancelled")
+        _publish(run_id, {"kind": "run", "status": "cancelled"})
+        _publish(run_id, {"kind": "done"})
+        return True
+    return False
 
 
 # ── scheduler ───────────────────────────────────────────────────────────────
@@ -143,6 +174,7 @@ async def _execute(
     graph: WorkflowGraph,
     trigger_type: str,
     trigger_payload: dict,
+    depth: int = 0,
 ) -> None:
     db = await _connect()
     try:
@@ -181,10 +213,17 @@ async def _execute(
             "trigger": trigger_payload,
             "env": _env_context(),
             "now": int(time.time()),
+            "_depth": depth,  # subworkflow nesting level (recursion guard)
         }
 
         def is_root(nid: str) -> bool:
             return not incoming[nid]
+
+        def is_entry(nid: str) -> bool:
+            # Only *trigger* roots start on their own; a non-trigger node that
+            # was dropped on the canvas but never wired up must not fire at run
+            # start — it gets recorded as skipped instead (n8n semantics).
+            return is_root(nid) and nodes[nid].type in _TRIGGER_TYPES
 
         def edges_resolved(nid: str) -> bool:
             # Every incoming edge's source has reached a terminal state.
@@ -241,15 +280,16 @@ async def _execute(
                 if nid not in done
                 and nid not in skipped
                 and edges_resolved(nid)
-                and (is_root(nid) or has_live_input(nid))
+                and (is_entry(nid) or has_live_input(nid))
             ]
-            # Nodes whose inputs are all resolved but none are live → skip them.
+            # Nodes whose inputs are all resolved but none are live → skip them
+            # (including unwired non-trigger roots).
             newly_skipped = [
                 nid
                 for nid in nodes
                 if nid not in done
                 and nid not in skipped
-                and not is_root(nid)
+                and not is_entry(nid)
                 and edges_resolved(nid)
                 and not has_live_input(nid)
             ]
@@ -323,6 +363,7 @@ async def _execute(
     except asyncio.CancelledError:
         await repo.set_run_status(db, run_id, "cancelled")
         _publish(run_id, {"kind": "run", "status": "cancelled"})
+        _publish(run_id, {"kind": "done"})
         raise
     except Exception as exc:  # noqa: BLE001 — a run failure must be recorded, not raised
         logger.exception("Graph run %s crashed", run_id)
@@ -368,10 +409,19 @@ async def _run_node(
             if attempt + 1 < attempts and node.backoff:
                 await asyncio.sleep(node.backoff)
 
-    if node.continueOnFail:
+    if node.continueOnFail or node.onError == "continue":
         await repo.finish_node_run(db, nr_id, "ok", output={"error": last_err}, error=last_err)
         _publish(run_id, {"kind": "node", "node_id": node.id, "status": "ok", "output": {"error": last_err}})
         return "ok", {"error": last_err}, ["main"], None
+
+    if node.onError == "branch":
+        # Route the failure through the dedicated 'error' handle: the node run is
+        # recorded as an error, but the run continues down the error branch with
+        # {error, input} as payload (edges on 'main' go dead → their targets skip).
+        output = {"error": last_err, "input": node_input}
+        await repo.finish_node_run(db, nr_id, "error", output=output, error=last_err)
+        _publish(run_id, {"kind": "node", "node_id": node.id, "status": "error", "error": last_err})
+        return "ok", output, ["error"], None
 
     await repo.finish_node_run(db, nr_id, "error", error=last_err)
     _publish(run_id, {"kind": "node", "node_id": node.id, "status": "error", "error": last_err})
@@ -541,6 +591,24 @@ async def _dispatch(
     if ntype == "code":
         return await _exec_code(params, node_input, ctx), ["main"]
 
+    if ntype == "http.request":
+        return await _exec_http_request(params), ["main"]
+
+    if ntype == "subworkflow":
+        return await _exec_subworkflow(db, profile_id, params, node_input, ctx), ["main"]
+
+    if ntype == "notify.telegram":
+        return await _exec_notify_telegram(db, profile_id, params), ["main"]
+
+    if ntype == "notify.email":
+        return await _exec_notify_email(params), ["main"]
+
+    if ntype == "notify.webhook":
+        return await _exec_notify_webhook(params, node_input), ["main"]
+
+    if ntype == "notify.inapp":
+        return await _exec_notify_inapp(db, profile_id, params), ["main"]
+
     if ntype == "llm.completion":
         return await _exec_llm_completion(profile_id, params), ["main"]
 
@@ -608,6 +676,153 @@ async def _exec_code(params: dict, node_input, ctx: dict) -> dict:
     )
     out = await python_exec(wrapper)
     return {"stdout": out}
+
+
+async def _exec_http_request(params: dict) -> dict:
+    """Generic HTTP call. Non-2xx raises by default so retry/onError apply;
+    set ``allow_errors`` to get the response back regardless of status."""
+    import httpx
+
+    url = str(params.get("url") or "").strip()
+    if not url.startswith(("http://", "https://")):
+        raise ValueError("http.request: 'url' must be an http(s) URL")
+    method = str(params.get("method") or "GET").upper()
+
+    headers = params.get("headers") if isinstance(params.get("headers"), dict) else None
+    query = params.get("query") if isinstance(params.get("query"), dict) else None
+    timeout = min(float(params.get("timeout") or 30.0), _HTTP_MAX_TIMEOUT)
+
+    body = params.get("body")
+    body_kwargs: dict = {}
+    if isinstance(body, (dict, list)):
+        body_kwargs["json"] = body
+    elif body is not None and str(body) != "":
+        body_kwargs["content"] = str(body)
+
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        resp = await client.request(method, url, params=query, headers=headers, **body_kwargs)
+
+    text = resp.text
+    if len(text) > _TOOL_RESULT_MAX_CHARS:
+        text = text[:_TOOL_RESULT_MAX_CHARS] + "\n[Truncated]"
+    parsed = None
+    if "json" in (resp.headers.get("content-type") or ""):
+        try:
+            parsed = resp.json()
+        except ValueError:
+            parsed = None
+
+    if not resp.is_success and not _as_bool(params.get("allow_errors")):
+        raise RuntimeError(f"http.request: {method} {url} → HTTP {resp.status_code}: {text[:300]}")
+
+    return {
+        "status": resp.status_code,
+        "ok": resp.is_success,
+        "headers": dict(resp.headers),
+        "json": parsed,
+        "text": text,
+    }
+
+
+async def _exec_subworkflow(
+    db: aiosqlite.Connection, profile_id: str, params: dict, node_input, ctx: dict
+) -> dict:
+    """Run another workflow of the same profile inline as a child run and return
+    its sink outputs. ``payload`` (or the node input) becomes the child's $trigger."""
+    wf_id = str(params.get("workflow_id") or "").strip()
+    if not wf_id:
+        raise ValueError("subworkflow: 'workflow_id' is required")
+
+    depth = int(ctx.get("_depth") or 0)
+    if depth + 1 > _MAX_SUBWORKFLOW_DEPTH:
+        raise RuntimeError(f"subworkflow: max nesting depth ({_MAX_SUBWORKFLOW_DEPTH}) exceeded")
+
+    wf = await repo.get_workflow(db, wf_id)
+    if wf is None or wf.profile_id != profile_id:
+        raise ValueError("subworkflow: workflow not found")
+
+    payload = params.get("payload")
+    if not isinstance(payload, dict):
+        payload = {"input": node_input if payload is None else payload}
+
+    graph_json = json.dumps(wf.graph.model_dump())
+    child_run_id = await repo.create_run(db, wf_id, profile_id, "subworkflow", graph_json)
+    # Inline (awaited) child execution: the parent node completes when the child
+    # run does, and the child is observable like any other run (rows + SSE).
+    await _execute(child_run_id, profile_id, wf.graph, "subworkflow", payload, depth=depth + 1)
+
+    child = await repo.get_run(db, child_run_id)
+    if child is None or child.status != "completed":
+        raise RuntimeError(f"subworkflow: child run failed: {(child.error if child else None) or 'unknown error'}")
+
+    node_outputs = ((await repo.get_run_context(db, child_run_id)) or {}).get("node", {})
+    sources = {e.source for e in wf.graph.edges}
+    sinks = [n.id for n in wf.graph.nodes if n.id not in sources]
+    if len(sinks) == 1:
+        output = node_outputs.get(sinks[0], {}).get("output")
+    else:
+        output = {s: node_outputs.get(s, {}).get("output") for s in sinks}
+    return {"run_id": child_run_id, "workflow_id": wf_id, "status": child.status, "output": output}
+
+
+# ── notification nodes ──────────────────────────────────────────────────────
+
+def _notify_text(params: dict) -> str:
+    text = params.get("text") or params.get("message") or params.get("body") or ""
+    if not isinstance(text, str):
+        text = json.dumps(text, default=str, ensure_ascii=False)
+    return text
+
+
+async def _exec_notify_telegram(db: aiosqlite.Connection, profile_id: str, params: dict) -> dict:
+    """Send to the profile's linked Telegram chat via the Phase 23.c bridge.
+    The bridge is best-effort (missing link / muted chat / stopped bot = no-op),
+    so report whether a link exists rather than pretending delivery."""
+    from app.db import telegram_link_repository
+    from app.services import notification_service
+
+    text = _notify_text(params)
+    if not text:
+        raise ValueError("notify.telegram: 'text' is required")
+    link = await telegram_link_repository.get_by_profile_id(db, profile_id)
+    if link is None:
+        raise RuntimeError("notify.telegram: no Telegram chat linked to this profile")
+    await notification_service.notify_telegram(db, profile_id, "workflow", text)
+    return {"queued": True, "channel": "telegram"}
+
+
+async def _exec_notify_email(params: dict) -> dict:
+    from app.services import email_service
+
+    to = params.get("to") or ""
+    subject = str(params.get("subject") or "SpiceSibyl workflow notification")
+    body = _notify_text(params)
+    return await email_service.send_email(to, subject, body)
+
+
+async def _exec_notify_webhook(params: dict, node_input) -> dict:
+    """POST a JSON payload to an external webhook (Slack/Discord/ntfy/…)."""
+    payload = params.get("payload")
+    if payload is None:
+        payload = node_input
+    out = await _exec_http_request({
+        "method": str(params.get("method") or "POST"),
+        "url": params.get("url"),
+        "headers": params.get("headers"),
+        "body": payload,
+        "timeout": params.get("timeout"),
+    })
+    return {"sent": True, "status": out["status"], "response": out["json"] if out["json"] is not None else out["text"]}
+
+
+async def _exec_notify_inapp(db: aiosqlite.Connection, profile_id: str, params: dict) -> dict:
+    """Push a notification to the web UI bell (persisted + live SSE)."""
+    from app.services import notification_service
+
+    title = str(params.get("title") or "Workflow")
+    body = _notify_text(params)
+    await notification_service.notify_web(db, profile_id, "workflow", title, body)
+    return {"queued": True, "channel": "inapp", "title": title}
 
 
 async def _exec_llm_completion(profile_id: str, params: dict) -> dict:

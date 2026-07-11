@@ -12,6 +12,8 @@ Protected routes (under /v1/graph-workflows):
   POST   /{id}/deactivate      — disable it
   POST   /{id}/run             — run now (manual trigger); body = {payload}
   GET    /{id}/runs            — recent runs
+  GET    /{id}/node-outputs    — latest persisted output per node (all past runs)
+  GET    /{id}/export          — portable JSON snapshot (re-importable via POST /)
   GET    /{id}/versions        — version history
   POST   /{id}/versions/{v}/restore — roll the graph back to a version
   POST   /{id}/triggers        — attach a schedule/webhook/event trigger
@@ -89,6 +91,46 @@ async def list_examples():
     """Curated, one-click-importable graph workflows. Static path declared before
     the dynamic ``/{wf_id}`` route so it isn't swallowed by it."""
     return list_graph_workflow_examples()
+
+
+# ── run registry (profile-wide) ─────────────────────────────────────────────
+
+@router.get("/runs", response_model=list[GraphRunOut])
+async def list_all_runs(
+    limit: int = 100,
+    status: str | None = None,
+    workflow_id: str | None = None,
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+):
+    """Every run of the profile (all workflows), newest first, with the workflow
+    name joined — the execution registry behind the Runs view. Static path
+    declared before ``/{wf_id}`` so it isn't swallowed by it."""
+    return await repo.list_runs_for_profile(
+        db, profile_id, limit=min(max(limit, 1), 500), status=status, workflow_id=workflow_id
+    )
+
+
+@router.post("/runs/{run_id}/cancel", response_model=GraphRunOut)
+async def cancel_run(
+    run_id: str,
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+    user: UserOut = Depends(get_current_user),
+):
+    """Stop a pending/running run. Task cancellation is asynchronous, so the
+    returned row may still read 'running' for an instant — poll/SSE settles it."""
+    run = await repo.get_run(db, run_id)
+    if not run or run.profile_id != profile_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.status not in ("pending", "running"):
+        raise HTTPException(status_code=409, detail=f"Run is already {run.status}")
+    await engine.cancel_run(db, run_id)
+    await audit_repository.record(
+        db, user.id, "graph_workflow.run.cancel", resource=run_id, ip=_client_ip(request)
+    )
+    return await repo.get_run(db, run_id)
 
 
 # ── workflow CRUD ───────────────────────────────────────────────────────────
@@ -260,6 +302,48 @@ async def stream_run(
             engine.unsubscribe(run_id, queue)
 
     return EventSourceResponse(_events())
+
+
+# ── run history for the editor ──────────────────────────────────────────────
+
+@router.get("/{wf_id}/node-outputs")
+async def latest_node_outputs(
+    wf_id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+):
+    """The most recent persisted output of every node across all past runs of
+    this workflow: ``{node_id: {output, run_id, finished_at, run_created_at}}``.
+    Lets the editor's edge inspector show real data from execution history."""
+    await _owned(db, wf_id, profile_id)
+    return await repo.latest_node_outputs(db, wf_id)
+
+
+# ── export ──────────────────────────────────────────────────────────────────
+
+@router.get("/{wf_id}/export")
+async def export_workflow(
+    wf_id: str,
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+    user: UserOut = Depends(get_current_user),
+):
+    """A portable JSON snapshot of the workflow (name, description, graph).
+    Re-importable via POST /v1/graph-workflows with the same body shape."""
+    wf = await _owned(db, wf_id, profile_id)
+    await audit_repository.record(
+        db, user.id, "graph_workflow.export", resource=wf_id, ip=_client_ip(request)
+    )
+    return {
+        "kind": "spice-sibyl.graph-workflow",
+        "schema_version": 1,
+        "name": wf.name,
+        "description": wf.description,
+        "graph": wf.graph.model_dump(),
+        "workflow_version": wf.version,
+        "exported_at": int(time.time()),
+    }
 
 
 # ── versions ────────────────────────────────────────────────────────────────

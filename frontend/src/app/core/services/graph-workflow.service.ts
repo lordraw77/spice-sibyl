@@ -16,7 +16,11 @@ export interface GraphNode {
   position?: { x: number; y: number };
   retry?: number;
   backoff?: number;
+  /** Legacy alias of onError === 'continue'. */
   continueOnFail?: boolean;
+  /** After retries: 'stop' the run, 'continue' on main with {error}, or route
+   *  {error, input} through a dedicated 'error' output handle ('branch'). */
+  onError?: 'stop' | 'continue' | 'branch';
 }
 
 export interface GraphEdge {
@@ -76,6 +80,8 @@ export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancel
 export interface GraphRun {
   id: string;
   workflow_id: string;
+  /** Joined by the profile-wide run registry endpoint. */
+  workflow_name?: string | null;
   profile_id: string;
   status: RunStatus;
   trigger_type: string;
@@ -94,7 +100,7 @@ export interface NodeParamSchema {
 
 export interface NodeTypeInfo {
   type: string;
-  category: 'trigger' | 'action' | 'mcp' | 'logic' | 'data' | 'ai';
+  category: 'trigger' | 'action' | 'mcp' | 'logic' | 'data' | 'notify' | 'ai';
   label: string;
   description: string;
   inputs: number;
@@ -110,6 +116,25 @@ export interface GraphWorkflowExample {
   category: string;
   node_types: string[];
   graph: WorkflowGraph;
+}
+
+/** Latest persisted output of a node across all past runs of the workflow. */
+export interface NodeOutputHistory {
+  output: unknown;
+  run_id: string;
+  finished_at?: number | null;
+  run_created_at?: number | null;
+}
+
+/** Portable workflow snapshot returned by GET /{id}/export. */
+export interface WorkflowExport {
+  kind: string;
+  schema_version: number;
+  name: string;
+  description: string;
+  graph: WorkflowGraph;
+  workflow_version: number;
+  exported_at: number;
 }
 
 /** A live run event pushed over SSE by the engine. */
@@ -180,8 +205,32 @@ export class GraphWorkflowService {
     return this.http.get<GraphRun[]>(`${this.base}/${id}/runs`);
   }
 
+  /** Profile-wide run registry (all workflows), newest first. */
+  allRuns(opts: { limit?: number; status?: string; workflowId?: string } = {}): Observable<GraphRun[]> {
+    const params: string[] = [`limit=${opts.limit ?? 100}`];
+    if (opts.status) params.push(`status=${encodeURIComponent(opts.status)}`);
+    if (opts.workflowId) params.push(`workflow_id=${encodeURIComponent(opts.workflowId)}`);
+    return this.http.get<GraphRun[]>(`${this.base}/runs?${params.join('&')}`);
+  }
+
   getRun(runId: string): Observable<GraphRun> {
     return this.http.get<GraphRun>(`${this.base}/runs/${runId}`);
+  }
+
+  /** Stop a pending/running run (cancellation settles asynchronously). */
+  cancelRun(runId: string): Observable<GraphRun> {
+    return this.http.post<GraphRun>(`${this.base}/runs/${runId}/cancel`, {});
+  }
+
+  /** Latest persisted output per node from ALL past runs — seeds the edge
+   *  inspector with historical data when the editor (re)opens a workflow. */
+  lastNodeOutputs(id: string): Observable<Record<string, NodeOutputHistory>> {
+    return this.http.get<Record<string, NodeOutputHistory>>(`${this.base}/${id}/node-outputs`);
+  }
+
+  /** Portable JSON snapshot of the workflow (for download / re-import). */
+  export(id: string): Observable<WorkflowExport> {
+    return this.http.get<WorkflowExport>(`${this.base}/${id}/export`);
   }
 
   versions(id: string): Observable<{ version: number; created_at: number }[]> {

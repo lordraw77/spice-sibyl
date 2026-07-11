@@ -51,6 +51,7 @@ import { NotificationService } from '../../core/services/notification.service';
 import { AppConfigService } from '../../core/config/app-config.service';
 import { UserPreferencesService } from '../../core/services/user-preferences.service';
 import { PushNotifyService } from '../../core/services/push-notify.service';
+import { FeatureService } from '../../core/services/feature.service';
 import { NotificationBridgeService } from '../../core/services/notification-bridge.service';
 import { I18nService } from '../../core/i18n/i18n.service';
 import { TranslatePipe } from '../../core/i18n/translate.pipe';
@@ -78,6 +79,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly auth = inject(AuthService);
   readonly i18n = inject(I18nService);
   readonly pushNotify = inject(PushNotifyService);
+  readonly features = inject(FeatureService);
   private readonly notificationBridge = inject(NotificationBridgeService);
   readonly onboarding = inject(OnboardingService);
 

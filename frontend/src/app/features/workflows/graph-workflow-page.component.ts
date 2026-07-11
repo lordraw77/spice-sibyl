@@ -1,6 +1,7 @@
 import { Component, ElementRef, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 
 import { NotificationService } from '../../core/services/notification.service';
 import { I18nService } from '../../core/i18n/i18n.service';
@@ -13,6 +14,7 @@ import {
   GraphWorkflow,
   GraphWorkflowExample,
   GraphWorkflowService,
+  NodeOutputHistory,
   NodeRun,
   NodeTypeInfo,
   RunEvent,
@@ -33,7 +35,7 @@ const HANDLE_R = 6;
 @Component({
   selector: 'app-graph-workflow-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, TranslatePipe, ModelPickerComponent],
+  imports: [CommonModule, FormsModule, RouterLink, TranslatePipe, ModelPickerComponent],
   templateUrl: './graph-workflow-page.component.html',
   styleUrls: ['./graph-workflow-page.component.css'],
 })
@@ -41,8 +43,10 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   private readonly api = inject(GraphWorkflowService);
   private readonly notify = inject(NotificationService);
   private readonly i18n = inject(I18nService);
+  private readonly route = inject(ActivatedRoute);
 
   @ViewChild('canvas') canvasRef?: ElementRef<SVGSVGElement>;
+  @ViewChild('importInput') importInputRef?: ElementRef<HTMLInputElement>;
 
   readonly workflows = signal<GraphWorkflow[]>([]);
   readonly nodeTypes = signal<NodeTypeInfo[]>([]);
@@ -50,6 +54,10 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   readonly selectedNodeId = signal<string | null>(null);
   readonly nodeStatus = signal<Record<string, string>>({});
   readonly nodeOutputs = signal<Record<string, unknown>>({});
+  readonly nodeErrors = signal<Record<string, string>>({});
+  /** Where each node's displayed output came from: the live run or a past one. */
+  readonly nodeOutputMeta = signal<Record<string, { runId: string; at: number | null }>>({});
+  readonly selectedEdgeId = signal<string | null>(null);
   readonly running = signal(false);
   readonly runId = signal<string | null>(null);
   readonly dirty = signal(false);
@@ -70,15 +78,30 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   private stopStream: (() => void) | null = null;
   private runPoll: ReturnType<typeof setInterval> | null = null;
 
-  readonly categories = ['trigger', 'action', 'mcp', 'logic', 'data', 'ai'] as const;
+  readonly categories = ['trigger', 'action', 'mcp', 'logic', 'data', 'notify', 'ai'] as const;
 
   readonly selectedNode = computed(() => {
     const id = this.selectedNodeId();
     return id ? this.nodes.find((n) => n.id === id) ?? null : null;
   });
 
+  readonly selectedEdge = computed(() => {
+    if (this.selectedNodeId()) return null; // node selection wins
+    const id = this.selectedEdgeId();
+    return id ? this.edges.find((e) => e.id === id) ?? null : null;
+  });
+
   ngOnInit(): void {
-    this.api.list().subscribe({ next: (list) => this.workflows.set(list), error: () => {} });
+    this.api.list().subscribe({
+      next: (list) => {
+        this.workflows.set(list);
+        // Deep link from the Runs page: /graph-workflows?wf=<id> opens that workflow.
+        const wanted = this.route.snapshot.queryParamMap.get('wf');
+        const wf = wanted ? list.find((w) => w.id === wanted) : null;
+        if (wf) this.select(wf);
+      },
+      error: () => {},
+    });
     this.api.nodeTypes().subscribe({ next: (t) => this.nodeTypes.set(t), error: () => {} });
     this.api.examples().subscribe({ next: (ex) => this.examples.set(ex), error: () => {} });
   }
@@ -119,15 +142,111 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** Opens the hidden file picker for "Import from file" (the counterpart of Export). */
+  triggerImport(): void {
+    this.importInputRef?.nativeElement.click();
+  }
+
+  /** Reads a `.workflow.json` file (the exact shape produced by Export — a
+   *  `WorkflowExport` snapshot, or any `{ name?, description?, graph }` JSON),
+   *  creates a new workflow from it and opens it. Extra export fields (kind,
+   *  schema_version, exported_at, …) are accepted and ignored by the backend. */
+  onImportFile(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = ''; // allow re-selecting the same file later
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      let parsed: { name?: string; description?: string; graph?: { nodes?: unknown[]; edges?: unknown[] } };
+      try {
+        parsed = JSON.parse(String(reader.result));
+      } catch {
+        this.notify.add('error', 'Workflow', this.i18n.translate('gwf.importInvalid'));
+        return;
+      }
+      const graph = parsed?.graph;
+      if (!graph || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) {
+        this.notify.add('error', 'Workflow', this.i18n.translate('gwf.importInvalid'));
+        return;
+      }
+      const name = (parsed.name || file.name.replace(/\.workflow\.json$|\.json$/i, '')).slice(0, 200);
+      this.api
+        .create({
+          name: name || this.i18n.translate('gwf.untitled'),
+          description: parsed.description ?? '',
+          graph: graph as GraphWorkflow['graph'],
+        })
+        .subscribe({
+          next: (wf) => {
+            this.workflows.update((l) => [wf, ...l]);
+            this.select(wf);
+            this.notify.add('success', 'Workflow', this.i18n.translate('gwf.imported'));
+          },
+          error: () => this.notify.add('error', 'Workflow', this.i18n.translate('gwf.saveError')),
+        });
+    };
+    reader.onerror = () => this.notify.add('error', 'Workflow', this.i18n.translate('gwf.importInvalid'));
+    reader.readAsText(file);
+  }
+
   select(wf: GraphWorkflow): void {
     this.stopStream?.();
+    if (this.runPoll) clearInterval(this.runPoll);
     this.current.set(wf);
     this.nodes = wf.graph.nodes.map((n) => ({ ...n, position: n.position ?? { x: 60, y: 60 } }));
     this.edges = [...wf.graph.edges];
     this.selectedNodeId.set(null);
+    this.selectedEdgeId.set(null);
     this.nodeStatus.set({});
+    this.nodeOutputs.set({});
+    this.nodeErrors.set({});
+    this.nodeOutputMeta.set({});
     this.runId.set(null);
+    this.running.set(false);
     this.dirty.set(false);
+    this.reattachRunningRun(wf.id);
+    this.loadHistoricalOutputs(wf.id);
+  }
+
+  /** Seed the edge inspector from persisted history: the latest recorded output
+   *  of every node across ALL past runs of this workflow, so selecting an arrow
+   *  shows real data even before the workflow is re-run in this session. */
+  private loadHistoricalOutputs(wfId: string): void {
+    this.api.lastNodeOutputs(wfId).subscribe({
+      next: (hist: Record<string, NodeOutputHistory>) => {
+        if (this.current()?.id !== wfId) return; // user already moved on
+        const outputs: Record<string, unknown> = {};
+        const meta: Record<string, { runId: string; at: number | null }> = {};
+        for (const [nodeId, h] of Object.entries(hist)) {
+          outputs[nodeId] = h.output;
+          meta[nodeId] = { runId: h.run_id, at: h.finished_at ?? h.run_created_at ?? null };
+        }
+        // Live data (a run finished while this request was in flight) wins.
+        this.nodeOutputs.update((s) => ({ ...outputs, ...s }));
+        this.nodeOutputMeta.update((s) => ({ ...meta, ...s }));
+      },
+      error: () => {},
+    });
+  }
+
+  /** If this workflow's latest run is still executing, hook the live view back
+   *  up — switching workflows (or reloading) no longer loses the execution. */
+  private reattachRunningRun(wfId: string): void {
+    this.api.runs(wfId).subscribe({
+      next: (runs) => {
+        if (this.current()?.id !== wfId) return; // user already moved on
+        const latest = runs[0];
+        if (latest && (latest.status === 'running' || latest.status === 'pending')) {
+          this.running.set(true);
+          this.runId.set(latest.id);
+          this.streamRun(latest.id);
+          this.startRunPoll(latest.id);
+        }
+      },
+      error: () => {},
+    });
   }
 
   save(): void {
@@ -266,7 +385,21 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   }
 
   outputsFor(node: GraphNode): string[] {
-    return this.typeInfo(node.type)?.outputs ?? ['main'];
+    const outs = [...(this.typeInfo(node.type)?.outputs ?? ['main'])];
+    // onError='branch' adds a dedicated 'error' handle to any non-trigger node.
+    if (node.onError === 'branch' && !outs.includes('error') && this.typeInfo(node.type)?.inputs !== 0) {
+      outs.push('error');
+    }
+    return outs;
+  }
+
+  setOnError(node: GraphNode, value: string): void {
+    node.onError = (value || 'stop') as GraphNode['onError'];
+    if (node.onError !== 'branch') {
+      // Drop edges hanging off a removed 'error' handle.
+      this.edges = this.edges.filter((e) => !(e.source === node.id && e.sourceHandle === 'error'));
+    }
+    this.dirty.set(true);
   }
 
   // ── geometry ──────────────────────────────────────────────────────────────
@@ -365,12 +498,114 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   onCanvasClick(): void {
     this.pendingSource = null;
     this.selectedNodeId.set(null);
+    this.selectedEdgeId.set(null);
   }
 
-  removeEdge(edge: GraphEdge, ev: Event): void {
+  /** Click on an edge selects it: the inspector shows the payload that flowed
+   *  through it on the last run (deletion moved to a button in that panel). */
+  selectEdge(edge: GraphEdge, ev: Event): void {
     ev.stopPropagation();
-    this.edges = this.edges.filter((e) => e.id !== edge.id);
+    this.selectedNodeId.set(null);
+    this.selectedEdgeId.set(edge.id);
+  }
+
+  deleteSelectedEdge(): void {
+    const id = this.selectedEdgeId();
+    if (!id) return;
+    this.edges = this.edges.filter((e) => e.id !== id);
+    this.selectedEdgeId.set(null);
     this.dirty.set(true);
+  }
+
+  nodeLabel(nodeId: string): string {
+    const n = this.nodes.find((x) => x.id === nodeId);
+    return n ? (n.name || n.type) : nodeId;
+  }
+
+  /** Flattened field list of the source node's last output, each with the
+   *  ready-to-copy expression path (e.g. $node.weather.output.result). */
+  edgeFields(edge: GraphEdge): { path: string; preview: string }[] {
+    const out = this.nodeOutputs()[edge.source];
+    if (out === undefined || out === null) return [];
+    const rows: { path: string; preview: string }[] = [];
+    const preview = (v: unknown): string => {
+      const text = typeof v === 'string' ? v : JSON.stringify(v);
+      return text && text.length > 70 ? text.slice(0, 70) + '…' : (text ?? '');
+    };
+    const walk = (val: unknown, path: string, depth: number): void => {
+      if (rows.length >= 40) return;
+      if (Array.isArray(val)) {
+        rows.push({ path, preview: `[array · ${val.length}]` });
+        if (val.length && depth < 4) walk(val[0], `${path}[0]`, depth + 1);
+      } else if (val !== null && typeof val === 'object') {
+        const keys = Object.keys(val as Record<string, unknown>);
+        if (!keys.length || depth >= 4) {
+          rows.push({ path, preview: preview(val) });
+          return;
+        }
+        for (const k of keys) walk((val as Record<string, unknown>)[k], `${path}.${k}`, depth + 1);
+      } else {
+        rows.push({ path, preview: preview(val) });
+      }
+    };
+    walk(out, `$node.${edge.source}.output`, 0);
+    return rows;
+  }
+
+  copyFieldPath(path: string): void {
+    const text = `{{ ${path} }}`;
+    const done = () => this.notify.add('success', 'Workflow', this.i18n.translate('gwf.fieldCopied'));
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done, () => this.legacyCopy(text, done));
+    } else {
+      this.legacyCopy(text, done);
+    }
+  }
+
+  /** Pretty JSON of what the edge's source node emitted on the last run. */
+  edgePayload(edge: GraphEdge): string {
+    const out = this.nodeOutputs()[edge.source];
+    if (out === undefined || out === null) return '';
+    try {
+      const text = typeof out === 'string' ? out : JSON.stringify(out, null, 2);
+      return text.length > 2000 ? text.slice(0, 2000) + '…' : text;
+    } catch {
+      return String(out);
+    }
+  }
+
+  /** When (which run) the edge's displayed payload was recorded — empty while a
+   *  run is live in this session, so the provenance line only marks history. */
+  edgeDataOrigin(edge: GraphEdge): string {
+    const meta = this.nodeOutputMeta()[edge.source];
+    if (!meta) return '';
+    const live = this.runId();
+    if (live && meta.runId === live) return '';
+    if (!meta.at) return this.i18n.translate('gwf.edgeFromHistory');
+    const when = new Date(meta.at * 1000).toLocaleString();
+    return `${this.i18n.translate('gwf.edgeFromHistory')} · ${when}`;
+  }
+
+  /** Download the open workflow as a portable, re-importable JSON file. */
+  exportWorkflow(): void {
+    const wf = this.current();
+    if (!wf) return;
+    this.api.export(wf.id).subscribe({
+      next: (snapshot) => {
+        const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const slug = (wf.name || 'workflow').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'workflow';
+        a.href = url;
+        a.download = `${slug}.workflow.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        this.notify.add('success', 'Workflow', this.i18n.translate('gwf.exported'));
+      },
+      error: () => this.notify.add('error', 'Workflow', this.i18n.translate('gwf.saveError')),
+    });
   }
 
   // ── inspector ────────────────────────────────────────────────────────────
@@ -403,14 +638,69 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
 
   // ── running ──────────────────────────────────────────────────────────────
 
+  /** Optional JSON payload for Run now — becomes $trigger in the run. */
+  runPayloadText = '';
+
+  copyWorkflowId(): void {
+    const wf = this.current();
+    if (!wf) return;
+    const done = () => this.notify.add('success', 'Workflow', this.i18n.translate('gwf.idCopied'));
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(wf.id).then(done, () => this.legacyCopy(wf.id, done));
+    } else {
+      // navigator.clipboard needs a secure context (HTTPS/localhost); plain-HTTP
+      // LAN deployments must fall back to the legacy execCommand path.
+      this.legacyCopy(wf.id, done);
+    }
+  }
+
+  private legacyCopy(text: string, done: () => void): void {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      if (document.execCommand('copy')) done();
+    } finally {
+      document.body.removeChild(ta);
+    }
+  }
+
+  /** Workflows selectable as a subworkflow target (everything but the open one). */
+  selectableWorkflows(): GraphWorkflow[] {
+    const currentId = this.current()?.id;
+    return this.workflows().filter((w) => w.id !== currentId);
+  }
+
+  isKnownWorkflowId(value: unknown): boolean {
+    return this.workflows().some((w) => w.id === value);
+  }
+
   runNow(): void {
     const wf = this.current();
     if (!wf) return;
+    let payload: Record<string, unknown> = {};
+    if (this.runPayloadText.trim()) {
+      try {
+        const parsed = JSON.parse(this.runPayloadText);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          payload = parsed as Record<string, unknown>;
+        } else {
+          payload = { input: parsed };
+        }
+      } catch {
+        this.notify.add('error', 'Workflow', this.i18n.translate('gwf.runPayloadInvalid'));
+        return;
+      }
+    }
     const start = () => {
       this.running.set(true);
       this.nodeStatus.set({});
       this.nodeOutputs.set({});
-      this.api.run(wf.id).subscribe({
+      this.nodeErrors.set({});
+      this.api.run(wf.id, payload).subscribe({
         next: ({ run_id }) => {
           this.runId.set(run_id);
           this.streamRun(run_id);
@@ -478,6 +768,9 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
       }
     } else if (ev.kind === 'node' && ev.node_id) {
       this.nodeStatus.update((s) => ({ ...s, [ev.node_id!]: ev.status ?? 'running' }));
+      if (ev.error) {
+        this.nodeErrors.update((e) => ({ ...e, [ev.node_id!]: String(ev.error) }));
+      }
     } else if (ev.kind === 'run' && ev.status && ev.status !== 'running') {
       this.finalizeRun(ev.status, ev.error);
     } else if (ev.kind === 'done') {
@@ -510,12 +803,22 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
       next: (run) => {
         const statuses: Record<string, string> = {};
         const outputs: Record<string, unknown> = {};
+        const errors: Record<string, string> = {};
+        const meta: Record<string, { runId: string; at: number | null }> = {};
         for (const nr of run.node_runs ?? []) {
           statuses[nr.node_id] = nr.status;
-          if (nr.output !== undefined && nr.output !== null) outputs[nr.node_id] = nr.output;
+          if (nr.output !== undefined && nr.output !== null) {
+            outputs[nr.node_id] = nr.output;
+            meta[nr.node_id] = { runId: run.id, at: nr.finished_at ?? null };
+          }
+          if (nr.error) errors[nr.node_id] = nr.error;
         }
         this.nodeStatus.set(statuses);
-        this.nodeOutputs.set(outputs);
+        // Keep historical outputs for nodes this run didn't reach (skipped
+        // branches), so their edges still show data from past executions.
+        this.nodeOutputs.update((s) => ({ ...s, ...outputs }));
+        this.nodeErrors.set(errors);
+        this.nodeOutputMeta.update((s) => ({ ...s, ...meta }));
       },
       error: () => {},
     });
@@ -523,6 +826,10 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
 
   nodeVisualStatus(nodeId: string): string {
     return this.nodeStatus()[nodeId] ?? '';
+  }
+
+  nodeError(nodeId: string): string {
+    return this.nodeErrors()[nodeId] ?? '';
   }
 
   nodeOutputPreview(nodeId: string): string {

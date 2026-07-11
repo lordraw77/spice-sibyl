@@ -75,6 +75,7 @@ spice-sibyl/
 │   │   │   └── endpoints/
 │   │   │       ├── auth.py              # /auth/*: login, refresh, logout, users, audit
 │   │   │       ├── admin.py             # /admin/*: backup, restore, export, import
+│   │   │       ├── features.py          # /features (read) + /admin/features, /admin/model-selection, /admin/config
 │   │   │       ├── chat.py
 │   │   │       ├── images.py
 │   │   │       ├── conversations.py     # + pins, branches, sharing
@@ -144,11 +145,13 @@ spice-sibyl/
 │   │   │   ├── providers.py
 │   │   │   ├── stats.py
 │   │   │   ├── tags.py
+│   │   │   ├── features.py             # FeatureFlags, ModelSelection, FEATURE_KEYS registry
 │   │   │   └── templates.py
 │   │   ├── services/
 │   │   │   ├── auth_service.py
 │   │   │   ├── backup_service.py
 │   │   │   ├── chat_service.py
+│   │   │   ├── email_service.py         # SMTP sender for the notify.email workflow node
 │   │   │   ├── embedding_service.py
 │   │   │   ├── image_service.py
 │   │   │   ├── key_resolver.py
@@ -173,7 +176,7 @@ spice-sibyl/
 │       │   │   ├── app-config.model.ts
 │       │   │   └── app-config.service.ts
 │       │   ├── guards/
-│       │   │   └── auth.guard.ts         # authGuard + adminGuard
+│       │   │   └── auth.guard.ts         # authGuard + adminGuard + featureGuard
 │       │   ├── interceptors/
 │       │   │   ├── auth.interceptor.ts   # Bearer header + silent refresh on 401
 │       │   │   ├── error.interceptor.ts
@@ -186,6 +189,7 @@ spice-sibyl/
 │       │       ├── chat-state.service.ts # Singleton: messages + loading state survives navigation
 │       │       ├── conversation.service.ts
 │       │       ├── discovery.service.ts
+│       │       ├── feature.service.ts    # GET /features, admin features/model-selection/config
 │       │       ├── knowledge.service.ts
 │       │       ├── mcp.service.ts
 │       │       ├── notification.service.ts
@@ -208,8 +212,10 @@ spice-sibyl/
 │       │   ├── ops/           ops-page.component.ts
 │       │   ├── profile/       profile-modal.component.ts
 │       │   ├── providers/     providers-page.component.ts
+│       │   ├── settings/      settings-page.component.ts   # feature toggles, model catalog, config, notifications, timezone
 │       │   ├── shared/        shared-view.component.ts
-│       │   └── stats/         stats-page.component.ts
+│       │   ├── stats/         stats-page.component.ts
+│       │   └── workflows/     graph-workflow-page.component.ts + workflow-runs-page.component.ts
 │       ├── layout/navbar.component.ts
 │       └── shared/
 │           ├── pipes/unique-values.pipe.ts
@@ -291,6 +297,12 @@ On every boot: tables are created (idempotently), migrations applied (including 
 | `LOG_FORMAT` | `text` | Set `json` for structured JSON logging |
 | `DISCOVERY_REFRESH_ENABLED` | `true` | Automatic catalog discovery refresh loop |
 | `DISCOVERY_REFRESH_HOURS` | `12` | Snapshot TTL before a provider is re-discovered |
+| `SMTP_HOST` | — | SMTP server used by the `notify.email` workflow node; empty disables sending |
+| `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` / `SMTP_STARTTLS` | `587` / — / — / — / `true` | SMTP credentials and sender; `SMTP_FROM` falls back to `SMTP_USER` |
+
+The full, always-current list of runtime settings — grouped, with descriptions and
+env-vs-default provenance — is what `GET /v1/admin/config` returns and the Settings →
+Configuration tab renders; see [§4.12a Settings Page](#412a-settings-page).
 
 **`IMAGE_GENERATION_CHAIN` default:**
 ```
@@ -600,6 +612,8 @@ Routing rules evaluated in order on the model-ID prefix:
 - `POST /graph-workflows/{id}/activate` · `/deactivate`
 - `POST /graph-workflows/{id}/run` — `{ payload }` (manual trigger) → `{ run_id }`
 - `GET /graph-workflows/{id}/runs` — recent runs
+- `GET /graph-workflows/{id}/node-outputs` — latest persisted output per node across all past runs (feeds the editor's edge inspector)
+- `GET /graph-workflows/{id}/export` — portable JSON snapshot (re-importable via `POST /graph-workflows`)
 - `GET /graph-workflows/{id}/versions` · `POST /graph-workflows/{id}/versions/{v}/restore`
 - `POST /graph-workflows/{id}/triggers` — `{ type: manual|schedule|webhook|event, config?, enabled? }`
 - `POST /graph-workflows/triggers/{tid}/enable` · `/disable` · `DELETE /graph-workflows/triggers/{tid}`
@@ -627,6 +641,13 @@ Routing rules evaluated in order on the model-ID prefix:
 - `POST /admin/restore` — restore from snapshot
 - `GET /admin/export?profile_id=` — zip archive (conversations, KB, templates, tags)
 - `POST /admin/import` — import zip archive
+- `PUT /admin/features` — persist the feature-toggle override blob (audited); returns the effective map
+- `GET /admin/model-selection` — full (unfiltered) model catalog + provider summary + current allow-list
+- `PUT /admin/model-selection` — persist the model allow-list (empty = every model visible)
+- `GET /admin/config` — read-only, secret-free snapshot of the env-derived `Settings`, grouped by area (for the Settings → Configuration tab)
+
+#### Feature toggles (`/api/v1/features`)
+- `GET /features` — effective feature map for the current user (`FEATURE_KEYS` → bool). Consumed by `FeatureService.load()` at bootstrap to gate the navbar, the route guard (`featureGuard`) and the chat sidebar. A key absent from the stored override blob defaults to enabled. Persistence is a single JSON blob at `settings_repository` owner key `app:features` (see `app/schemas/features.py`) — no schema migration needed to add a new toggle.
 
 #### Conversations
 - `GET /api/v1/conversations?profile_id=<uuid>` — newest first
@@ -934,21 +955,59 @@ Admin-only route (`/ops`). Provides:
 
 ---
 
+### 4.12a Settings Page
+
+**File:** `frontend/src/app/features/settings/settings-page.component.ts`
+
+Route `/settings`, open to every authenticated user (per-user tabs); admin-only tabs are
+gated inside the component rather than the route, since it's one page with mixed
+visibility. Tabs:
+
+- **Models / Tools / Resources / Info** (admin) — ON/OFF rows for every key in
+  `FEATURE_KEYS`, grouped by navbar section. Saving persists only the *disabled*
+  overrides via `FeatureService.save()` → `PUT /v1/admin/features`; a key absent from the
+  stored blob defaults to enabled. Toggling a feature here also hides its navbar entry
+  and blocks direct-URL access via `featureGuard` (`app/core/guards/auth.guard.ts`).
+- **Notifications** — per-event cross-channel opt-ins (`NotificationPrefsService`),
+  per-user, applied immediately (moved here from the navbar gear popover).
+- **Timezone** — per-user default reminder timezone (`ReminderPrefsService`), applied
+  immediately.
+- **Model catalog** (admin) — allow-list of models offered by every model dropdown
+  app-wide. Loads the full catalog + current selection from
+  `GET /v1/admin/model-selection`; an empty selection means unrestricted. Saved via
+  `PUT /v1/admin/model-selection`; enforced server-side by `GET /v1/models` (filters the
+  discovered catalog to the allow-list when one is set).
+- **Configuration** (admin, read-only) — grouped snapshot of the env-derived `Settings`
+  from `GET /v1/admin/config`, each entry showing its current value, default, and
+  whether it's environment-configured. Secrets (anything matching `api_key`, `secret`,
+  `token`, `password`, or prefixed `admin_`) are filtered out server-side and never sent
+  to the browser.
+
 ### 4.13 Routing
 
 ```
-/                → redirect to /chat
-/login           → LoginComponent         (public)
-/chat            → ChatPageComponent      (authGuard)
-/compare         → ComparePageComponent   (authGuard)
-/discovery       → DiscoveryPageComponent (authGuard)
-/providers       → ProvidersPageComponent (authGuard)
-/stats           → StatsPageComponent     (authGuard)
-/ops             → OpsPageComponent       (authGuard + adminGuard)
-/mcp             → McpPageComponent       (authGuard + adminGuard)
-/shared/:token   → SharedViewComponent    (public — no auth)
-**               → redirect to /chat
+/                    → redirect to /chat
+/login               → LoginComponent           (public)
+/chat                → ChatPageComponent        (authGuard)
+/compare             → ComparePageComponent     (authGuard + featureGuard)
+/discovery           → DiscoveryPageComponent   (authGuard + featureGuard)
+/providers           → ProvidersPageComponent   (authGuard + featureGuard)
+/stats               → StatsPageComponent       (authGuard + featureGuard)
+/settings            → SettingsPageComponent    (authGuard — admin-only tabs gated in-component)
+/ops                 → OpsPageComponent         (authGuard + adminGuard)
+/tools               → ToolsPageComponent       (authGuard + featureGuard)
+/workflows           → WorkflowsPageComponent   (authGuard + featureGuard)
+/graph-workflows     → GraphWorkflowPageComponent    (authGuard + featureGuard)
+/graph-workflows/runs → WorkflowRunsPageComponent    (authGuard + featureGuard)
+/mcp                 → McpPageComponent         (authGuard + adminGuard + featureGuard)
+/shared/:token       → SharedViewComponent      (public — no auth)
+**                   → redirect to /chat
 ```
+
+Routes gated by `featureGuard` declare their key via `data: { feature: '<key>' }`
+(`app/app.routes.ts`); a route with no `feature` key is always allowed. The guard reads
+`FeatureService.enabled()`, the same signal that hides the navbar entry, so a disabled
+feature is consistently invisible and unreachable by direct URL.
 
 ---
 

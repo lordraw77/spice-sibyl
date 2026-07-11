@@ -65,6 +65,30 @@ On a schedule, fetches a web page and **branches** on whether a keyword appears:
 expression using the `in` operator and `lower()`:
 `={{ 'sale' in lower($node.fetch.output.result) }}`.
 
+## 5. API call with error fallback — `api-error-fallback`
+
+`manual → http.request (retry ×2, on error → branch) → set | set`
+
+Calls an external HTTP API with the dedicated `http.request` node: two retries with a
+one-second backoff, and **On error → Route to error branch**. On success the response is
+shaped from `={{ $node.api.output.status }}` / `.text`; when every attempt fails, the
+failure flows through the node's **`error` output handle** into an alert node
+(`={{ $node.api.output.error }}`) instead of failing the run — a try/catch drawn on the
+canvas.
+
+## 6. Compose workflows — `subworkflow-composer`
+
+`manual → subworkflow → set`
+
+Runs **another workflow as a child step** and post-processes its result. Select the
+child in the subworkflow node's inspector: the **Workflow** parameter is a dropdown of
+your workflows (it also accepts an id or an expression via the API). An optional run
+payload (`{ "input": … }` in the run panel's **Run payload** box) is forwarded to the
+child as `$trigger`. The
+`payload` parameter becomes the child's `$trigger`, and the child's sink output comes
+back as `={{ $node.child.output.output }}` (plus `run_id` and `status` for auditing).
+The child executes as its own observable run with `trigger_type: subworkflow`.
+
 ---
 
 See [Visual workflows](../en/visual-workflows.md) for the full feature guide, and

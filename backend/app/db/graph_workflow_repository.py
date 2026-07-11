@@ -213,10 +213,51 @@ async def get_run(db: aiosqlite.Connection, run_id: str) -> GraphRunOut | None:
     return _row_to_run(row) if row else None
 
 
+async def get_run_context(db: aiosqlite.Connection, run_id: str) -> dict | None:
+    """The persisted run context ({node: {id: {output}}, trigger}) or None."""
+    async with db.execute(
+        "SELECT context_json FROM workflow_runs WHERE id = ?", (run_id,)
+    ) as cur:
+        row = await cur.fetchone()
+    return json.loads(row["context_json"]) if row and row["context_json"] else None
+
+
 async def get_run_status(db: aiosqlite.Connection, run_id: str) -> str | None:
     async with db.execute("SELECT status FROM workflow_runs WHERE id = ?", (run_id,)) as cur:
         row = await cur.fetchone()
     return row["status"] if row else None
+
+
+async def list_runs_for_profile(
+    db: aiosqlite.Connection,
+    profile_id: str,
+    *,
+    limit: int = 100,
+    status: str | None = None,
+    workflow_id: str | None = None,
+) -> list[GraphRunOut]:
+    """Profile-wide run registry, newest first, joined to the workflow name."""
+    sql = (
+        "SELECT r.*, w.name AS workflow_name FROM workflow_runs r "
+        "LEFT JOIN workflows w ON w.id = r.workflow_id WHERE r.profile_id = ?"
+    )
+    args: list = [profile_id]
+    if status:
+        sql += " AND r.status = ?"
+        args.append(status)
+    if workflow_id:
+        sql += " AND r.workflow_id = ?"
+        args.append(workflow_id)
+    sql += " ORDER BY r.created_at DESC LIMIT ?"
+    args.append(limit)
+    async with db.execute(sql, args) as cur:
+        rows = await cur.fetchall()
+    out = []
+    for r in rows:
+        run = _row_to_run(r)
+        run.workflow_name = r["workflow_name"]
+        out.append(run)
+    return out
 
 
 async def list_runs(db: aiosqlite.Connection, workflow_id: str, limit: int = 50) -> list[GraphRunOut]:
@@ -283,6 +324,32 @@ async def record_skipped_node(
         (str(uuid.uuid4()), run_id, node_id, node_type, now, now),
     )
     await db.commit()
+
+
+async def latest_node_outputs(db: aiosqlite.Connection, workflow_id: str) -> dict[str, dict]:
+    """The most recent persisted output of every node across ALL runs of the
+    workflow — powers the edge inspector when the editor is (re)opened, so
+    arrow selection can show data from past executions, not just the live one.
+
+    Returns ``{node_id: {output, run_id, finished_at, run_created_at}}``.
+    """
+    async with db.execute(
+        "SELECT nr.node_id, nr.output_json, nr.run_id, nr.finished_at, r.created_at AS run_created_at "
+        "FROM workflow_node_runs nr JOIN workflow_runs r ON r.id = nr.run_id "
+        "WHERE r.workflow_id = ? AND nr.output_json IS NOT NULL "
+        "ORDER BY nr.finished_at ASC, nr.started_at ASC",
+        (workflow_id,),
+    ) as cur:
+        rows = await cur.fetchall()
+    out: dict[str, dict] = {}
+    for r in rows:  # ascending order → the last write per node wins
+        out[r["node_id"]] = {
+            "output": json.loads(r["output_json"]),
+            "run_id": r["run_id"],
+            "finished_at": r["finished_at"],
+            "run_created_at": r["run_created_at"],
+        }
+    return out
 
 
 async def list_node_runs(db: aiosqlite.Connection, run_id: str) -> list[NodeRunOut]:

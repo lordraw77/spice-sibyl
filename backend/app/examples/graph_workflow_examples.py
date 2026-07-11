@@ -150,6 +150,77 @@ GRAPH_WORKFLOW_EXAMPLES: list[dict] = [
             ],
         },
     },
+    {
+        "id": "api-error-fallback",
+        "title": "API call with error fallback",
+        "description": (
+            "Call an external HTTP API with two retries; on success shape the response, "
+            "on failure route through the node's error branch to build an alert instead "
+            "of failing the run. Shows http.request + onError='branch'."
+        ),
+        "category": "automation",
+        "node_types": ["manual", "http.request", "set"],
+        "graph": {
+            "nodes": [
+                {"id": "start", "type": "manual", "name": "Run",
+                 "position": {"x": 40, "y": 120}},
+                {"id": "api", "type": "http.request", "name": "GET status",
+                 "params": {"method": "GET", "url": "https://example.com", "timeout": 15},
+                 "retry": 2, "backoff": 1.0, "onError": "branch",
+                 "position": {"x": 280, "y": 120}},
+                {"id": "ok", "type": "set", "name": "Shape response",
+                 "params": {"fields": {
+                     "status": "={{ $node.api.output.status }}",
+                     "body": "={{ $node.api.output.text }}",
+                 }},
+                 "position": {"x": 540, "y": 50}},
+                {"id": "alert", "type": "set", "name": "Alert",
+                 "params": {"fields": {
+                     "status": "api_down",
+                     "detail": "={{ $node.api.output.error }}",
+                 }},
+                 "position": {"x": 540, "y": 200}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "start", "target": "api"},
+                {"id": "e2", "source": "api", "target": "ok", "sourceHandle": "main"},
+                {"id": "e3", "source": "api", "target": "alert", "sourceHandle": "error"},
+            ],
+        },
+    },
+    {
+        "id": "subworkflow-composer",
+        "title": "Compose workflows (subworkflow)",
+        "description": (
+            "Run another workflow as a child step and post-process its result. Pick the "
+            "child workflow from the node's dropdown in the inspector; its sink output "
+            "comes back as $node.child.output.output."
+        ),
+        "category": "automation",
+        "node_types": ["manual", "subworkflow", "set"],
+        "graph": {
+            "nodes": [
+                {"id": "start", "type": "manual", "name": "Run",
+                 "position": {"x": 40, "y": 80}},
+                {"id": "child", "type": "subworkflow", "name": "Child workflow",
+                 "params": {
+                     "workflow_id": "",
+                     "payload": {"input": "={{ $trigger.input }}"},
+                 },
+                 "position": {"x": 280, "y": 80}},
+                {"id": "wrap", "type": "set", "name": "Wrap result",
+                 "params": {"fields": {
+                     "child_run": "={{ $node.child.output.run_id }}",
+                     "result": "={{ $node.child.output.output }}",
+                 }},
+                 "position": {"x": 540, "y": 80}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "start", "target": "child"},
+                {"id": "e2", "source": "child", "target": "wrap"},
+            ],
+        },
+    },
 ]
 
 

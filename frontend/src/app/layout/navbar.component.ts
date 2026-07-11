@@ -1,6 +1,5 @@
 import { Component, HostListener, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { ThemeService } from '../core/services/theme.service';
@@ -10,14 +9,14 @@ import { TranslatePipe } from '../core/i18n/translate.pipe';
 import { Locale } from '../core/i18n/locale';
 import { FlagComponent } from '../core/i18n/flag.component';
 import { ProfileService } from '../core/services/profile.service';
-import { NotificationPrefsService, NotifyEventType } from '../core/services/notification-prefs.service';
-import { ReminderPrefsService } from '../core/services/reminder-prefs.service';
+import { FeatureService } from '../core/services/feature.service';
 
 interface NavItem {
   label: string;
   route?: string;
   icon: string; // inner SVG markup (paths/shapes)
   adminOnly?: boolean;
+  feature?: string; // gate on an admin feature toggle (see FeatureService)
   children?: NavItem[];
 }
 
@@ -52,12 +51,14 @@ const ICONS = {
     '<path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/><circle cx="12" cy="12" r="4"/>',
   reminders:
     '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 3h6"/>',
+  settings:
+    '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
 };
 
 @Component({
   selector: 'app-navbar',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, RouterLinkActive, TranslatePipe, FlagComponent],
+  imports: [CommonModule, RouterLink, RouterLinkActive, TranslatePipe, FlagComponent],
   template: `
     <nav class="navbar">
       <div class="brand">
@@ -158,27 +159,15 @@ const ICONS = {
         </button>
         <div class="user-chip" *ngIf="auth.currentUser() as user">
           <span class="user-email" [title]="user.role">{{ user.email }}</span>
-          <div class="settings-picker-wrapper">
-            <button class="settings-toggle" (click)="toggleSettingsPicker($event)" [title]="'navbar.settings' | t" [attr.aria-label]="'navbar.settings' | t">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82A1.65 1.65 0 0 0 3 13.09H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            </button>
-            <div class="settings-popover" *ngIf="settingsPickerOpen()" (click)="$event.stopPropagation()">
-              <span class="section-label">{{ 'navbar.settings.notifications' | t }}</span>
-              <label class="settings-check-row" *ngFor="let evt of notifyEventTypes">
-                <input type="checkbox" [checked]="notifyPrefsSvc.prefs()[evt.key]" (change)="toggleNotifyPref(evt.key)" />
-                <span>{{ evt.labelKey | t }}</span>
-              </label>
-              <span class="section-label">{{ 'reminders.timezoneDefault' | t }}</span>
-              <select
-                class="settings-select"
-                [ngModel]="reminderPrefsSvc.timezone() ?? ''"
-                (ngModelChange)="onReminderTimezoneChange($event)"
-              >
-                <option value="">{{ 'reminders.timezoneDeviceDefault' | t }}</option>
-                <option *ngFor="let tz of timezoneOptions" [value]="tz">{{ tz }}</option>
-              </select>
-            </div>
-          </div>
+          <button
+            class="settings-toggle"
+            [routerLink]="['/settings']"
+            [queryParams]="{ tab: 'notifications' }"
+            [title]="'navbar.settings' | t"
+            [attr.aria-label]="'navbar.settings' | t"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82A1.65 1.65 0 0 0 3 13.09H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
           <button class="logout-btn" (click)="logout()" [title]="'navbar.logout' | t">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
@@ -456,8 +445,7 @@ const ICONS = {
     }
     .accent-reset:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
 
-    /* Settings (gear) picker — cross-channel notification prefs, Phase 23.c */
-    .settings-picker-wrapper { position: relative; }
+    /* Settings (gear) — opens the settings page on the notifications tab */
     .settings-toggle {
       display: inline-flex;
       align-items: center;
@@ -472,40 +460,6 @@ const ICONS = {
       transition: background .15s, color .15s;
     }
     .settings-toggle:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
-    .settings-popover {
-      position: absolute;
-      top: 2.4rem;
-      right: 0;
-      display: flex;
-      flex-direction: column;
-      gap: .4rem;
-      background: var(--bg-surface);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border-light);
-      border-radius: .65rem;
-      padding: .6rem .7rem;
-      z-index: 200;
-      min-width: 240px;
-      box-shadow: 0 4px 16px var(--shadow);
-    }
-    .settings-check-row {
-      display: flex;
-      align-items: center;
-      gap: .5rem;
-      font-size: .82rem;
-      color: var(--text-secondary, var(--text-primary));
-      cursor: pointer;
-    }
-    .settings-select {
-      width: 100%;
-      box-sizing: border-box;
-      background: var(--bg-input, var(--bg-surface));
-      color: var(--text-primary);
-      border: 1px solid var(--border);
-      border-radius: .4rem;
-      padding: .35rem .5rem;
-      font-size: .8rem;
-    }
 
     @media (max-width: 575.98px) {
       .navbar { padding: .6rem 1rem; }
@@ -553,42 +507,10 @@ export class NavbarComponent {
   private readonly profile = inject(ProfileService);
   private readonly router = inject(Router);
   private readonly sanitizer = inject(DomSanitizer);
-  readonly notifyPrefsSvc = inject(NotificationPrefsService);
-  readonly reminderPrefsSvc = inject(ReminderPrefsService);
-
-  /** Common IANA timezones offered for the reminder default-timezone override. */
-  readonly timezoneOptions = [
-    'UTC', 'Europe/Rome', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Madrid',
-    'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
-    'America/Sao_Paulo', 'Asia/Tokyo', 'Asia/Shanghai', 'Asia/Kolkata', 'Asia/Dubai',
-    'Australia/Sydney',
-  ];
-
-  onReminderTimezoneChange(value: string): void {
-    this.reminderPrefsSvc.set(value || null);
-  }
+  private readonly features = inject(FeatureService);
 
   readonly accentPickerOpen = signal(false);
   readonly langPickerOpen = signal(false);
-  readonly settingsPickerOpen = signal(false);
-
-  /** Phase 23.c: per-event-type cross-channel notification opt-in, shown in the settings popover. */
-  readonly notifyEventTypes: { key: NotifyEventType; labelKey: string }[] = [
-    { key: 'workflowDone', labelKey: 'chat.notify.prefs.workflowDone' },
-    { key: 'imageGenDone', labelKey: 'chat.notify.prefs.imageGenDone' },
-    { key: 'longCompletionDone', labelKey: 'chat.notify.prefs.longCompletionDone' },
-    { key: 'reminderFired', labelKey: 'chat.notify.prefs.reminderFired' },
-    { key: 'kbIngested', labelKey: 'chat.notify.prefs.kbIngested' },
-  ];
-
-  toggleNotifyPref(key: NotifyEventType): void {
-    this.notifyPrefsSvc.set(key, !this.notifyPrefsSvc.prefs()[key]);
-  }
-
-  toggleSettingsPicker(event: Event): void {
-    event.stopPropagation();
-    this.settingsPickerOpen.update((v) => !v);
-  }
   readonly mobileMenuOpen = signal(false);
   readonly openMenu = signal<string | null>(null);
 
@@ -602,40 +524,42 @@ export class NavbarComponent {
       label: 'nav.group.models',
       icon: ICONS.models,
       children: [
-        { label: 'nav.providers', route: '/providers', icon: ICONS.providers },
-        { label: 'nav.discovery', route: '/discovery', icon: ICONS.discovery },
-        { label: 'nav.compare', route: '/compare', icon: ICONS.compare },
-        { label: 'nav.stats', route: '/stats', icon: ICONS.stats },
+        { label: 'nav.providers', route: '/providers', icon: ICONS.providers, feature: 'providers' },
+        { label: 'nav.discovery', route: '/discovery', icon: ICONS.discovery, feature: 'discovery' },
+        { label: 'nav.compare', route: '/compare', icon: ICONS.compare, feature: 'compare' },
+        { label: 'nav.stats', route: '/stats', icon: ICONS.stats, feature: 'stats' },
       ],
     },
     {
       label: 'nav.group.tools',
       icon: ICONS.tools,
       children: [
-        { label: 'nav.tools', route: '/tools', icon: ICONS.tools },
-        { label: 'nav.workflows', route: '/workflows', icon: ICONS.workflow },
-        { label: 'nav.graphWorkflows', route: '/graph-workflows', icon: ICONS.workflow },
-        { label: 'nav.reminders', route: '/reminders', icon: ICONS.reminders },
-        { label: 'nav.mcp', route: '/mcp', icon: ICONS.mcp, adminOnly: true },
-        { label: 'nav.workspaces', route: '/workspaces', icon: ICONS.workspace },
+        { label: 'nav.tools', route: '/tools', icon: ICONS.tools, feature: 'tools' },
+        { label: 'nav.workflows', route: '/workflows', icon: ICONS.workflow, feature: 'workflows' },
+        { label: 'nav.graphWorkflows', route: '/graph-workflows', icon: ICONS.workflow, feature: 'graph_workflows' },
+        { label: 'nav.graphWorkflowRuns', route: '/graph-workflows/runs', icon: ICONS.workflow, feature: 'graph_workflows' },
+        { label: 'nav.reminders', route: '/reminders', icon: ICONS.reminders, feature: 'reminders' },
+        { label: 'nav.mcp', route: '/mcp', icon: ICONS.mcp, adminOnly: true, feature: 'mcp' },
+        { label: 'nav.workspaces', route: '/workspaces', icon: ICONS.workspace, feature: 'workspaces' },
       ],
     },
     {
       label: 'nav.group.resources',
       icon: ICONS.resources,
       children: [
-        { label: 'nav.templates', route: '/templates', icon: ICONS.template },
-        { label: 'nav.tags', route: '/tags', icon: ICONS.tag },
-        { label: 'nav.knowledge', route: '/knowledge', icon: ICONS.knowledge },
-        { label: 'nav.memory', route: '/memory', icon: ICONS.memory },
+        { label: 'nav.templates', route: '/templates', icon: ICONS.template, feature: 'templates' },
+        { label: 'nav.tags', route: '/tags', icon: ICONS.tag, feature: 'tags' },
+        { label: 'nav.knowledge', route: '/knowledge', icon: ICONS.knowledge, feature: 'knowledge' },
+        { label: 'nav.memory', route: '/memory', icon: ICONS.memory, feature: 'memory' },
       ],
     },
     {
       label: 'nav.group.info',
       icon: ICONS.info,
       children: [
-        { label: 'nav.help', route: '/help', icon: ICONS.help },
-        { label: 'nav.info', route: '/info', icon: ICONS.info },
+        { label: 'nav.help', route: '/help', icon: ICONS.help, feature: 'help' },
+        { label: 'nav.info', route: '/info', icon: ICONS.info, feature: 'info' },
+        { label: 'nav.settings', route: '/settings', icon: ICONS.settings, adminOnly: true },
         { label: 'nav.ops', route: '/ops', icon: ICONS.ops, adminOnly: true },
       ],
     },
@@ -652,12 +576,19 @@ export class NavbarComponent {
     return cached;
   }
 
-  /** A leaf/child is visible unless it is admin-only and the user lacks the role. */
+  /**
+   * A leaf/child is visible unless it is admin-only and the user lacks the role,
+   * or it maps to a feature disabled by the admin toggles. A group is visible
+   * when at least one of its children is.
+   */
   isVisible(item: NavItem): boolean {
     if (item.children) {
       return item.children.some((c) => this.isVisible(c));
     }
-    return !item.adminOnly || this.auth.hasRole('admin');
+    if (item.adminOnly && !this.auth.hasRole('admin')) {
+      return false;
+    }
+    return this.features.enabled(item.feature);
   }
 
   isGroupActive(item: NavItem): boolean {
@@ -679,7 +610,6 @@ export class NavbarComponent {
     this.openMenu.set(null);
     this.accentPickerOpen.set(false);
     this.langPickerOpen.set(false);
-    this.settingsPickerOpen.set(false);
   }
 
   toggleLangPicker(event: Event): void {

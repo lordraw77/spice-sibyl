@@ -1,0 +1,120 @@
+<div class="runs-page">
+  <header class="runs-head">
+    <div>
+      <h1>{{ 'gwr.title' | t }}</h1>
+      <p class="subtitle">{{ 'gwr.subtitle' | t }}</p>
+    </div>
+    <a class="btn" routerLink="/graph-workflows">← {{ 'gwr.backToDesigner' | t }}</a>
+  </header>
+
+  <div class="runs-toolbar">
+    <select [(ngModel)]="filterWorkflow" (ngModelChange)="refresh()">
+      <option value="">{{ 'gwr.allWorkflows' | t }}</option>
+      <option *ngFor="let w of workflows()" [value]="w.id">{{ w.name }}</option>
+    </select>
+    <select [(ngModel)]="filterStatus" (ngModelChange)="refresh()">
+      <option value="">{{ 'gwr.allStatuses' | t }}</option>
+      <option value="running">running</option>
+      <option value="completed">completed</option>
+      <option value="failed">failed</option>
+      <option value="cancelled">cancelled</option>
+    </select>
+    <button class="btn" (click)="refresh()">⟳ {{ 'gwr.refresh' | t }}</button>
+
+    <span class="launch-sep"></span>
+
+    <select [(ngModel)]="launchWorkflow">
+      <option value="">{{ 'gwr.launchPick' | t }}</option>
+      <option *ngFor="let w of workflows()" [value]="w.id">{{ w.name }}</option>
+    </select>
+    <input
+      class="launch-payload"
+      [(ngModel)]="launchPayloadText"
+      [placeholder]="'gwf.runPayloadHint' | t"
+    />
+    <button class="btn primary" [disabled]="!launchWorkflow" (click)="launch()">
+      ▶ {{ 'gwr.launch' | t }}
+    </button>
+  </div>
+
+  <div class="runs-body">
+    <div class="runs-list">
+      <table>
+        <thead>
+          <tr>
+            <th>{{ 'gwr.workflow' | t }}</th>
+            <th>{{ 'gwr.status' | t }}</th>
+            <th>{{ 'gwr.trigger' | t }}</th>
+            <th>{{ 'gwr.started' | t }}</th>
+            <th>{{ 'gwr.duration' | t }}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            *ngFor="let r of runs()"
+            (click)="openRun(r)"
+            [class.selected]="selectedRun()?.id === r.id"
+          >
+            <td class="wf-name">{{ workflowName(r) }}</td>
+            <td><span class="status-chip" [attr.data-status]="r.status">{{ r.status }}</span></td>
+            <td>{{ r.trigger_type }}</td>
+            <td>{{ when(r) }}</td>
+            <td>{{ duration(r) }}</td>
+            <td class="row-actions">
+              <button
+                *ngIf="isStoppable(r)"
+                class="btn small danger"
+                (click)="stopRun(r, $event)"
+                [title]="'gwr.stop' | t"
+              >
+                ■ {{ 'gwr.stop' | t }}
+              </button>
+            </td>
+          </tr>
+          <tr *ngIf="!runs().length && !loading()">
+            <td colspan="6" class="empty">{{ 'gwr.noRuns' | t }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <aside class="run-detail" *ngIf="selectedRun() as run">
+      <div class="detail-head">
+        <div>
+          <strong>{{ workflowName(run) }}</strong>
+          <span class="status-chip" [attr.data-status]="run.status">{{ run.status }}</span>
+        </div>
+        <div class="detail-actions">
+          <button *ngIf="isStoppable(run)" class="btn small danger" (click)="stopRun(run)">
+            ■ {{ 'gwr.stop' | t }}
+          </button>
+          <a class="btn small" [routerLink]="['/graph-workflows']" [queryParams]="{ wf: run.workflow_id }">
+            {{ 'gwr.openDesigner' | t }}
+          </a>
+          <button class="icon-btn" (click)="closeRun()">✕</button>
+        </div>
+      </div>
+      <div class="detail-meta">
+        <span>{{ when(run) }} · {{ run.trigger_type }} · {{ duration(run) }}</span>
+        <code class="run-id" [title]="run.id">{{ run.id }}</code>
+      </div>
+      <p class="run-error" *ngIf="run.error">{{ run.error }}</p>
+
+      <div class="node-runs">
+        <div class="side-subhead">{{ 'gwr.nodeRuns' | t }}</div>
+        <div class="nr-item" *ngFor="let nr of nodeRuns()">
+          <div class="nr-row">
+            <span class="rs-dot" [attr.data-status]="nr.status"></span>
+            <span class="nr-name">{{ nr.node_id }}</span>
+            <span class="nr-type">{{ nr.node_type }}</span>
+            <span class="status-chip" [attr.data-status]="nr.status">{{ nr.status }}</span>
+          </div>
+          <p class="nr-error" *ngIf="nr.error">{{ nr.error }}</p>
+          <pre class="nr-output" *ngIf="outputPreview(nr)">{{ outputPreview(nr) }}</pre>
+        </div>
+        <p class="empty" *ngIf="!nodeRuns().length">{{ 'gwr.noNodeRuns' | t }}</p>
+      </div>
+    </aside>
+  </div>
+</div>

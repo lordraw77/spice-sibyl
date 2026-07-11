@@ -31,6 +31,7 @@ import time
 from typing import Any
 
 _EXPR_PREFIX = "={{"
+_BARE_PREFIX = "{{"  # tolerated slip: `{{ … }}` without the leading `=`
 _EXPR_SUFFIX = "}}"
 _PY_PREFIX = "=py:"
 
@@ -262,22 +263,22 @@ def eval_expression(expr: str, ctx: dict) -> Any:
     return _eval_node(tree, _build_scope(ctx))
 
 
-def _split_interpolations(value: str) -> list[tuple[bool, str]]:
+def _split_interpolations(value: str, prefix: str = _EXPR_PREFIX) -> list[tuple[bool, str]]:
     """Split a string into (is_expr, text) segments around ``{{ ... }}``."""
     segments: list[tuple[bool, str]] = []
     i = 0
     while i < len(value):
-        start = value.find(_EXPR_PREFIX, i)
+        start = value.find(prefix, i)
         if start == -1:
             segments.append((False, value[i:]))
             break
         if start > i:
             segments.append((False, value[i:start]))
-        end = value.find(_EXPR_SUFFIX, start + len(_EXPR_PREFIX))
+        end = value.find(_EXPR_SUFFIX, start + len(prefix))
         if end == -1:
             segments.append((False, value[start:]))
             break
-        inner = value[start + len(_EXPR_PREFIX):end]
+        inner = value[start + len(prefix):end]
         segments.append((True, inner))
         i = end + len(_EXPR_SUFFIX)
     return segments
@@ -345,10 +346,14 @@ async def resolve_value(value: Any, ctx: dict) -> Any:
     if value.startswith(_PY_PREFIX):
         return await _run_py(value[len(_PY_PREFIX):], ctx)
 
-    if _EXPR_PREFIX not in value:
+    # Canonical syntax is `={{ … }}`, but bare `{{ … }}` is such a common slip
+    # (it's what n8n users type first) that it resolves the same way.
+    if _EXPR_PREFIX in value:
+        segments = _split_interpolations(value, _EXPR_PREFIX)
+    elif _BARE_PREFIX in value and _EXPR_SUFFIX in value:
+        segments = _split_interpolations(value, _BARE_PREFIX)
+    else:
         return value
-
-    segments = _split_interpolations(value)
     # A single pure expression keeps its native type.
     if len(segments) == 1 and segments[0][0]:
         return eval_expression(segments[0][1], ctx)

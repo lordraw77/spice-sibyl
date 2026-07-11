@@ -22,13 +22,16 @@ class GraphNode(BaseModel):
     resolved through the expression resolver immediately before execution."""
 
     id: str = Field(..., min_length=1)
-    type: str = Field(..., min_length=1)  # manual|schedule|webhook|event|tool.<name>|set|if|switch|merge|filter|code|llm.completion|llm.agent
+    type: str = Field(..., min_length=1)  # manual|schedule|webhook|event|tool.<name>|set|if|switch|merge|filter|code|http.request|subworkflow|llm.completion|llm.agent
     name: str = ""
     params: dict[str, Any] = Field(default_factory=dict)
     position: dict[str, float] = Field(default_factory=dict)  # {x, y} for the canvas
     retry: int = Field(default=0, ge=0, le=10)
     backoff: float = Field(default=0.0, ge=0.0, le=60.0)  # seconds between retries
-    continueOnFail: bool = False
+    continueOnFail: bool = False  # legacy alias of onError="continue"
+    # After retries are exhausted: stop the run, continue on 'main' with
+    # {error}, or route {error, input} through a dedicated 'error' handle.
+    onError: str = Field(default="stop", pattern="^(stop|continue|branch)$")
 
 
 class GraphEdge(BaseModel):
@@ -89,6 +92,7 @@ class NodeRunOut(BaseModel):
 class GraphRunOut(BaseModel):
     id: str
     workflow_id: str
+    workflow_name: str | None = None  # joined for the profile-wide run registry
     profile_id: str
     status: str
     trigger_type: str

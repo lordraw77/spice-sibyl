@@ -160,13 +160,16 @@
         </ng-container>
       </div>
 
-      <!-- Feature switches (ON/OFF). Management lives in dedicated pages. -->
-      <div class="sidebar-section" data-tour="tools">
+      <!-- Feature switches (ON/OFF). Management lives in dedicated pages.
+           Each row is hidden when the corresponding feature is disabled by the
+           admin toggles; the whole section hides when none are enabled. -->
+      <div class="sidebar-section" data-tour="tools"
+           *ngIf="features.enabled('tools') || features.enabled('knowledge') || features.enabled('memory')">
         <div class="section-header">
           <span class="section-label">{{ 'chat.section.features' | t }}</span>
         </div>
 
-        <div class="switch-row" *ngIf="availableTools().length">
+        <div class="switch-row" *ngIf="features.enabled('tools') && availableTools().length">
           <button class="tools-toggle" [class.enabled]="toolsEnabled()" (click)="toggleTools()" [title]="'chat.features.toggleTools' | t">
             {{ toolsEnabled() ? 'ON' : 'OFF' }}
           </button>
@@ -174,7 +177,7 @@
           <a class="manage-link" routerLink="/tools" [title]="'chat.features.manageTools' | t">{{ 'chat.features.manage' | t }}</a>
         </div>
 
-        <div class="switch-row">
+        <div class="switch-row" *ngIf="features.enabled('knowledge')">
           <button class="tools-toggle" [class.enabled]="ragEnabled()" (click)="toggleRag()" [title]="'chat.features.toggleRag' | t">
             {{ ragEnabled() ? 'ON' : 'OFF' }}
           </button>
@@ -182,7 +185,7 @@
           <a class="manage-link" routerLink="/knowledge" [title]="'chat.features.manageKb' | t">{{ 'chat.features.manage' | t }}</a>
         </div>
 
-        <div class="switch-row">
+        <div class="switch-row" *ngIf="features.enabled('memory')">
           <button class="tools-toggle" [class.enabled]="memoryEnabled()" (click)="toggleMemory()" [title]="'chat.features.memoryTitle' | t">
             {{ memoryEnabled() ? 'ON' : 'OFF' }}
           </button>

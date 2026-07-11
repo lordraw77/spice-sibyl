@@ -5,6 +5,7 @@
       <h1>{{ 'gwf.title' | t }}</h1>
       <p class="muted">{{ 'gwf.subtitle' | t }}</p>
     </div>
+    <a class="btn" routerLink="/graph-workflows/runs">{{ 'gwf.runsLink' | t }} →</a>
     <div class="gwf-actions" *ngIf="current() as wf">
       <input
         class="gwf-name"
@@ -17,6 +18,7 @@
         {{ (wf.active ? 'gwf.active' : 'gwf.inactive') | t }}
       </button>
       <button class="btn" [disabled]="!dirty()" (click)="save()">{{ 'gwf.save' | t }}</button>
+      <button class="btn" (click)="exportWorkflow()" [title]="'gwf.exportHint' | t">{{ 'gwf.export' | t }}</button>
       <button class="btn primary" [disabled]="running()" (click)="runNow()">
         {{ (running() ? 'gwf.running' : 'gwf.runNow') | t }}
       </button>
@@ -31,6 +33,14 @@
           <span>{{ 'gwf.workflows' | t }}</span>
           <span class="head-actions">
             <button class="icon-btn" (click)="toggleExamples()" title="{{ 'gwf.ex.show' | t }}">✨</button>
+            <button class="icon-btn" (click)="triggerImport()" title="{{ 'gwf.importHint' | t }}">📥</button>
+            <input
+              #importInput
+              type="file"
+              accept="application/json,.json"
+              hidden
+              (change)="onImportFile($event)"
+            />
             <button class="icon-btn" (click)="newWorkflow()" title="{{ 'gwf.new' | t }}">＋</button>
           </span>
         </div>
@@ -141,8 +151,9 @@
             *ngFor="let e of edges"
             [attr.d]="edgePath(e)"
             class="edge"
+            [class.selected]="selectedEdgeId() === e.id"
             marker-end="url(#arrow)"
-            (click)="removeEdge(e, $event)"
+            (click)="selectEdge(e, $event)"
           />
           <path *ngIf="pendingSource" [attr.d]="pendingPath()" class="edge pending" />
         </g>
@@ -214,6 +225,44 @@
 
     <!-- ── right: inspector ──────────────────────────────────── -->
     <aside class="gwf-inspector" *ngIf="current() as wf">
+      <!-- ── edge inspector: what flows through this connection ── -->
+      <ng-container *ngIf="selectedEdge() as edge">
+        <div class="side-head">
+          <span>{{ 'gwf.edgePanel' | t }}</span>
+          <button class="icon-btn danger" (click)="deleteSelectedEdge()" [title]="'gwf.edgeDelete' | t">🗑</button>
+        </div>
+        <div class="edge-route">
+          <span class="edge-node">{{ nodeLabel(edge.source) }}</span>
+          <span class="edge-handle" *ngIf="(edge.sourceHandle || 'main') !== 'main'">{{ edge.sourceHandle }}</span>
+          <span class="edge-arrow">→</span>
+          <span class="edge-node">{{ nodeLabel(edge.target) }}</span>
+        </div>
+        <ng-container *ngIf="edgeFields(edge) as fields">
+          <ng-container *ngIf="fields.length; else noEdgeData">
+            <p class="muted small edge-origin" *ngIf="edgeDataOrigin(edge) as origin">{{ origin }}</p>
+            <div class="side-subhead">{{ 'gwf.edgeFields' | t }}</div>
+            <div class="edge-fields">
+              <button
+                *ngFor="let f of fields"
+                class="edge-field"
+                (click)="copyFieldPath(f.path)"
+                [title]="'gwf.fieldCopyHint' | t"
+              >
+                <code class="ef-path">{{ f.path }}</code>
+                <span class="ef-preview">{{ f.preview }}</span>
+              </button>
+            </div>
+            <div class="side-subhead">{{ 'gwf.edgePayload' | t }}</div>
+            <pre class="edge-payload">{{ edgePayload(edge) }}</pre>
+          </ng-container>
+        </ng-container>
+        <ng-template #noEdgeData>
+          <p class="muted small">{{ 'gwf.edgeNoData' | t }}</p>
+        </ng-template>
+        <p class="muted small">{{ 'gwf.edgeHint' | t }}</p>
+      </ng-container>
+
+      <ng-container *ngIf="!selectedEdge()">
       <ng-container *ngIf="selectedNode() as node; else runPanel">
         <div class="side-head">
           <span>{{ 'gwf.inspector' | t }}</span>
@@ -223,7 +272,10 @@
           <span>{{ 'gwf.nodeName' | t }}</span>
           <input [(ngModel)]="node.name" (ngModelChange)="dirty.set(true)" />
         </label>
-        <div class="node-kind">{{ node.type }}</div>
+        <div class="node-kind">
+          {{ node.type }}
+          <span class="node-id" [title]="'gwf.nodeIdHint' | t">· $node.{{ node.id }}</span>
+        </div>
 
         <div class="field" *ngFor="let p of paramsSchema(node)">
           <span>{{ p.label }}</span>
@@ -233,6 +285,20 @@
             [value]="paramValue(node, p.name)"
             (valueChange)="setParam(node, p.name, $event, 'text')"
           ></app-model-picker>
+          <select
+            *ngIf="p.kind === 'workflow'"
+            [ngModel]="paramValue(node, p.name)"
+            (ngModelChange)="setParam(node, p.name, $event, 'text')"
+          >
+            <option value="">—</option>
+            <option
+              *ngIf="paramValue(node, p.name) && !isKnownWorkflowId(paramValue(node, p.name))"
+              [value]="paramValue(node, p.name)"
+            >
+              {{ paramValue(node, p.name) }}
+            </option>
+            <option *ngFor="let w of selectableWorkflows()" [value]="w.id">{{ w.name }}</option>
+          </select>
           <textarea
             *ngIf="p.kind === 'code' || p.kind === 'json' || p.kind === 'expression'"
             rows="3"
@@ -255,15 +321,28 @@
             <span>{{ 'gwf.retry' | t }}</span>
             <input type="number" [(ngModel)]="node.retry" (ngModelChange)="dirty.set(true)" min="0" />
           </label>
-          <label class="field checkbox">
-            <input type="checkbox" [(ngModel)]="node.continueOnFail" (ngModelChange)="dirty.set(true)" />
-            <span>{{ 'gwf.continueOnFail' | t }}</span>
+          <label class="field">
+            <span>{{ 'gwf.onError' | t }}</span>
+            <select
+              [ngModel]="node.onError || (node.continueOnFail ? 'continue' : 'stop')"
+              (ngModelChange)="setOnError(node, $event)"
+            >
+              <option value="stop">{{ 'gwf.onErrorStop' | t }}</option>
+              <option value="continue">{{ 'gwf.onErrorContinue' | t }}</option>
+              <option value="branch">{{ 'gwf.onErrorBranch' | t }}</option>
+            </select>
           </label>
         </details>
       </ng-container>
 
       <ng-template #runPanel>
         <div class="side-head"><span>{{ 'gwf.runPanel' | t }}</span></div>
+
+        <div class="wf-id-row">
+          <span class="side-subhead">{{ 'gwf.workflowId' | t }}</span>
+          <code class="wf-id" [title]="wf.id">{{ wf.id }}</code>
+          <button class="icon-btn" (click)="copyWorkflowId()" [title]="'gwf.copyId' | t">⧉</button>
+        </div>
 
         <div class="triggers">
           <div class="side-subhead">{{ 'gwf.triggers' | t }}</div>
@@ -280,6 +359,15 @@
           </div>
         </div>
 
+        <label class="field">
+          <span>{{ 'gwf.runPayload' | t }}</span>
+          <textarea
+            rows="3"
+            [(ngModel)]="runPayloadText"
+            [placeholder]="'gwf.runPayloadHint' | t"
+          ></textarea>
+        </label>
+
         <div class="run-status" *ngIf="runId()">
           <div class="side-subhead">{{ 'gwf.lastRun' | t }}</div>
           <ul>
@@ -291,6 +379,7 @@
                   {{ nodeVisualStatus(n.id) || '—' }}
                 </span>
               </div>
+              <p class="rs-error" *ngIf="nodeError(n.id)">{{ nodeError(n.id) }}</p>
               <pre class="rs-output" *ngIf="nodeOutputPreview(n.id)">{{ nodeOutputPreview(n.id) }}</pre>
             </li>
           </ul>
@@ -298,6 +387,7 @@
 
         <p class="muted small">{{ 'gwf.runHint' | t }}</p>
       </ng-template>
+      </ng-container>
     </aside>
   </div>
 </div>

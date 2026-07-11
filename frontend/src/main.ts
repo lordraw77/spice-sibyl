@@ -9,6 +9,7 @@ import { routes } from './app/app.routes';
 import { AppConfigService } from './app/core/config/app-config.service';
 import { AuthService } from './app/core/services/auth.service';
 import { SettingsSyncService } from './app/core/services/settings-sync.service';
+import { FeatureService } from './app/core/services/feature.service';
 import { NotificationBridgeService } from './app/core/services/notification-bridge.service';
 import { authInterceptor } from './app/core/interceptors/auth.interceptor';
 import { profileInterceptor } from './app/core/interceptors/profile.interceptor';
@@ -20,6 +21,7 @@ function initializeApp(
   configService: AppConfigService,
   auth: AuthService,
   settingsSync: SettingsSyncService,
+  features: FeatureService,
   notificationBridge: NotificationBridgeService,
 ) {
   return async () => {
@@ -28,6 +30,9 @@ function initializeApp(
     // Restore the roaming profile (theme/locale + active profile's chat prefs)
     // once the session is known. No-op when unauthenticated. Never blocks boot.
     await settingsSync.hydrateUser();
+    // Load admin-controlled feature toggles so the menu/sidebar gate correctly
+    // on first paint. No-op when unauthenticated; never blocks boot.
+    await features.load();
     // Phase 23.c: open the live Telegram → web notification stream, if logged in.
     notificationBridge.connect();
   };
@@ -43,7 +48,7 @@ bootstrapApplication(AppComponent, {
     {
       provide: APP_INITIALIZER,
       useFactory: initializeApp,
-      deps: [AppConfigService, AuthService, SettingsSyncService, NotificationBridgeService],
+      deps: [AppConfigService, AuthService, SettingsSyncService, FeatureService, NotificationBridgeService],
       multi: true
     },
     // Service worker is only built in production (see angular.json); register it
