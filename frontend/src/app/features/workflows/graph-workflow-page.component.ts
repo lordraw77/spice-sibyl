@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, HostListener, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -64,6 +64,13 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   readonly paletteOpen = signal(true);
   readonly examples = signal<GraphWorkflowExample[]>([]);
   readonly examplesOpen = signal(false);
+  /** Phase 31.c: named LLM failover chains curated in Settings → Models. */
+  readonly failoverChainNames = signal<string[]>([]);
+  /** Phase 30.c: palette search filter (matches node label/type). */
+  readonly nodeSearch = signal('');
+  /** Phase 30.c: undo/redo — whether either stack currently has an entry. */
+  readonly canUndo = signal(false);
+  readonly canRedo = signal(false);
 
   // In-editor graph state (mutable copies of current().graph).
   nodes: GraphNode[] = [];
@@ -77,6 +84,13 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
 
   private stopStream: (() => void) | null = null;
   private runPoll: ReturnType<typeof setInterval> | null = null;
+
+  // ── Phase 30.c: copy/paste + undo/redo ────────────────────────────────────
+  private clipboardNode: GraphNode | null = null;
+  private undoStack: { nodes: GraphNode[]; edges: GraphEdge[] }[] = [];
+  private redoStack: { nodes: GraphNode[]; edges: GraphEdge[] }[] = [];
+  private pendingDragSnapshot = false;
+  private readonly MAX_HISTORY = 50;
 
   readonly categories = ['trigger', 'action', 'mcp', 'logic', 'data', 'notify', 'ai'] as const;
 
@@ -104,11 +118,39 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
     });
     this.api.nodeTypes().subscribe({ next: (t) => this.nodeTypes.set(t), error: () => {} });
     this.api.examples().subscribe({ next: (ex) => this.examples.set(ex), error: () => {} });
+    this.api.failoverChains().subscribe({
+      next: (res) => this.failoverChainNames.set(Object.keys(res.chains || {})),
+      error: () => {},
+    });
   }
 
   ngOnDestroy(): void {
     this.stopStream?.();
     if (this.runPoll) clearInterval(this.runPoll);
+  }
+
+  /** Ctrl/Cmd+C copies the selected node, +V pastes it, +Z / +Shift+Z (or +Y)
+   *  undo/redo the last structural edit. Ignored while typing in a field. */
+  @HostListener('window:keydown', ['$event'])
+  onKeyDown(ev: KeyboardEvent): void {
+    const tag = (ev.target as HTMLElement | null)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (ev.target as HTMLElement)?.isContentEditable) {
+      return;
+    }
+    if (!this.current() || !(ev.ctrlKey || ev.metaKey)) return;
+    const key = ev.key.toLowerCase();
+    if (key === 'c') {
+      this.copySelectedNode();
+    } else if (key === 'v') {
+      ev.preventDefault();
+      this.pasteNode();
+    } else if (key === 'z') {
+      ev.preventDefault();
+      ev.shiftKey ? this.redo() : this.undo();
+    } else if (key === 'y') {
+      ev.preventDefault();
+      this.redo();
+    }
   }
 
   // ── workflow lifecycle ────────────────────────────────────────────────────
@@ -206,6 +248,10 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
     this.runId.set(null);
     this.running.set(false);
     this.dirty.set(false);
+    this.undoStack = [];
+    this.redoStack = [];
+    this.canUndo.set(false);
+    this.canRedo.set(false);
     this.reattachRunningRun(wf.id);
     this.loadHistoricalOutputs(wf.id);
   }
@@ -308,7 +354,10 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   readonly expandedServers = signal<Set<string>>(new Set());
 
   nodesInCategory(cat: string): NodeTypeInfo[] {
-    return this.nodeTypes().filter((t) => t.category === cat);
+    const q = this.nodeSearch().trim().toLowerCase();
+    return this.nodeTypes().filter(
+      (t) => t.category === cat && (!q || t.label.toLowerCase().includes(q) || t.type.toLowerCase().includes(q)),
+    );
   }
 
   toggleCat(cat: string): void {
@@ -338,9 +387,11 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   /** MCP & custom tool nodes grouped by MCP server name (custom tools grouped
    *  under 'custom') — powers the two-level collapse in the palette. */
   readonly mcpGroups = computed(() => {
+    const q = this.nodeSearch().trim().toLowerCase();
     const groups = new Map<string, NodeTypeInfo[]>();
     for (const t of this.nodeTypes()) {
       if (t.category !== 'mcp') continue;
+      if (q && !t.label.toLowerCase().includes(q) && !t.type.toLowerCase().includes(q)) continue;
       const raw = t.type.replace(/^tool\./, '');
       let server: string;
       if (raw.startsWith('mcp__')) server = raw.split('__')[1] || 'mcp';
@@ -355,29 +406,129 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
       .sort((a, b) => a.server.localeCompare(b.server));
   });
 
+  private newNodeId(): string {
+    return `n${Date.now().toString(36)}${Math.floor(Math.random() * 1e3)}`;
+  }
+
+  private nextPosition(): { x: number; y: number } {
+    const count = this.nodes.length;
+    return { x: 80 + (count % 4) * 210, y: 80 + Math.floor(count / 4) * 120 };
+  }
+
   addNode(t: NodeTypeInfo): void {
     if (!this.current()) return;
-    const id = `n${Date.now().toString(36)}${Math.floor(Math.random() * 1e3)}`;
-    const count = this.nodes.length;
+    this.pushUndoSnapshot();
     const node: GraphNode = {
-      id,
+      id: this.newNodeId(),
       type: t.type,
       name: t.label,
       params: {},
-      position: { x: 80 + (count % 4) * 210, y: 80 + Math.floor(count / 4) * 120 },
+      position: this.nextPosition(),
     };
     this.nodes = [...this.nodes, node];
-    this.selectedNodeId.set(id);
+    this.selectedNodeId.set(node.id);
+    this.dirty.set(true);
+  }
+
+  /** Phase 30.c: a frontend-only annotation node — not a real node type (no
+   *  catalog entry, never wired to an edge), so the engine just marks it
+   *  'skipped' like any other unconnected node instead of failing to dispatch it. */
+  addComment(): void {
+    if (!this.current()) return;
+    this.pushUndoSnapshot();
+    const node: GraphNode = {
+      id: this.newNodeId(),
+      type: 'comment',
+      name: '',
+      params: { text: this.i18n.translate('gwf.commentDefault') },
+      position: this.nextPosition(),
+    };
+    this.nodes = [...this.nodes, node];
+    this.selectedNodeId.set(node.id);
     this.dirty.set(true);
   }
 
   deleteSelectedNode(): void {
     const id = this.selectedNodeId();
     if (!id) return;
+    this.pushUndoSnapshot();
     this.nodes = this.nodes.filter((n) => n.id !== id);
     this.edges = this.edges.filter((e) => e.source !== id && e.target !== id);
     this.selectedNodeId.set(null);
     this.dirty.set(true);
+  }
+
+  // ── copy / paste / undo / redo (Phase 30.c) ──────────────────────────────
+
+  copySelectedNode(): void {
+    const node = this.selectedNode();
+    if (!node) return;
+    this.clipboardNode = { ...node, params: node.params ? { ...node.params } : {} };
+  }
+
+  hasClipboard(): boolean {
+    return this.clipboardNode !== null;
+  }
+
+  pasteNode(): void {
+    if (!this.clipboardNode || !this.current()) return;
+    this.pushUndoSnapshot();
+    const src = this.clipboardNode;
+    const node: GraphNode = {
+      ...src,
+      id: this.newNodeId(),
+      name: src.name,
+      params: src.params ? { ...src.params } : {},
+      position: { x: (src.position?.x ?? 0) + 30, y: (src.position?.y ?? 0) + 30 },
+    };
+    this.nodes = [...this.nodes, node];
+    this.selectedNodeId.set(node.id);
+    this.dirty.set(true);
+  }
+
+  private snapshot(): { nodes: GraphNode[]; edges: GraphEdge[] } {
+    return {
+      nodes: this.nodes.map((n) => ({
+        ...n,
+        params: n.params ? { ...n.params } : n.params,
+        position: n.position ? { x: n.position.x, y: n.position.y } : n.position,
+      })),
+      edges: this.edges.map((e) => ({ ...e })),
+    };
+  }
+
+  private pushUndoSnapshot(): void {
+    this.undoStack.push(this.snapshot());
+    if (this.undoStack.length > this.MAX_HISTORY) this.undoStack.shift();
+    this.redoStack = [];
+    this.canUndo.set(true);
+    this.canRedo.set(false);
+  }
+
+  undo(): void {
+    const prev = this.undoStack.pop();
+    if (!prev) return;
+    this.redoStack.push(this.snapshot());
+    this.nodes = prev.nodes;
+    this.edges = prev.edges;
+    this.selectedNodeId.set(null);
+    this.selectedEdgeId.set(null);
+    this.dirty.set(true);
+    this.canUndo.set(this.undoStack.length > 0);
+    this.canRedo.set(true);
+  }
+
+  redo(): void {
+    const next = this.redoStack.pop();
+    if (!next) return;
+    this.undoStack.push(this.snapshot());
+    this.nodes = next.nodes;
+    this.edges = next.edges;
+    this.selectedNodeId.set(null);
+    this.selectedEdgeId.set(null);
+    this.dirty.set(true);
+    this.canRedo.set(this.redoStack.length > 0);
+    this.canUndo.set(true);
   }
 
   typeInfo(type: string): NodeTypeInfo | undefined {
@@ -385,6 +536,7 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   }
 
   outputsFor(node: GraphNode): string[] {
+    if (node.type === 'comment') return [];
     const outs = [...(this.typeInfo(node.type)?.outputs ?? ['main'])];
     // onError='branch' adds a dedicated 'error' handle to any non-trigger node.
     if (node.onError === 'branch' && !outs.includes('error') && this.typeInfo(node.type)?.inputs !== 0) {
@@ -450,6 +602,7 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
     ev.stopPropagation();
     this.selectedNodeId.set(node.id);
     this.dragNodeId = node.id;
+    this.pendingDragSnapshot = true;
     const p = this.toLocal(ev);
     this.dragOffset = { x: p.x - (node.position?.x ?? 0), y: p.y - (node.position?.y ?? 0) };
   }
@@ -466,6 +619,7 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
       this.pendingSource = null;
       return;
     }
+    this.pushUndoSnapshot();
     const edge: GraphEdge = {
       id: `e${Date.now().toString(36)}`,
       source: this.pendingSource.nodeId,
@@ -484,6 +638,10 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
     if (this.dragNodeId) {
       const node = this.nodes.find((n) => n.id === this.dragNodeId);
       if (node) {
+        if (this.pendingDragSnapshot) {
+          this.pushUndoSnapshot();
+          this.pendingDragSnapshot = false;
+        }
         node.position = { x: Math.round(p.x - this.dragOffset.x), y: Math.round(p.y - this.dragOffset.y) };
         this.nodes = [...this.nodes];
         this.dirty.set(true);
@@ -512,6 +670,7 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   deleteSelectedEdge(): void {
     const id = this.selectedEdgeId();
     if (!id) return;
+    this.pushUndoSnapshot();
     this.edges = this.edges.filter((e) => e.id !== id);
     this.selectedEdgeId.set(null);
     this.dirty.set(true);
@@ -633,7 +792,15 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   }
 
   paramsSchema(node: GraphNode) {
+    if (node.type === 'comment') {
+      return [{ name: 'text', label: this.i18n.translate('gwf.commentText'), kind: 'code' }];
+    }
     return this.typeInfo(node.type)?.params_schema ?? [];
+  }
+
+  commentPreview(node: GraphNode): string {
+    const text = String((node.params ?? {})['text'] ?? '');
+    return text.length > 26 ? text.slice(0, 26) + '…' : text;
   }
 
   // ── running ──────────────────────────────────────────────────────────────

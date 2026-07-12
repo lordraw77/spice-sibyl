@@ -116,6 +116,15 @@ class Settings(BaseSettings):
     # Hard cap on nodes per graph to bound a single run.
     graph_workflow_max_nodes: int = 200
 
+    # --- Phase 30: workflow hardening ---
+    # A schedule/event trigger auto-disables (and raises an in-app alert) after
+    # this many consecutive firing failures.
+    graph_workflow_trigger_max_failures: int = 5
+    # Max nodes executed concurrently within a single run wave.
+    graph_workflow_max_concurrent_nodes: int = 8
+    # A workflow raises an in-app alert after this many consecutive failed runs.
+    graph_workflow_run_failure_alert_threshold: int = 3
+
     # --- SMTP (notify.email workflow node) — leave host empty to disable ---
     smtp_host: str | None = None
     smtp_port: int = 587

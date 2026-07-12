@@ -512,6 +512,8 @@ CREATE TABLE IF NOT EXISTS workflow_triggers (
     next_run_at INTEGER,                               -- schedule: next fire time
     enabled     INTEGER NOT NULL DEFAULT 1,
     created_at  INTEGER NOT NULL,
+    fail_count  INTEGER NOT NULL DEFAULT 0,             -- Phase 30.b: consecutive firing failures
+    last_error  TEXT,                                   -- Phase 30.b: most recent firing error
     FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
 );
 
@@ -691,6 +693,9 @@ _MIGRATIONS = [
     # or graph nodes — flag them so the batch re-ingest can rebuild them. Idempotent:
     # once re-ingested `markdown` is populated and the row no longer matches.
     "UPDATE kb_documents SET needs_reingest = 1 WHERE markdown IS NULL",
+    # Phase 30.b: trigger resilience — auto-disable after N consecutive firing failures
+    "ALTER TABLE workflow_triggers ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE workflow_triggers ADD COLUMN last_error TEXT",
 ]
 
 

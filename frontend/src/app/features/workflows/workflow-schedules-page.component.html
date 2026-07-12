@@ -1,0 +1,157 @@
+<div class="schedules-page">
+  <header class="schedules-head">
+    <div>
+      <h1>{{ 'gws.title' | t }}</h1>
+      <p class="subtitle">{{ 'gws.subtitle' | t }}</p>
+    </div>
+    <div class="head-actions">
+      <button class="btn" (click)="refresh()">⟳ {{ 'gwr.refresh' | t }}</button>
+      <button class="btn primary" (click)="toggleForm()">＋ {{ 'gws.new' | t }}</button>
+      <a class="btn" routerLink="/graph-workflows">← {{ 'gwr.backToDesigner' | t }}</a>
+    </div>
+  </header>
+
+  <form class="new-trigger-form" *ngIf="formOpen()" (ngSubmit)="submit()">
+    <div class="form-row">
+      <label class="field">
+        <span>{{ 'gws.workflow' | t }}</span>
+        <select [(ngModel)]="formWorkflowId" name="workflowId" required>
+          <option value="">—</option>
+          <option *ngFor="let w of workflows()" [value]="w.id">{{ w.name }}</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>{{ 'gws.triggerKind' | t }}</span>
+        <select [(ngModel)]="formKind" name="kind">
+          <option value="schedule">{{ 'gws.kind.schedule' | t }}</option>
+          <option value="webhook">{{ 'gws.kind.webhook' | t }}</option>
+          <option value="event">{{ 'gws.kind.event' | t }}</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="inactive-warning" *ngIf="selectedWorkflowInactive()">
+      <span>{{ 'gws.workflowInactiveWarning' | t }}</span>
+      <button type="button" class="btn small" (click)="activateSelectedWorkflow()">{{ 'gwf.active' | t }}</button>
+    </div>
+
+    <!-- ── schedule: pattern picker ── -->
+    <ng-container *ngIf="formKind === 'schedule'">
+      <label class="field">
+        <span>{{ 'gws.pattern' | t }}</span>
+        <select [(ngModel)]="formPattern" name="pattern">
+          <option value="daily">{{ 'gws.pattern.daily' | t }}</option>
+          <option value="weekly">{{ 'gws.pattern.weekly' | t }}</option>
+          <option value="cron">{{ 'gws.pattern.cron' | t }}</option>
+          <option value="once">{{ 'gws.pattern.once' | t }}</option>
+        </select>
+      </label>
+
+      <div class="form-row" *ngIf="formPattern === 'daily' || formPattern === 'weekly' || formPattern === 'once'">
+        <label class="field" *ngIf="formPattern === 'once'">
+          <span>{{ 'gws.date' | t }}</span>
+          <input type="date" [(ngModel)]="formDate" name="date" [placeholder]="'gws.dateHint' | t" />
+        </label>
+        <label class="field">
+          <span>{{ 'gws.time' | t }}</span>
+          <input type="time" [(ngModel)]="formTime" name="time" required />
+        </label>
+      </div>
+
+      <div class="weekday-picker" *ngIf="formPattern === 'weekly'">
+        <button
+          type="button"
+          *ngFor="let d of weekdays"
+          class="weekday-chip"
+          [class.selected]="isWeekdaySelected(d)"
+          (click)="toggleWeekday(d)"
+        >
+          {{ 'gws.day.' + d | t }}
+        </button>
+      </div>
+
+      <div class="form-row" *ngIf="formPattern === 'cron'">
+        <label class="field">
+          <span>{{ 'gws.cronPreset' | t }}</span>
+          <select [(ngModel)]="formCronPreset" name="cronPreset" (ngModelChange)="onCronPresetChange()">
+            <option *ngFor="let p of cronPresets" [value]="p.value">{{ p.label | t }}</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>{{ 'gws.cronFree' | t }}</span>
+          <input [(ngModel)]="formCron" name="cron" placeholder="*/15 * * * *" required />
+        </label>
+      </div>
+    </ng-container>
+
+    <!-- ── event: event name ── -->
+    <label class="field" *ngIf="formKind === 'event'">
+      <span>{{ 'gws.eventName' | t }}</span>
+      <input [(ngModel)]="formEventName" name="eventName" placeholder="document.ingested" required />
+      <span class="hint">{{ 'gws.eventHint' | t }}</span>
+    </label>
+
+    <p class="hint" *ngIf="formKind === 'webhook'">{{ 'gws.webhookHint' | t }}</p>
+
+    <div class="form-actions">
+      <button type="button" class="btn" (click)="toggleForm()">{{ 'gws.cancel' | t }}</button>
+      <button type="submit" class="btn primary" [disabled]="saving()">{{ 'gws.create' | t }}</button>
+    </div>
+  </form>
+
+  <div class="schedules-list">
+    <table>
+      <thead>
+        <tr>
+          <th>{{ 'gwr.workflow' | t }}</th>
+          <th>{{ 'gwr.trigger' | t }}</th>
+          <th>{{ 'gws.nextRun' | t }}</th>
+          <th>{{ 'gws.lastRun' | t }}</th>
+          <th>{{ 'gws.fails' | t }}</th>
+          <th>{{ 'gws.enabled' | t }}</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let row of schedules()">
+          <td class="wf-name">
+            <a [routerLink]="['/graph-workflows']" [queryParams]="{ wf: row.workflow_id }">{{ row.workflow_name }}</a>
+            <button
+              type="button"
+              class="wf-active-toggle"
+              [class.on]="row.workflow_active"
+              (click)="toggleWorkflowActive(row)"
+              [title]="'gws.workflowActiveHint' | t"
+            >
+              {{ (row.workflow_active ? 'gwf.active' : 'gwf.inactive') | t }}
+            </button>
+          </td>
+          <td>{{ row.trigger_type }}</td>
+          <td>{{ nextRun(row) }}</td>
+          <td>
+            <span *ngIf="row.last_run_status" class="status-chip" [attr.data-status]="row.last_run_status">
+              {{ row.last_run_status }}
+            </span>
+            <span class="last-run-at">{{ lastRun(row) }}</span>
+          </td>
+          <td>
+            <span class="fail-count" [class.warn]="row.fail_count > 0">{{ row.fail_count }}</span>
+          </td>
+          <td>
+            <label class="toggle">
+              <input type="checkbox" [checked]="row.enabled" (change)="toggle(row)" />
+              <span>{{ row.enabled ? ('gws.enabled' | t) : ('gws.disabled' | t) }}</span>
+            </label>
+          </td>
+          <td class="row-actions">
+            <button class="btn small" (click)="runNow(row)">▶ {{ 'gwr.launch' | t }}</button>
+            <button class="icon-btn danger" (click)="remove(row)" [title]="'gws.delete' | t">🗑</button>
+          </td>
+        </tr>
+        <tr *ngIf="!schedules().length && !loading()">
+          <td colspan="7" class="empty">{{ 'gws.noSchedules' | t }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

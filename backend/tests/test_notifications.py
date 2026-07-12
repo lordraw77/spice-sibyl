@@ -17,6 +17,44 @@ async def test_event_allowed_default_and_opt_out():
     assert notification_service._event_allowed({"workflowDone": False}, "workflowDone") is False
 
 
+def test_chunk_text_splits_long_messages_on_line_boundaries():
+    short = "hello"
+    assert notification_service._chunk_text(short) == [short]
+
+    long_text = "line %d\n" % 0 + "\n".join(f"line {i} " + "x" * 100 for i in range(1, 80))
+    chunks = notification_service._chunk_text(long_text, limit=500)
+    assert len(chunks) > 1
+    assert all(len(c) <= 500 for c in chunks)
+    assert "".join(chunks) == long_text
+
+
+@pytest.mark.anyio
+async def test_notify_telegram_sends_long_text_in_multiple_chunks(monkeypatch):
+    class _FakeBot:
+        def __init__(self):
+            self.calls = []
+
+        async def send_message(self, chat_id, text, parse_mode=None):
+            self.calls.append((chat_id, text, parse_mode))
+
+    from app.telegram import bot as telegram_bot
+
+    fake_bot = _FakeBot()
+    monkeypatch.setattr(telegram_bot, "get_bot", lambda: fake_bot)
+    monkeypatch.setattr(telegram_bot, "is_notify_enabled", lambda chat_id: True)
+
+    async for db in get_db():
+        profile = await profile_repository.create_profile(db, "notif-long-profile", user_id="notif-long-user")
+        await telegram_link_repository.link(db, telegram_id=555111222, profile_id=profile.id)
+
+        long_text = "\n".join(f"line {i} " + "x" * 100 for i in range(60))
+        await notification_service.notify_telegram(db, profile.id, "workflowDone", long_text)
+
+        assert len(fake_bot.calls) > 1
+        assert "".join(c[1] for c in fake_bot.calls) == long_text
+        assert all(c[0] == 555111222 for c in fake_bot.calls)
+
+
 @pytest.mark.anyio
 async def test_notify_telegram_noop_without_link():
     # No telegram_links row for this profile → silent no-op, no exception.

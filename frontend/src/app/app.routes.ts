@@ -87,6 +87,15 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'graph-workflows/schedules',
+    canActivate: [authGuard, featureGuard],
+    data: { feature: 'graph_workflows' },
+    loadComponent: () =>
+      import('./features/workflows/workflow-schedules-page.component').then(
+        (m) => m.WorkflowSchedulesPageComponent
+      ),
+  },
+  {
     path: 'graph-workflows',
     canActivate: [authGuard, featureGuard],
     data: { feature: 'graph_workflows' },

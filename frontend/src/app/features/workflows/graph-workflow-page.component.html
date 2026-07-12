@@ -25,6 +25,16 @@
     </div>
   </header>
 
+  <div class="gwf-toolbar" *ngIf="current()">
+    <button class="icon-btn" [disabled]="!canUndo()" (click)="undo()" [title]="'gwf.undo' | t">↶</button>
+    <button class="icon-btn" [disabled]="!canRedo()" (click)="redo()" [title]="'gwf.redo' | t">↷</button>
+    <span class="toolbar-sep"></span>
+    <button class="icon-btn" [disabled]="!selectedNode()" (click)="copySelectedNode()" [title]="'gwf.copyNode' | t">⧉</button>
+    <button class="icon-btn" [disabled]="!hasClipboard()" (click)="pasteNode()" [title]="'gwf.pasteNode' | t">📋</button>
+    <span class="toolbar-sep"></span>
+    <button class="btn small" (click)="addComment()" [title]="'gwf.addComment' | t">🗒 {{ 'gwf.addComment' | t }}</button>
+  </div>
+
   <div class="gwf-body">
     <!-- ── left: workflow list + palette ─────────────────────── -->
     <aside class="gwf-side">
@@ -84,6 +94,12 @@
           </button>
         </div>
         <div *ngIf="paletteOpen()">
+          <input
+            class="palette-search"
+            [ngModel]="nodeSearch()"
+            (ngModelChange)="nodeSearch.set($event)"
+            [placeholder]="'gwf.searchNodes' | t"
+          />
           <div *ngFor="let cat of categories" class="palette-group">
             <button class="palette-cat" (click)="toggleCat(cat)">
               <span class="cat-caret">{{ isCatCollapsed(cat) ? '▸' : '▾' }}</span>
@@ -100,7 +116,7 @@
                     <span class="subcat-count">{{ g.nodes.length }}</span>
                   </button>
                   <button
-                    *ngFor="let t of (isServerExpanded(g.server) ? g.nodes : [])"
+                    *ngFor="let t of (isServerExpanded(g.server) || nodeSearch() ? g.nodes : [])"
                     class="palette-node nested"
                     [attr.data-cat]="'mcp'"
                     (click)="addNode(t)"
@@ -171,16 +187,22 @@
             [attr.height]="NODE_H"
             rx="10"
             class="node-box"
-            [attr.data-cat]="typeInfo(n.type)?.category"
+            [attr.data-cat]="n.type === 'comment' ? 'comment' : typeInfo(n.type)?.category"
             (mousedown)="startDrag(n, $event)"
             (click)="$event.stopPropagation()"
           />
-          <text [attr.x]="12" [attr.y]="24" class="node-title">{{ n.name || n.type }}</text>
-          <text [attr.x]="12" [attr.y]="42" class="node-type">{{ n.type }}</text>
+          <ng-container *ngIf="n.type !== 'comment'; else commentText">
+            <text [attr.x]="12" [attr.y]="24" class="node-title">{{ n.name || n.type }}</text>
+            <text [attr.x]="12" [attr.y]="42" class="node-type">{{ n.type }}</text>
+          </ng-container>
+          <ng-template #commentText>
+            <text [attr.x]="12" [attr.y]="24" class="node-comment-icon">🗒</text>
+            <text [attr.x]="30" [attr.y]="24" class="node-comment-text">{{ commentPreview(n) }}</text>
+          </ng-template>
 
           <!-- input handle -->
           <circle
-            *ngIf="typeInfo(n.type)?.inputs !== 0"
+            *ngIf="n.type !== 'comment' && typeInfo(n.type)?.inputs !== 0"
             [attr.cx]="0"
             [attr.cy]="NODE_H / 2"
             [attr.r]="HANDLE_R"
@@ -268,11 +290,11 @@
           <span>{{ 'gwf.inspector' | t }}</span>
           <button class="icon-btn danger" (click)="deleteSelectedNode()">🗑</button>
         </div>
-        <label class="field">
+        <label class="field" *ngIf="node.type !== 'comment'">
           <span>{{ 'gwf.nodeName' | t }}</span>
           <input [(ngModel)]="node.name" (ngModelChange)="dirty.set(true)" />
         </label>
-        <div class="node-kind">
+        <div class="node-kind" *ngIf="node.type !== 'comment'">
           {{ node.type }}
           <span class="node-id" [title]="'gwf.nodeIdHint' | t">· $node.{{ node.id }}</span>
         </div>
@@ -299,6 +321,23 @@
             </option>
             <option *ngFor="let w of selectableWorkflows()" [value]="w.id">{{ w.name }}</option>
           </select>
+          <select
+            *ngIf="p.kind === 'model-chain'"
+            [ngModel]="paramValue(node, p.name)"
+            (ngModelChange)="setParam(node, p.name, $event, 'text')"
+            [title]="p.hint || ''"
+          >
+            <option value="">—</option>
+            <option *ngFor="let name of failoverChainNames()" [value]="name">{{ name }}</option>
+          </select>
+          <select
+            *ngIf="p.kind === 'select'"
+            [ngModel]="paramValue(node, p.name)"
+            (ngModelChange)="setParam(node, p.name, $event, 'text')"
+            [title]="p.hint || ''"
+          >
+            <option *ngFor="let opt of p.options" [value]="opt">{{ opt || '—' }}</option>
+          </select>
           <textarea
             *ngIf="p.kind === 'code' || p.kind === 'json' || p.kind === 'expression'"
             rows="3"
@@ -315,7 +354,7 @@
           />
         </div>
 
-        <details class="advanced">
+        <details class="advanced" *ngIf="node.type !== 'comment'">
           <summary>{{ 'gwf.advanced' | t }}</summary>
           <label class="field">
             <span>{{ 'gwf.retry' | t }}</span>

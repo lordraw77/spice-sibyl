@@ -538,6 +538,7 @@ export class NavbarComponent {
         { label: 'nav.workflows', route: '/workflows', icon: ICONS.workflow, feature: 'workflows' },
         { label: 'nav.graphWorkflows', route: '/graph-workflows', icon: ICONS.workflow, feature: 'graph_workflows' },
         { label: 'nav.graphWorkflowRuns', route: '/graph-workflows/runs', icon: ICONS.workflow, feature: 'graph_workflows' },
+        { label: 'nav.graphWorkflowSchedules', route: '/graph-workflows/schedules', icon: ICONS.workflow, feature: 'graph_workflows' },
         { label: 'nav.reminders', route: '/reminders', icon: ICONS.reminders, feature: 'reminders' },
         { label: 'nav.mcp', route: '/mcp', icon: ICONS.mcp, adminOnly: true, feature: 'mcp' },
         { label: 'nav.workspaces', route: '/workspaces', icon: ICONS.workspace, feature: 'workspaces' },

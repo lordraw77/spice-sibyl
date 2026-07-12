@@ -237,6 +237,40 @@ interface ProviderModels {
         <p class="section-desc" *ngIf="catalogLoaded() && catalog().length === 0">
           {{ 'settings.models.empty' | t }}
         </p>
+
+        <h3 class="subsection-head">{{ 'settings.failover.title' | t }}</h3>
+        <p class="section-desc">{{ 'settings.failover.desc' | t }}</p>
+        <ul class="chain-list">
+          <li class="chain-row" *ngFor="let row of failoverChains(); let i = index; trackBy: trackByIndex">
+            <div class="chain-row-top">
+              <input
+                class="chain-name"
+                type="text"
+                [ngModel]="row.name"
+                (ngModelChange)="updateFailoverChainName(i, $event)"
+                [placeholder]="'settings.failover.namePlaceholder' | t"
+              />
+              <button class="btn ghost small" (click)="removeFailoverChain(i)">✕</button>
+            </div>
+            <div class="chain-models-chips">
+              <span class="model-chip" *ngFor="let modelId of row.models">
+                {{ modelLabel(modelId) }}
+                <button type="button" (click)="removeModelFromChain(i, modelId)">✕</button>
+              </span>
+            </div>
+            <select
+              class="chain-add-model"
+              [ngModel]="failoverChainDraftModel()[i]"
+              (ngModelChange)="setDraftModel(i, $event); addModelToChain(i)"
+            >
+              <option value="">{{ 'settings.failover.addModel' | t }}</option>
+              <option *ngFor="let m of availableModelsForChain(i)" [value]="m.id">{{ m.label || m.id }}</option>
+            </select>
+          </li>
+        </ul>
+        <button class="btn ghost small" (click)="addFailoverChain()">
+          {{ 'settings.failover.add' | t }}
+        </button>
       </section>
 
       <!-- Runtime configuration tab (admin, read-only) -->
@@ -398,6 +432,33 @@ interface ProviderModels {
       .config-default {
         color: var(--text-secondary); font-size: 0.75rem; word-break: break-all;
       }
+      .subsection-head { margin: 1.5rem 0 0.35rem; font-size: 1rem; }
+      .chain-list { list-style: none; margin: 0 0 0.6rem; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+      .chain-row {
+        display: flex; flex-direction: column; gap: 0.5rem;
+        padding: 0.6rem 0.7rem; border: 1px solid var(--border); border-radius: 10px;
+        background: var(--bg-secondary);
+      }
+      .chain-row-top { display: flex; gap: 0.5rem; align-items: center; }
+      .chain-name {
+        flex: 1 1 auto; padding: 0.4rem 0.6rem; border-radius: 8px;
+        border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary);
+      }
+      .chain-models-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; min-height: 1.6rem; }
+      .model-chip {
+        display: inline-flex; align-items: center; gap: 0.35rem;
+        padding: 0.2rem 0.3rem 0.2rem 0.6rem; border-radius: 999px;
+        border: 1px solid var(--accent); color: var(--accent); font-size: 0.78rem;
+      }
+      .model-chip button {
+        border: none; background: transparent; color: inherit; cursor: pointer;
+        font-size: 0.7rem; line-height: 1; padding: 0.15rem;
+      }
+      .chain-add-model {
+        align-self: flex-start; padding: 0.35rem 0.6rem; border-radius: 8px;
+        border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary);
+        font-size: 0.82rem;
+      }
     `,
   ],
 })
@@ -452,6 +513,13 @@ export class SettingsPageComponent implements OnInit {
   readonly selection = signal<Set<string>>(new Set());
   private baselineSelection = new Set<string>();
 
+  // --- LLM failover chains (Phase 31.c) ---
+  readonly failoverChains = signal<{ name: string; models: string[] }[]>([]);
+  /** Per-row "add model" picker draft (kept out of the row itself so picking
+   *  doesn't need to touch/re-render the whole row array). */
+  readonly failoverChainDraftModel = signal<string[]>([]);
+  private baselineFailoverChains: Record<string, string[]> = {};
+
   /** Baseline (effective) map to compare against for the dirty check. */
   private baseline: Record<string, boolean> = {};
 
@@ -488,7 +556,18 @@ export class SettingsPageComponent implements OnInit {
     return false;
   });
 
-  readonly dirty = computed(() => this.featuresDirty() || this.selectionDirty());
+  readonly failoverChainsDirty = computed(() => {
+    const current = this.chainsAsRecord(this.failoverChains());
+    const baseline = this.baselineFailoverChains;
+    const currentKeys = Object.keys(current);
+    const baselineKeys = Object.keys(baseline);
+    if (currentKeys.length !== baselineKeys.length) return true;
+    return currentKeys.some((k) => JSON.stringify(current[k]) !== JSON.stringify(baseline[k]));
+  });
+
+  readonly dirty = computed(
+    () => this.featuresDirty() || this.selectionDirty() || this.failoverChainsDirty(),
+  );
 
   /** Save/reset only apply to the admin draft tabs; the per-user tabs persist
    *  immediately and the config tab is read-only. */
@@ -506,6 +585,7 @@ export class SettingsPageComponent implements OnInit {
     if (this.isAdmin) {
       this.loadCatalog();
       this.loadConfig();
+      this.loadFailoverChains();
     }
   }
 
@@ -528,7 +608,7 @@ export class SettingsPageComponent implements OnInit {
 
   /** Unsaved-changes marker on the tab labels. */
   tabDirty(id: TabId): boolean {
-    if (id === 'catalog') return this.selectionDirty();
+    if (id === 'catalog') return this.selectionDirty() || this.failoverChainsDirty();
     const rows = FEATURE_TABS[id];
     if (!rows) return false;
     const d = this.draft();
@@ -559,6 +639,79 @@ export class SettingsPageComponent implements OnInit {
       .finally(() => this.catalogLoaded.set(true));
   }
 
+  private loadFailoverChains(): void {
+    this.features
+      .modelFailoverChains()
+      .then((chains) => {
+        this.baselineFailoverChains = chains;
+        const rows = Object.entries(chains).map(([name, models]) => ({ name, models: [...models] }));
+        this.failoverChains.set(rows);
+        this.failoverChainDraftModel.set(rows.map(() => ''));
+      })
+      .catch(() => {});
+  }
+
+  /** {name, models} rows → the {name: [modelId, ...]} shape the API expects,
+   *  dropping blank names/rows. */
+  private chainsAsRecord(rows: { name: string; models: string[] }[]): Record<string, string[]> {
+    const out: Record<string, string[]> = {};
+    for (const row of rows) {
+      const name = row.name.trim();
+      if (!name || !row.models.length) continue;
+      out[name] = row.models;
+    }
+    return out;
+  }
+
+  /** Stable per-row identity for *ngFor so editing one row's fields doesn't
+   *  recreate every row's DOM (which would drop input focus on each keystroke). */
+  trackByIndex(index: number): number {
+    return index;
+  }
+
+  addFailoverChain(): void {
+    this.failoverChains.update((rows) => [...rows, { name: '', models: [] }]);
+    this.failoverChainDraftModel.update((drafts) => [...drafts, '']);
+  }
+
+  removeFailoverChain(index: number): void {
+    this.failoverChains.update((rows) => rows.filter((_, i) => i !== index));
+    this.failoverChainDraftModel.update((drafts) => drafts.filter((_, i) => i !== index));
+  }
+
+  updateFailoverChainName(index: number, name: string): void {
+    this.failoverChains.update((rows) => rows.map((r, i) => (i === index ? { ...r, name } : r)));
+  }
+
+  /** Model ids already used in a chain, offered as options to add next. */
+  availableModelsForChain(index: number): CatalogModel[] {
+    const used = new Set(this.failoverChains()[index]?.models ?? []);
+    return this.catalog().filter((m) => !used.has(m.id));
+  }
+
+  setDraftModel(index: number, modelId: string): void {
+    this.failoverChainDraftModel.update((drafts) => drafts.map((d, i) => (i === index ? modelId : d)));
+  }
+
+  addModelToChain(index: number): void {
+    const modelId = this.failoverChainDraftModel()[index];
+    if (!modelId) return;
+    this.failoverChains.update((rows) =>
+      rows.map((r, i) => (i === index && !r.models.includes(modelId) ? { ...r, models: [...r.models, modelId] } : r)),
+    );
+    this.setDraftModel(index, '');
+  }
+
+  removeModelFromChain(index: number, modelId: string): void {
+    this.failoverChains.update((rows) =>
+      rows.map((r, i) => (i === index ? { ...r, models: r.models.filter((m) => m !== modelId) } : r)),
+    );
+  }
+
+  modelLabel(modelId: string): string {
+    return this.catalog().find((m) => m.id === modelId)?.label || modelId;
+  }
+
   private hydrateFromService(): void {
     const map: Record<string, boolean> = {};
     for (const k of FEATURE_KEYS) {
@@ -575,6 +728,12 @@ export class SettingsPageComponent implements OnInit {
   reset(): void {
     this.draft.set({ ...this.baseline });
     this.selection.set(new Set(this.baselineSelection));
+    const rows = Object.entries(this.baselineFailoverChains).map(([name, models]) => ({
+      name,
+      models: [...models],
+    }));
+    this.failoverChains.set(rows);
+    this.failoverChainDraftModel.set(rows.map(() => ''));
   }
 
   isSelected(id: string): boolean {
@@ -623,6 +782,14 @@ export class SettingsPageComponent implements OnInit {
       jobs.push(
         this.features.saveModelSelection(selected).then(() => {
           this.baselineSelection = new Set(selected);
+        }),
+      );
+    }
+    if (this.failoverChainsDirty()) {
+      const chains = this.chainsAsRecord(this.failoverChains());
+      jobs.push(
+        this.features.saveModelFailoverChains(chains).then(() => {
+          this.baselineFailoverChains = chains;
         }),
       );
     }

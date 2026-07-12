@@ -27,6 +27,7 @@ from app.db import kb_repository as repo
 from app.db.database import get_db
 from app.dependencies.auth import resolve_profile
 from app.core.config import settings
+from app.services import workflow_graph_service as engine
 from app.schemas.knowledge import (
     CommunityBuildResult,
     GlobalSearchRequest,
@@ -105,6 +106,9 @@ async def upload_document(
     doc = await repo.get_document(db, doc_id)
     if not doc:
         raise HTTPException(status_code=500, detail="Document vanished after ingestion.")
+    # Phase 30.b: notify 'document.ingested' event-trigger workflows. Best-effort —
+    # dispatch_event isolates its own failures, never disrupts the upload response.
+    await engine.dispatch_event("document.ingested", {"doc_id": doc_id, "filename": filename, "profile_id": pid})
     return doc
 
 
@@ -150,6 +154,7 @@ async def ingest_url(
     doc = await repo.get_document(db, doc_id)
     if not doc:
         raise HTTPException(status_code=500, detail="Document vanished after ingestion.")
+    await engine.dispatch_event("document.ingested", {"doc_id": doc_id, "filename": label, "profile_id": pid})
     return doc
 
 

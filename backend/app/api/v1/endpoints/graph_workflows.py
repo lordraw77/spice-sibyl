@@ -3,6 +3,7 @@ Phase 29 — visual node-graph workflow endpoints.
 
 Protected routes (under /v1/graph-workflows):
   GET    /node-types           — palette catalog (static nodes + tool.* nodes)
+  GET    /schedules            — cross-workflow schedules overview (all triggers + last run)
   GET    /                     — list the profile's workflows
   POST   /                     — create a workflow
   GET    /{id}                 — one workflow (+ triggers)
@@ -28,12 +29,18 @@ Public route (no auth), mounted separately:
 """
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
+import re
+import secrets
 import time
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import aiosqlite
+from croniter import croniter
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
@@ -52,6 +59,7 @@ from app.schemas.graph_workflows import (
     GraphWorkflowUpdate,
     NodeTypeInfo,
     RunTriggerIn,
+    WorkflowScheduleOut,
     WorkflowTriggerCreate,
     WorkflowTriggerOut,
 )
@@ -91,6 +99,17 @@ async def list_examples():
     """Curated, one-click-importable graph workflows. Static path declared before
     the dynamic ``/{wf_id}`` route so it isn't swallowed by it."""
     return list_graph_workflow_examples()
+
+
+@router.get("/schedules", response_model=list[WorkflowScheduleOut])
+async def list_schedules(
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+):
+    """Cross-workflow schedules overview (Phase 30.e): every trigger of every
+    workflow owned by the profile, with its next run and last run status —
+    static path declared before ``/{wf_id}`` so it isn't swallowed by it."""
+    return await repo.list_schedules_for_profile(db, profile_id)
 
 
 # ── run registry (profile-wide) ─────────────────────────────────────────────
@@ -404,14 +423,87 @@ async def create_trigger(
     return trigger
 
 
+_HHMM_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
+_WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+def _parse_hhmm(value: str | None) -> tuple[int, int]:
+    m = _HHMM_RE.match(str(value or "").strip())
+    if not m:
+        raise HTTPException(status_code=400, detail="'time' must be HH:MM")
+    hour, minute = int(m.group(1)), int(m.group(2))
+    if hour > 23 or minute > 59:
+        raise HTTPException(status_code=400, detail="'time' must be HH:MM")
+    return hour, minute
+
+
+def _next_weekday_at(now: datetime, weekday: str, hour: int, minute: int) -> datetime:
+    candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    days_ahead = (_WEEKDAYS.index(weekday) - now.weekday()) % 7
+    candidate += timedelta(days=days_ahead)
+    if candidate <= now:
+        candidate += timedelta(days=7)
+    return candidate
+
+
 def _resolve_schedule(config: dict) -> tuple[int | None, dict]:
     """Normalise a schedule trigger config into ``recurrence`` + ``next_run_at``.
 
-    Accepts either a natural-language ``text`` (parsed via reminder_parsing) or an
-    explicit ``recurrence`` (once|daily|weekly:..|cron:..). Reuses the Phase 23.d
-    parser so cron/RRULE/NL support comes for free.
+    Phase 30.f — the Schedules page builds a structured ``pattern``
+    (daily|weekly|cron|once) instead of free natural language, so the picked
+    day/time or cron expression is honoured exactly (the old ``text``/
+    ``recurrence`` fields — used by the designer's quick-add and the API —
+    still work unchanged for backward compatibility).
     """
     tz = ZoneInfo(getattr(settings, "timezone", None) or "UTC")
+    now = datetime.now(tz)
+    pattern = config.get("pattern")
+
+    if pattern == "daily":
+        hour, minute = _parse_hhmm(config.get("time"))
+        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if target <= now:
+            target += timedelta(days=1)
+        return int(target.timestamp()), {**config, "recurrence": "daily"}
+
+    if pattern == "weekly":
+        hour, minute = _parse_hhmm(config.get("time"))
+        weekdays = [d for d in (config.get("weekdays") or []) if d in _WEEKDAYS]
+        if not weekdays:
+            raise HTTPException(status_code=400, detail="'weekdays' must include at least one day")
+        candidates = [_next_weekday_at(now, d, hour, minute) for d in weekdays]
+        recurrence = "weekly:" + ",".join(weekdays)
+        return int(min(candidates).timestamp()), {**config, "recurrence": recurrence}
+
+    if pattern == "cron":
+        expr = str(config.get("cron") or "").strip()
+        fields = expr.split()
+        if len(fields) != 5:
+            raise HTTPException(status_code=400, detail="'cron' must have 5 space-separated fields")
+        try:
+            nxt = croniter(expr, now).get_next(datetime)
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail=f"invalid cron expression: {exc}") from None
+        return int(nxt.timestamp()), {**config, "recurrence": "cron:" + ",".join(fields)}
+
+    if pattern == "once":
+        hour, minute = _parse_hhmm(config.get("time"))
+        date_str = config.get("date")
+        if date_str:
+            try:
+                target = datetime.strptime(str(date_str), "%Y-%m-%d").replace(
+                    hour=hour, minute=minute, second=0, microsecond=0, tzinfo=tz,
+                )
+            except ValueError:
+                raise HTTPException(status_code=400, detail="'date' must be YYYY-MM-DD") from None
+        else:
+            target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if target <= now:
+                target += timedelta(days=1)
+        return int(target.timestamp()), {**config, "recurrence": "once"}
+
+    # Legacy fallback: natural-language `text` (designer's quick-add) or an
+    # explicit compact `recurrence` string, as accepted since Phase 29.b.
     text = config.get("text")
     if text:
         parsed = reminder_parsing.parse_recurrence_and_when(str(text), tz)
@@ -455,6 +547,25 @@ async def delete_trigger(
     await repo.delete_trigger(db, tid)
 
 
+@router.post("/triggers/{tid}/rotate-secret")
+async def rotate_webhook_secret(
+    tid: str,
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+):
+    """Generate (or replace) the HMAC secret for a webhook trigger. Returned only
+    once here — the caller must copy it into whatever sends the webhook (an
+    `X-Signature: sha256=<hex hmac of the raw body>` header). Clearing signature
+    enforcement is done by calling this with an empty body (no secret stored)."""
+    trigger = await _owned_trigger(db, tid, profile_id)
+    if trigger.type != "webhook":
+        raise HTTPException(status_code=400, detail="Not a webhook trigger")
+    secret = secrets.token_urlsafe(32)
+    config = {**trigger.config, "secret": secret}
+    await repo.update_trigger_config(db, tid, config)
+    return {"secret": secret}
+
+
 async def _owned_trigger(db: aiosqlite.Connection, tid: str, profile_id: str) -> WorkflowTriggerOut:
     trigger = await repo.get_trigger(db, tid)
     if not trigger:
@@ -470,15 +581,29 @@ async def _owned_trigger(db: aiosqlite.Connection, tid: str, profile_id: str) ->
 @public_router.post("/hooks/{token}")
 async def webhook(token: str, request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """Public token-scoped webhook. Fires the workflow if its trigger is enabled
-    and the workflow is active. The JSON body becomes ``$trigger``."""
+    and the workflow is active. The JSON body becomes ``$trigger``.
+
+    If the trigger's config has a ``secret`` (set via the rotate-secret endpoint),
+    the request must carry a matching ``X-Signature: sha256=<hex hmac of the raw
+    body>`` header — a missing/incorrect signature is rejected before the body is
+    ever parsed or the workflow runs."""
     trigger = await repo.get_trigger_by_token(db, token)
     if not trigger or not trigger.enabled:
         raise HTTPException(status_code=404, detail="Unknown webhook")
     wf = await repo.get_workflow(db, trigger.workflow_id)
     if not wf or not wf.active:
         raise HTTPException(status_code=404, detail="Workflow not active")
+
+    raw_body = await request.body()
+    secret = trigger.config.get("secret")
+    if secret:
+        signature = request.headers.get("x-signature", "")
+        expected = "sha256=" + hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            raise HTTPException(status_code=401, detail="Invalid signature")
+
     try:
-        payload = await request.json()
+        payload = json.loads(raw_body) if raw_body else {}
     except Exception:
         payload = {}
     if not isinstance(payload, dict):

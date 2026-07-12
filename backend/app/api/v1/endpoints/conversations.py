@@ -13,6 +13,7 @@ Profile identity is conveyed via the X-Profile-ID request header.
 Missing or empty header falls back to 'default'.
 """
 
+import asyncio
 import json
 import time
 
@@ -28,6 +29,10 @@ from app.db import tag_repository as tag_repo
 from app.db.database import get_db
 from app.dependencies.auth import get_current_user, resolve_profile
 from app.schemas.auth import UserOut
+from app.services import workflow_graph_service as engine
+
+# Fire-and-forget task refs (Phase 30.b event dispatch) so they aren't GC'd mid-flight.
+_background_tasks: set[asyncio.Task] = set()
 from app.schemas.conversations import (
     AppendMessagesRequest,
     Conversation,
@@ -217,6 +222,17 @@ async def append_messages(
 
     if body.memory and any(m.role == "assistant" for m in body.messages):
         memory_service.schedule_extraction(profile_id, body.messages, conversation_id)
+
+    # Phase 30.b: fire-and-forget event trigger for graph workflows listening on
+    # 'chat.message.created' (mirrors the memory-extraction background pattern above).
+    _background_tasks.add(
+        asyncio.get_event_loop().create_task(
+            engine.dispatch_event(
+                "chat.message.created",
+                {"conversation_id": conversation_id, "profile_id": profile_id},
+            )
+        )
+    )
 
     if prior_count == 0:
         user_text = next(

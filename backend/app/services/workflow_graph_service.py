@@ -34,6 +34,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 
 import aiosqlite
@@ -50,6 +51,7 @@ _TOOL_RESULT_MAX_CHARS = 12000
 _MAX_LOOP_ITERATIONS = 1000
 _MAX_SUBWORKFLOW_DEPTH = 5
 _HTTP_MAX_TIMEOUT = 120.0
+_WAIT_MAX_SECONDS = 3600.0
 _SCHEDULE_POLL_SECONDS = 20
 _ENV_WHITELIST_PREFIX = "WF_"  # only WF_*-prefixed env vars are exposed as $env
 
@@ -192,6 +194,7 @@ async def _execute(
 
         nodes: dict[str, GraphNode] = {n.id: n for n in graph.nodes}
         edges = graph.edges
+        node_semaphore = asyncio.Semaphore(max(1, settings.graph_workflow_max_concurrent_nodes))
 
         # Incoming/outgoing adjacency.
         incoming: dict[str, list] = {nid: [] for nid in nodes}
@@ -306,16 +309,17 @@ async def _execute(
                 break
 
             async def _wrap(nid: str):
-                node = nodes[nid]
-                if node.type in _LOOP_TYPES:
-                    body_ids, entry_ids = loop_body(nid)
-                    outcome = await _run_loop_node(
-                        db, run_id, profile_id, node, nodes, incoming, outgoing,
-                        ctx, primary_input(nid), body_ids, entry_ids,
-                    )
-                    return nid, outcome
-                node_input = all_live_inputs(nid) if node.type == "merge" else primary_input(nid)
-                return nid, await _run_node(db, run_id, profile_id, node, node_input, ctx)
+                async with node_semaphore:
+                    node = nodes[nid]
+                    if node.type in _LOOP_TYPES:
+                        body_ids, entry_ids = loop_body(nid)
+                        outcome = await _run_loop_node(
+                            db, run_id, profile_id, node, nodes, incoming, outgoing,
+                            ctx, primary_input(nid), body_ids, entry_ids,
+                        )
+                        return nid, outcome
+                    node_input = all_live_inputs(nid) if node.type == "merge" else primary_input(nid)
+                    return nid, await _run_node(db, run_id, profile_id, node, node_input, ctx)
 
             results = await asyncio.gather(*(_wrap(nid) for nid in runnable), return_exceptions=True)
 
@@ -359,6 +363,8 @@ async def _execute(
         _publish(run_id, {"kind": "run", "status": final_status, "error": run_error})
         _publish(run_id, {"kind": "done"})
         logger.info("Graph run %s finished: %s", run_id, final_status)
+        if run_error:
+            await _maybe_alert_recurring_failures(db, run_id, profile_id)
 
     except asyncio.CancelledError:
         await repo.set_run_status(db, run_id, "cancelled")
@@ -372,6 +378,39 @@ async def _execute(
         _publish(run_id, {"kind": "done"})
     finally:
         await db.close()
+
+
+async def _maybe_alert_recurring_failures(db: aiosqlite.Connection, run_id: str, profile_id: str) -> None:
+    """Raise an in-app alert the moment a workflow's consecutive-failure streak
+    first reaches the configured threshold (no dedicated counter column — derived
+    from the recent run history so it doesn't re-notify on every failure after)."""
+    try:
+        run = await repo.get_run(db, run_id)
+        if run is None:
+            return
+        threshold = settings.graph_workflow_run_failure_alert_threshold
+        if threshold <= 0:
+            return
+        recent = await repo.list_runs(db, run.workflow_id, limit=threshold + 1)
+        # Fire exactly once: the newest `threshold` runs are all failures, and
+        # either there's no older run or it wasn't a failure (streak just started).
+        streak_just_reached = (
+            len(recent) >= threshold
+            and all(r.status == "failed" for r in recent[:threshold])
+            and (len(recent) == threshold or recent[threshold].status != "failed")
+        )
+        if streak_just_reached:
+            from app.services import notification_service
+
+            wf = await repo.get_workflow(db, run.workflow_id)
+            name = wf.name if wf else run.workflow_id
+            await notification_service.notify_web(
+                db, profile_id, "workflow",
+                "Workflow in errore ripetuto",
+                f"Il workflow '{name}' ha fallito {threshold} esecuzioni consecutive.",
+            )
+    except Exception:  # noqa: BLE001 — alerting must never break run completion
+        logger.exception("failed to check recurring-failure alert for run %s", run_id)
 
 
 def _ctx_snapshot(ctx: dict) -> dict:
@@ -591,6 +630,15 @@ async def _dispatch(
     if ntype == "code":
         return await _exec_code(params, node_input, ctx), ["main"]
 
+    if ntype == "wait":
+        return await _exec_wait(params), ["main"]
+
+    if ntype == "aggregate":
+        return _exec_aggregate(params, node_input), ["main"]
+
+    if ntype == "batch":
+        return _exec_batch(params, node_input), ["main"]
+
     if ntype == "http.request":
         return await _exec_http_request(params), ["main"]
 
@@ -610,7 +658,7 @@ async def _dispatch(
         return await _exec_notify_inapp(db, profile_id, params), ["main"]
 
     if ntype == "llm.completion":
-        return await _exec_llm_completion(profile_id, params), ["main"]
+        return await _exec_llm_completion(db, profile_id, params), ["main"]
 
     if ntype == "llm.agent":
         return await _exec_llm_agent(db, profile_id, params), ["main"]
@@ -676,6 +724,85 @@ async def _exec_code(params: dict, node_input, ctx: dict) -> dict:
     )
     out = await python_exec(wrapper)
     return {"stdout": out}
+
+
+async def _exec_wait(params: dict) -> dict:
+    """Suspend the node for a fixed duration or until a point in time.
+
+    ``seconds`` sleeps that many seconds; ``until`` accepts a unix timestamp
+    (number) or an ISO-8601 string and sleeps the remaining delta. Either way
+    the effective delay is capped at ``_WAIT_MAX_SECONDS`` so a mistyped date
+    (or a distant one) can't hang a run indefinitely.
+    """
+    until = params.get("until")
+    if until not in (None, ""):
+        from datetime import datetime, timezone
+
+        if isinstance(until, (int, float)):
+            target = float(until)
+        else:
+            target = datetime.fromisoformat(str(until).replace("Z", "+00:00")).timestamp()
+        delay = target - time.time()
+    else:
+        delay = float(params.get("seconds") or 0)
+
+    delay = max(0.0, min(delay, _WAIT_MAX_SECONDS))
+    await asyncio.sleep(delay)
+    return {"waited": delay}
+
+
+def _resolve_field(item, field: str | None):
+    if not field:
+        return item
+    value = item
+    for part in str(field).split("."):
+        if isinstance(value, dict):
+            value = value.get(part)
+        else:
+            return None
+    return value
+
+
+def _exec_aggregate(params: dict, node_input) -> dict:
+    """Reduce an array (``items``, or the node input) with ``op`` over ``field``."""
+    items = params.get("items")
+    if items is None:
+        items = node_input if isinstance(node_input, list) else []
+    op = str(params.get("op") or "count").lower()
+    field = params.get("field")
+
+    if op == "count":
+        return {"result": len(items), "count": len(items)}
+
+    values = [_resolve_field(it, field) for it in items]
+    values = [v for v in values if isinstance(v, (int, float))]
+
+    if op == "concat":
+        result = ", ".join(str(_resolve_field(it, field)) for it in items)
+    elif not values:
+        result = None
+    elif op == "sum":
+        result = sum(values)
+    elif op == "avg":
+        result = sum(values) / len(values)
+    elif op == "min":
+        result = min(values)
+    elif op == "max":
+        result = max(values)
+    else:
+        raise ValueError(f"aggregate: unknown op {op!r}")
+
+    return {"result": result, "count": len(items)}
+
+
+def _exec_batch(params: dict, node_input) -> dict:
+    """Split an array (``items``, or the node input) into chunks of ``size``."""
+    items = params.get("items")
+    if items is None:
+        items = node_input if isinstance(node_input, list) else []
+    size = max(1, int(params.get("size") or 1))
+    batches = [items[i:i + size] for i in range(0, len(items), size)]
+    return {"batches": batches, "count": len(batches)}
 
 
 async def _exec_http_request(params: dict) -> dict:
@@ -774,6 +901,13 @@ def _notify_text(params: dict) -> str:
     return text
 
 
+_TELEGRAM_PARSE_MODES = frozenset({"", "Markdown", "MarkdownV2", "HTML"})
+# CommonMark-style **bold** (what LLM nodes typically produce) isn't valid Telegram
+# Markdown/MarkdownV2 — both dialects use a single asterisk for bold — so normalise
+# it rather than silently rendering the literal '**' in the chat.
+_DOUBLE_STAR_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
 async def _exec_notify_telegram(db: aiosqlite.Connection, profile_id: str, params: dict) -> dict:
     """Send to the profile's linked Telegram chat via the Phase 23.c bridge.
     The bridge is best-effort (missing link / muted chat / stopped bot = no-op),
@@ -784,11 +918,16 @@ async def _exec_notify_telegram(db: aiosqlite.Connection, profile_id: str, param
     text = _notify_text(params)
     if not text:
         raise ValueError("notify.telegram: 'text' is required")
+    parse_mode = str(params.get("parse_mode") or "").strip()
+    if parse_mode not in _TELEGRAM_PARSE_MODES:
+        raise ValueError(f"notify.telegram: invalid parse_mode {parse_mode!r} (Markdown|MarkdownV2|HTML)")
+    if parse_mode in ("Markdown", "MarkdownV2"):
+        text = _DOUBLE_STAR_BOLD_RE.sub(r"*\1*", text)
     link = await telegram_link_repository.get_by_profile_id(db, profile_id)
     if link is None:
         raise RuntimeError("notify.telegram: no Telegram chat linked to this profile")
-    await notification_service.notify_telegram(db, profile_id, "workflow", text)
-    return {"queued": True, "channel": "telegram"}
+    await notification_service.notify_telegram(db, profile_id, "workflow", text, parse_mode=parse_mode or None)
+    return {"queued": True, "channel": "telegram", "parse_mode": parse_mode or None}
 
 
 async def _exec_notify_email(params: dict) -> dict:
@@ -825,9 +964,63 @@ async def _exec_notify_inapp(db: aiosqlite.Connection, profile_id: str, params: 
     return {"queued": True, "channel": "inapp", "title": title}
 
 
-async def _exec_llm_completion(profile_id: str, params: dict) -> dict:
-    from app.schemas.chat import ChatCompletionRequest, ChatMessage
+async def _cached_complete(request) -> tuple[dict, str]:
+    """Complete a chat request through the Phase 19/26 response cache (same dance as
+    ChatService.complete — see chat_service.py:275-307), so identical workflow LLM node
+    runs skip the provider like chat does. Returns (response_dict, "hit"|"semantic"|"miss").
+    cache_service.cache_key() already returns None for tool-bearing/multimodal requests,
+    so tool-using llm.agent steps are naturally excluded from caching."""
+    from app.services import cache_service
+    from app.services.chat_service import ChatService
     from app.services.provider_factory import ProviderFactory
+
+    cache_key = cache_service.cache_key(request)
+    cached = cache_service.get(cache_key)
+    if cached is not None:
+        return ChatService._cached_completion(request, cached, semantic=False), "hit"
+
+    query_embedding: list[float] | None = None
+    embed_model: str | None = None
+    bucket: str | None = None
+    if cache_key is not None and settings.semantic_cache_enabled:
+        sem, query_embedding, embed_model, bucket = await cache_service.semantic_get(request)
+        if sem is not None:
+            return ChatService._cached_completion(request, sem, semantic=True), "semantic"
+
+    provider = ProviderFactory.get_provider(request.model)
+    response = await provider.complete(request)
+    if hasattr(response, "model_dump"):
+        response = response.model_dump()
+    try:
+        choices = response.get("choices") or []
+        content = ((choices[0].get("message") or {}).get("content") or "") if choices else ""
+        cache_service.put(
+            cache_key, content, {"usage": response.get("usage") or {}},
+            embedding=query_embedding, embed_model=embed_model, bucket=bucket,
+        )
+    except (AttributeError, TypeError, KeyError, IndexError):
+        pass  # non-dict/odd provider response — skip caching
+    return response, "miss"
+
+
+async def _candidate_models(db: aiosqlite.Connection, model: str, failover_chain: str | None) -> list[str]:
+    """[model] plus any further models from a named Settings → Models failover chain
+    (Phase 31.c), in order, deduplicated. [model] alone when no chain is configured."""
+    candidates = [model]
+    chain_name = str(failover_chain or "").strip()
+    if chain_name:
+        from app.db import settings_repository
+        from app.schemas.features import MODEL_FAILOVER_CHAINS_OWNER_KEY, failover_chain_models
+
+        blob = await settings_repository.get(db, MODEL_FAILOVER_CHAINS_OWNER_KEY)
+        for candidate in failover_chain_models(blob, chain_name):
+            if candidate not in candidates:
+                candidates.append(candidate)
+    return candidates
+
+
+async def _exec_llm_completion(db: aiosqlite.Connection, profile_id: str, params: dict) -> dict:
+    from app.schemas.chat import ChatCompletionRequest, ChatMessage
 
     model = params.get("model") or settings.default_model
     prompt = params.get("prompt") or params.get("input") or ""
@@ -837,16 +1030,40 @@ async def _exec_llm_completion(profile_id: str, params: dict) -> dict:
         messages.append(ChatMessage(role="system", content=str(system)))
     messages.append(ChatMessage(role="user", content=str(prompt)))
 
-    provider = ProviderFactory.get_provider(model)
-    request = ChatCompletionRequest(
-        model=model, messages=messages, stream=False, profile_id=profile_id
-    )
-    response = await provider.complete(request)
-    if hasattr(response, "model_dump"):
-        response = response.model_dump()
-    choices = response.get("choices") or []
-    content = ((choices[0].get("message") or {}).get("content") if choices else "") or ""
-    return {"content": content, "model": model}
+    candidates = await _candidate_models(db, model, params.get("failover_chain"))
+    tried: list[str] = []
+    last_exc: Exception | None = None
+    for candidate in candidates:
+        tried.append(candidate)
+        request = ChatCompletionRequest(
+            model=candidate, messages=messages, stream=False, profile_id=profile_id
+        )
+        try:
+            response, cache_status = await _cached_complete(request)
+        except Exception as exc:  # noqa: BLE001 — fall through to the next chain candidate
+            last_exc = exc
+            continue
+        choices = response.get("choices") or []
+        content = ((choices[0].get("message") or {}).get("content") if choices else "") or ""
+        out = {"content": content, "model": candidate, "_usage": _extract_usage(response), "_cache": cache_status}
+        if len(candidates) > 1:
+            out["_failover"] = {"tried": tried, "used": candidate}
+        return out
+    raise last_exc
+
+
+def _extract_usage(response: dict) -> dict | None:
+    """Token counts from a provider response, when it reported any (Phase 30.d
+    observability — no per-model cost table exists in the repo yet, so cost is
+    intentionally omitted rather than guessed)."""
+    usage = response.get("usage") or {}
+    if not usage:
+        return None
+    return {
+        "tokens_in": usage.get("prompt_tokens"),
+        "tokens_out": usage.get("completion_tokens"),
+        "tokens_total": usage.get("total_tokens"),
+    }
 
 
 async def _full_tool_definitions(db: aiosqlite.Connection, profile_id: str) -> list[dict]:
@@ -872,7 +1089,6 @@ async def _exec_llm_agent(db: aiosqlite.Connection, profile_id: str, params: dic
     """Bridge node: run the Phase 18 durable agent loop to completion inline, over
     the full tool set (built-in + MCP + custom)."""
     from app.schemas.chat import ChatCompletionRequest, ChatMessage, ToolCall, ToolCallFunction
-    from app.services.provider_factory import ProviderFactory
     from app.tools.registry import execute_tool
 
     model = params.get("model") or settings.default_model
@@ -887,16 +1103,43 @@ async def _exec_llm_agent(db: aiosqlite.Connection, profile_id: str, params: dic
         ChatMessage(role="system", content=str(system)),
         ChatMessage(role="user", content=goal),
     ]
-    provider = ProviderFactory.get_provider(model)
+    usage_total = {"tokens_in": 0, "tokens_out": 0, "tokens_total": 0}
+
+    def _accumulate(response: dict) -> None:
+        step_usage = _extract_usage(response)
+        if not step_usage:
+            return
+        for k in usage_total:
+            usage_total[k] += step_usage.get(k) or 0
+
+    candidates = await _candidate_models(db, model, params.get("failover_chain"))
+    model_idx = 0  # sticky: once a candidate succeeds, later steps start from it
+    tried: list[str] = []
+
+    def _failover_meta(used: str) -> dict | None:
+        return {"tried": tried, "used": used} if len(candidates) > 1 else None
 
     for _ in range(max_steps):
-        request = ChatCompletionRequest(
-            model=model, messages=messages, tools=tools or None,
-            stream=False, profile_id=profile_id,
-        )
-        response = await provider.complete(request)
-        if hasattr(response, "model_dump"):
-            response = response.model_dump()
+        response = cache_status = last_exc = None
+        for idx in range(model_idx, len(candidates)):
+            candidate = candidates[idx]
+            if candidate not in tried:
+                tried.append(candidate)
+            request = ChatCompletionRequest(
+                model=candidate, messages=messages, tools=tools or None,
+                stream=False, profile_id=profile_id,
+            )
+            try:
+                response, cache_status = await _cached_complete(request)
+            except Exception as exc:  # noqa: BLE001 — fall through to the next chain candidate
+                last_exc = exc
+                continue
+            model_idx = idx
+            model = candidate
+            break
+        if response is None:
+            raise last_exc
+        _accumulate(response)
         choices = response.get("choices") or []
         if not choices:
             break
@@ -905,7 +1148,11 @@ async def _exec_llm_agent(db: aiosqlite.Connection, profile_id: str, params: dic
         tool_calls_raw = msg.get("tool_calls") or []
         content = msg.get("content") or ""
         if choice.get("finish_reason") != "tool_calls" or not tool_calls_raw:
-            return {"content": content, "model": model}
+            out = {"content": content, "model": model, "_usage": usage_total, "_cache": cache_status}
+            failover = _failover_meta(model)
+            if failover:
+                out["_failover"] = failover
+            return out
         tool_calls = [
             ToolCall(
                 id=tc["id"], type=tc.get("type", "function"),
@@ -925,7 +1172,39 @@ async def _exec_llm_agent(db: aiosqlite.Connection, profile_id: str, params: dic
                 result = f"Error: {exc}"
             messages.append(ChatMessage(role="tool", tool_call_id=tc.id, content=result))
 
-    return {"content": "Step limit reached without a final answer.", "model": model}
+    out = {"content": "Step limit reached without a final answer.", "model": model, "_usage": usage_total}
+    failover = _failover_meta(model)
+    if failover:
+        out["_failover"] = failover
+    return out
+
+
+async def _note_trigger_success(db: aiosqlite.Connection, tr_id: str) -> None:
+    await repo.record_trigger_success(db, tr_id)
+
+
+async def _note_trigger_failure(
+    db: aiosqlite.Connection, tr_id: str, workflow_id: str, profile_id: str, error: str
+) -> None:
+    """Bump the trigger's consecutive-failure streak; auto-disable and alert past
+    the configured threshold so a broken schedule/event trigger doesn't fail
+    silently forever (previously only logged, see Phase 30.b)."""
+    fail_count = await repo.record_trigger_failure(db, tr_id, error)
+    if fail_count >= settings.graph_workflow_trigger_max_failures:
+        await repo.set_trigger_enabled(db, tr_id, False)
+        try:
+            from app.services import notification_service
+
+            wf = await repo.get_workflow(db, workflow_id)
+            name = wf.name if wf else workflow_id
+            await notification_service.notify_web(
+                db, profile_id, "workflow",
+                "Trigger disabilitato",
+                f"Il trigger del workflow '{name}' è stato disabilitato dopo {fail_count} "
+                f"fallimenti consecutivi. Ultimo errore: {error}",
+            )
+        except Exception:  # noqa: BLE001 — alerting must never break the poll loop
+            logger.exception("failed to raise trigger-disabled alert for %s", tr_id)
 
 
 def _as_bool(value) -> bool:
@@ -964,10 +1243,14 @@ async def _poll_loop() -> None:
                         recurrence = cfg.get("recurrence", "once")
                         nxt = reminder_parsing.compute_next_fire(recurrence, int(time.time()), tz)
                         await repo.set_trigger_next_run(db, row["id"], nxt)
+                        await _note_trigger_success(db, row["id"])
                         if nxt is None:
                             await repo.set_trigger_enabled(db, row["id"], False)
-                    except Exception:
+                    except Exception as exc:
                         logger.exception("schedule trigger firing failed id=%s", row.get("id"))
+                        await _note_trigger_failure(
+                            db, row["id"], row["workflow_id"], row["wf_profile_id"], str(exc)
+                        )
             finally:
                 await db.close()
         except asyncio.CancelledError:
@@ -1014,8 +1297,12 @@ async def dispatch_event(event_type: str, payload: dict) -> None:
                         trigger_type="event",
                         trigger_payload={"event": event_type, **(payload or {})},
                     )
-                except Exception:
+                    await _note_trigger_success(db, row["id"])
+                except Exception as exc:
                     logger.exception("event trigger firing failed id=%s", row.get("id"))
+                    await _note_trigger_failure(
+                        db, row["id"], row["workflow_id"], row["wf_profile_id"], str(exc)
+                    )
         finally:
             await db.close()
     except Exception:

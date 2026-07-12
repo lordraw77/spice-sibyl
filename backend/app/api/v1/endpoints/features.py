@@ -29,8 +29,10 @@ from app.dependencies.provider_factory import get_provider
 from app.schemas.auth import UserOut
 from app.schemas.features import (
     FEATURES_OWNER_KEY,
+    MODEL_FAILOVER_CHAINS_OWNER_KEY,
     MODEL_SELECTION_OWNER_KEY,
     FeatureFlags,
+    ModelFailoverChains,
     ModelSelection,
     effective_flags,
 )
@@ -266,3 +268,33 @@ async def update_model_selection(
         ip=_client_ip(request),
     )
     return {"selected": body.models}
+
+
+@admin_router.get("/model-failover-chains")
+async def get_model_failover_chains(
+    db: aiosqlite.Connection = Depends(get_db),
+    _admin: UserOut = Depends(require_role("admin")),
+):
+    """Named chains of model ids curated in Settings, tried in order on an
+    llm.completion / llm.agent workflow node call failure."""
+    blob = await settings_repository.get(db, MODEL_FAILOVER_CHAINS_OWNER_KEY)
+    chains = blob.get("chains") if isinstance(blob.get("chains"), dict) else {}
+    return {"chains": chains}
+
+
+@admin_router.put("/model-failover-chains")
+async def update_model_failover_chains(
+    body: ModelFailoverChains,
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    admin: UserOut = Depends(require_role("admin")),
+):
+    await settings_repository.put(db, MODEL_FAILOVER_CHAINS_OWNER_KEY, {"chains": body.chains})
+    await audit_repository.record(
+        db,
+        admin.id,
+        "admin.model_failover_chains.update",
+        resource=MODEL_FAILOVER_CHAINS_OWNER_KEY,
+        ip=_client_ip(request),
+    )
+    return {"chains": body.chains}

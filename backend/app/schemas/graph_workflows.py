@@ -123,6 +123,25 @@ class WorkflowTriggerOut(BaseModel):
     next_run_at: int | None = None
     enabled: bool
     created_at: int
+    fail_count: int = 0
+    last_error: str | None = None
+
+
+class WorkflowScheduleOut(BaseModel):
+    """One row of the cross-workflow schedules overview (Phase 30.e)."""
+
+    workflow_id: str
+    workflow_name: str
+    workflow_active: bool
+    trigger_id: str
+    trigger_type: str
+    config: dict[str, Any]
+    next_run_at: int | None = None
+    enabled: bool
+    fail_count: int = 0
+    last_error: str | None = None
+    last_run_status: str | None = None
+    last_run_at: int | None = None
 
 
 class NodeTypeInfo(BaseModel):

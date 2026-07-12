@@ -20,6 +20,14 @@ L'éditeur se compose de trois volets :
 - **Gauche** — vos workflows et une **palette de nœuds** par catégorie (Déclencheurs ·
   Actions · Logique · Données · IA). Chaque outil intégré, MCP et personnalisé apparaît
   automatiquement comme nœud `tool.<nom>` — aucun code supplémentaire par outil.
+- Une barre d'outils au-dessus du canevas propose **Annuler/Rétablir** (`Ctrl+Z` /
+  `Ctrl+Maj+Z`, aussi `Ctrl+Y`), **Copier/Coller** un nœud (`Ctrl+C` / `Ctrl+V` — colle un
+  duplicata décalé avec le même type et les mêmes paramètres) et **Commentaire** : un nœud
+  "post-it" côté client uniquement, sans poignées d'entrée/sortie et jamais câblé au flux —
+  le moteur l'enregistre simplement comme `skipped`, sans changement backend. Les
+  raccourcis sont ignorés pendant la saisie dans un champ. Une **zone de recherche**
+  au-dessus de la palette filtre les nœuds par libellé ou type (et développe
+  automatiquement les groupes MCP/personnalisés correspondants pendant la recherche).
 - **Centre** — un **canevas SVG** sans dépendance. Glissez les nœuds pour les placer ;
   glissez d'une **sortie** (à droite) vers une **entrée** (à gauche) pour connecter.
   **Cliquez sur une arête** pour l'inspecter : le panneau de droite affiche source → cible,
@@ -44,9 +52,15 @@ de tester à la main les graphes qui lisent `={{ $trigger.<champ> }}`, sans appe
 |-----------|-------|
 | **Déclencheur** | `manual`, `schedule`, `webhook`, `event` |
 | **Action** | `tool.<nom>` — n'importe quel outil du registre (RSS, read_url, météo, kb_search, http_request, python_exec, MCP, personnalisé…) · `http.request` (appel HTTP générique) · `subworkflow` (exécute un autre workflow en ligne) |
-| **Logique** | `if` (branche vrai/faux), `switch` (branches par cas), `merge` (rassemble les entrées) |
-| **Données** | `set` (construit un objet), `filter` (garde les éléments qui correspondent), `code` (sandbox Python) |
+| **Logique** | `if` (branche vrai/faux), `switch` (branches par cas), `merge` (rassemble les entrées), `wait` (attend N secondes ou jusqu'à un instant précis) |
+| **Données** | `set` (construit un objet), `filter` (garde les éléments qui correspondent), `code` (sandbox Python), `aggregate` (réduit un tableau — sum/avg/min/max/count/concat sur un champ), `batch` (découpe un tableau en blocs de taille fixe) |
 | **IA** | `llm.completion` (un appel au fournisseur), `llm.agent` (toute la boucle agent de la Phase 18) |
+
+> **Chaînes de secours** — `llm.completion` et `llm.agent` exposent un menu **Failover
+> chain**, alimenté par les listes de modèles nommées définies dans Réglages → Modèles →
+> Chaînes de secours LLM. Si elle est définie, un échec d'appel sur le `model` du nœud
+> réessaie dans l'ordre les modèles restants de la chaîne ; la sortie du nœud porte alors
+> `_failover: { tried: [...], used: "<model>" }`.
 
 ### Requêtes HTTP, composition et gestion d'erreurs
 
@@ -62,7 +76,10 @@ de tester à la main les graphes qui lisent `={{ $trigger.<champ> }}`, sans appe
   ou **router vers la branche d'erreur** : le nœud gagne une sortie **`error`** dédiée et
   `{ error, input }` suit cette branche pendant que `main` est ignorée — un try/catch
   dessiné sur le canevas.
-- **Notifications** — `notify.telegram` (chat Telegram liée au profil), `notify.email`
+- **Notifications** — `notify.telegram` (chat Telegram liée au profil ; `parse_mode`
+  optionnel `Markdown`/`MarkdownV2`/`HTML` pour rendre le formatage — `**gras**` CommonMark
+  est normalisé en `*gras*` à un astérisque, propre à Telegram ; les messages de plus de
+  4096 caractères sont automatiquement découpés en plusieurs messages), `notify.email`
   (SMTP via `SMTP_*`), `notify.webhook` (Slack/Discord/ntfy/…), `notify.inapp`
   (cloche de la web UI, aucune configuration).
 - **Vue Exécutions** — `/graph-workflows/runs` : le registre de toutes les exécutions du
@@ -104,8 +121,68 @@ Depuis le panneau d'exécution :
   même moteur que les rappels. Une boucle de polling exécute les planifications dues et
   recalcule la prochaine échéance. (Ne se déclenche que si le workflow est **Actif**.)
 - **Webhook** — une URL publique à jeton (`POST /api/v1/wf/hooks/{token}`). Le corps JSON
-  devient `$trigger`. Ne se déclenche que si le workflow est Actif.
-- **Event** — événements internes (document ingéré, rappel déclenché…).
+  devient `$trigger`. Ne se déclenche que si le workflow est Actif. Vous pouvez le protéger
+  avec un secret partagé : `POST /v1/graph-workflows/triggers/{tid}/rotate-secret` en génère
+  un (affiché une seule fois) ; ensuite la requête doit porter l'en-tête
+  `X-Signature: sha256=<hmac-sha256 hexadécimal du corps brut>`, sinon elle est rejetée (401)
+  avant même d'être interprétée.
+- **Event** — événements internes. Réglez `config.event` sur le nom de l'événement (vide ou
+  `*` pour tous les capter). Deux événements sont câblés aujourd'hui : `document.ingested`
+  (après l'ingestion d'un document/URL — payload `{doc_id, filename, profile_id}`) et
+  `chat.message.created` (après la persistance d'un échange de chat — payload
+  `{conversation_id, profile_id}`).
+
+Les déclencheurs **schedule** et **event** suivent un compteur d'échecs consécutifs
+(`fail_count`/`last_error`) : après `GRAPH_WORKFLOW_TRIGGER_MAX_FAILURES` (5 par défaut)
+échecs d'affilée, le déclencheur se désactive automatiquement et une notification in-app
+est levée. Le réactiver (`POST /triggers/{tid}/enable`) remet le compteur à zéro.
+
+### Vue Planifications — aperçu des déclencheurs multi-workflows
+
+`/graph-workflows/schedules` (Phase 30.e, même groupe de navbar et feature flag) liste
+**une ligne par déclencheur** sur tous les workflows du profil : nom du workflow, type de
+déclencheur, prochaine exécution (déclencheurs schedule), statut/heure de la dernière
+exécution, compteur d'échecs consécutifs et un interrupteur activer/désactiver — pour tout
+voir en un coup d'œil sans ouvrir chaque workflow, ainsi que **Lancer** et **Supprimer**.
+Backend : `GET /v1/graph-workflows/schedules`.
+
+> **Un déclencheur ne se déclenche que si son *workflow* est Actif** — l'activation du
+> déclencheur est indépendante du drapeau Actif du workflow (à changer depuis le
+> concepteur, ou via la pastille Actif/Inactif à côté du nom du workflow ici). Un
+> déclencheur parfaitement configuré et activé sur un workflow Inactif ne se déclenchera
+> jamais ; le formulaire **+ Nouveau déclencheur** avertit et propose une activation en un
+> clic quand le workflow choisi est Inactif — c'est la cause la plus fréquente d'une
+> planification fraîchement créée qui ne fait rien en silence.
+
+**Créer un déclencheur** (Phase 30.f) — le panneau **+ Nouveau déclencheur** choisit un
+workflow et un type (`schedule`/`webhook`/`event`) ; pour `schedule` il expose un motif
+structuré au lieu du langage naturel libre : **Quotidien** (une heure HH:MM),
+**Hebdomadaire** (un ou plusieurs jours + heure), **Cron** (préréglages comme "toutes les
+15 min"/"toutes les heures"/"minuit"/"jours ouvrés à 9h" qui remplissent un **champ cron
+libre à 5 champs**, toujours modifiable, validé avec `croniter`), **Une fois** (date
+optionnelle + heure). Les déclencheurs `event` prennent un nom d'événement libre
+(`document.ingested` et `chat.message.created` sont câblés aujourd'hui) ; les `webhook` ne
+nécessitent aucune config ici — le secret de signature se génère/renouvelle depuis le
+concepteur après création.
+
+### Production : concurrence, usage de tokens, alertes
+
+- **Plafond de concurrence** — un sémaphore `GRAPH_WORKFLOW_MAX_CONCURRENT_NODES` (8 par
+  défaut) limite le nombre de nœuds indépendants exécutés en parallèle dans une même run.
+- **Usage de tokens** — la sortie des nœuds `llm.completion` et `llm.agent` inclut une clé
+  `_usage` (`{tokens_in, tokens_out, tokens_total}`, cumulée sur les étapes de l'agent)
+  quand le fournisseur la renvoie ; `null` sinon. Le coût n'est pas estimé — aucune table
+  de tarifs par modèle n'existe encore dans le projet.
+- **Alerte sur échecs récurrents** — après `GRAPH_WORKFLOW_RUN_FAILURE_ALERT_THRESHOLD`
+  (3 par défaut) échecs consécutifs du même workflow, une notification in-app est levée
+  une seule fois (pas à chaque échec suivant).
+- **Cache de réponses** — `llm.completion` et chaque étape de `llm.agent` réutilisent le
+  même cache de réponses que le chat (`RESPONSE_CACHE_ENABLED`, `RESPONSE_CACHE_TTL_SECONDS`,
+  `RESPONSE_CACHE_MAX_ENTRIES`, plus la couche floue `SEMANTIC_CACHE_*` de la Phase 26). Une
+  requête `(model, messages, temperature, max_tokens)` identique évite entièrement le
+  fournisseur ; la sortie du nœud porte `_cache: "hit" | "semantic" | "miss"` à côté de
+  `_usage`. Les étapes `llm.agent` avec appels d'outils ne sont jamais mises en cache (même
+  règle que le chat : une requête avec `tools` n'obtient jamais de clé de cache).
 
 ## Versions et exécutions
 

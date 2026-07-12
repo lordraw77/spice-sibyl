@@ -19,6 +19,7 @@ from app.schemas.graph_workflows import (
     GraphWorkflowOut,
     NodeRunOut,
     WorkflowGraph,
+    WorkflowScheduleOut,
     WorkflowTriggerOut,
 )
 
@@ -372,6 +373,8 @@ def _row_to_trigger(row: aiosqlite.Row) -> WorkflowTriggerOut:
         next_run_at=row["next_run_at"],
         enabled=bool(row["enabled"]),
         created_at=row["created_at"],
+        fail_count=row["fail_count"] if row["fail_count"] is not None else 0,
+        last_error=row["last_error"],
     )
 
 
@@ -445,9 +448,20 @@ async def list_event_triggers(db: aiosqlite.Connection, event_type: str) -> list
     return out
 
 
-async def set_trigger_enabled(db: aiosqlite.Connection, tr_id: str, enabled: bool) -> None:
+async def update_trigger_config(db: aiosqlite.Connection, tr_id: str, config: dict) -> None:
     await db.execute(
-        "UPDATE workflow_triggers SET enabled = ? WHERE id = ?", (int(enabled), tr_id)
+        "UPDATE workflow_triggers SET config_json = ? WHERE id = ?", (json.dumps(config), tr_id)
+    )
+    await db.commit()
+
+
+async def set_trigger_enabled(db: aiosqlite.Connection, tr_id: str, enabled: bool) -> None:
+    # Re-enabling (e.g. after an auto-disable) also clears the failure streak.
+    await db.execute(
+        "UPDATE workflow_triggers SET enabled = ?, fail_count = 0, last_error = NULL WHERE id = ?"
+        if enabled else
+        "UPDATE workflow_triggers SET enabled = ? WHERE id = ?",
+        (int(enabled), tr_id),
     )
     await db.commit()
 
@@ -457,6 +471,62 @@ async def set_trigger_next_run(db: aiosqlite.Connection, tr_id: str, next_run_at
         "UPDATE workflow_triggers SET next_run_at = ? WHERE id = ?", (next_run_at, tr_id)
     )
     await db.commit()
+
+
+async def list_schedules_for_profile(db: aiosqlite.Connection, profile_id: str) -> list[WorkflowScheduleOut]:
+    """Every trigger of every workflow owned by ``profile_id``, joined to the
+    workflow's active flag and its most recent run — feeds the Phase 30.e
+    schedules overview page (one row per trigger, not per workflow)."""
+    async with db.execute(
+        "SELECT t.*, w.name AS wf_name, w.active AS wf_active "
+        "FROM workflow_triggers t JOIN workflows w ON w.id = t.workflow_id "
+        "WHERE w.profile_id = ? ORDER BY w.name, t.created_at",
+        (profile_id,),
+    ) as cur:
+        rows = await cur.fetchall()
+
+    out: list[WorkflowScheduleOut] = []
+    for row in rows:
+        async with db.execute(
+            "SELECT status, created_at FROM workflow_runs WHERE workflow_id = ? "
+            "ORDER BY created_at DESC LIMIT 1",
+            (row["workflow_id"],),
+        ) as cur:
+            last_run = await cur.fetchone()
+        out.append(WorkflowScheduleOut(
+            workflow_id=row["workflow_id"],
+            workflow_name=row["wf_name"],
+            workflow_active=bool(row["wf_active"]),
+            trigger_id=row["id"],
+            trigger_type=row["type"],
+            config=json.loads(row["config_json"]),
+            next_run_at=row["next_run_at"],
+            enabled=bool(row["enabled"]),
+            fail_count=row["fail_count"] if row["fail_count"] is not None else 0,
+            last_error=row["last_error"],
+            last_run_status=last_run["status"] if last_run else None,
+            last_run_at=last_run["created_at"] if last_run else None,
+        ))
+    return out
+
+
+async def record_trigger_success(db: aiosqlite.Connection, tr_id: str) -> None:
+    await db.execute(
+        "UPDATE workflow_triggers SET fail_count = 0, last_error = NULL WHERE id = ?", (tr_id,)
+    )
+    await db.commit()
+
+
+async def record_trigger_failure(db: aiosqlite.Connection, tr_id: str, error: str) -> int:
+    """Bump the consecutive-failure streak and return the new count."""
+    await db.execute(
+        "UPDATE workflow_triggers SET fail_count = fail_count + 1, last_error = ? WHERE id = ?",
+        (error, tr_id),
+    )
+    await db.commit()
+    async with db.execute("SELECT fail_count FROM workflow_triggers WHERE id = ?", (tr_id,)) as cur:
+        row = await cur.fetchone()
+    return row["fail_count"] if row else 0
 
 
 async def delete_trigger(db: aiosqlite.Connection, tr_id: str) -> bool:

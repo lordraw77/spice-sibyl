@@ -24,6 +24,14 @@ L'editor ha tre pannelli:
 - **Sinistra** — i tuoi workflow e una **palette di nodi** categorizzata (Trigger · Azioni
   · Logica · Dati · IA). Ogni tool built-in, MCP e custom appare automaticamente come nodo
   `tool.<nome>`, senza scrivere codice per ogni tool.
+- Una barra strumenti sopra il canvas offre **Annulla/Ripeti** (`Ctrl+Z` / `Ctrl+Shift+Z`,
+  anche `Ctrl+Y` per ripetere), **Copia/Incolla** un nodo (`Ctrl+C` / `Ctrl+V` — incolla un
+  duplicato con offset, stesso tipo e parametri) e **Commento**: un nodo "sticky note"
+  solo lato client per annotare il canvas, senza handle di input/output e mai collegato al
+  flusso — il motore lo registra semplicemente come `skipped`, nessuna modifica al backend.
+  Le scorciatoie sono ignorate mentre si scrive in un campo. Un **campo di ricerca** sopra
+  la palette filtra i nodi per etichetta o tipo (espandendo automaticamente i gruppi
+  MCP/custom con corrispondenze durante la ricerca).
 - **Centro** — un **canvas SVG** senza dipendenze. Trascina i nodi per posizionarli;
   trascina da un **handle di output** (a destra) all'**handle di input** (a sinistra) di un
   altro nodo per collegarli. **Clicca su un collegamento** per ispezionarlo: il pannello di
@@ -50,8 +58,8 @@ webhook e subworkflow) si possono provare a mano senza una chiamata webhook.
 | **Trigger** | `manual`, `schedule`, `webhook`, `event` |
 | **Azione** | `tool.<nome>` — qualsiasi tool **integrato** (RSS, read_url, meteo, kb_search, http_request, python_exec…) · `http.request` (chiamata HTTP generica) · `subworkflow` (esegue un altro workflow inline) |
 | **MCP e custom** | ogni **tool MCP scoperto** (`tool.mcp__<server>__<tool>`) e i **tool HTTP custom** del profilo (`tool.custom__<nome>`) compaiono come nodi trascinabili — nessun codice per tool |
-| **Logica** | `if` (ramo vero/falso), `switch` (rami per caso), `merge` (raccoglie gli input), `for` (for-each su un array), `repeat` (N volte) |
-| **Dati** | `set` (costruisce un oggetto), `filter` (tiene gli elementi che soddisfano la condizione), `code` (sandbox Python) |
+| **Logica** | `if` (ramo vero/falso), `switch` (rami per caso), `merge` (raccoglie gli input), `for` (for-each su un array), `repeat` (N volte), `wait` (attende N secondi o fino a un istante preciso) |
+| **Dati** | `set` (costruisce un oggetto), `filter` (tiene gli elementi che soddisfano la condizione), `code` (sandbox Python), `aggregate` (riduce un array — sum/avg/min/max/count/concat su un campo), `batch` (spezza un array in blocchi di dimensione fissa) |
 | **Notifiche** | `notify.telegram` (chat Telegram collegata), `notify.email` (SMTP), `notify.webhook` (Slack/Discord/ntfy/webhook qualsiasi), `notify.inapp` (campanella della web UI, zero configurazione) |
 | **IA** | `llm.completion` (una chiamata al provider), `llm.agent` (l'intero loop ad agente della Fase 18, con accesso a tool integrati + MCP + custom) |
 
@@ -64,6 +72,15 @@ webhook e subworkflow) si possono provare a mano senza una chiamata webhook.
 > con lo stesso catalogo e gli stessi filtri della pagina chat** (filtri provider / capacità /
 > solo gratuiti, ricerca per nome e i modelli nascosti su `/providers`), così scegli il modello
 > qui esattamente come nella chat. Si espande in linea nell'inspector (non un popup fluttuante).
+
+> **Catene di failover** — entrambi i nodi mostrano anche un menu **Failover chain**,
+> popolato dagli elenchi di modelli nominati curati in Impostazioni → Modelli → Catene di
+> failover LLM (modificabile solo dagli admin, visibile a tutti nel selettore). Se impostata,
+> un fallimento della chiamata sul `model` del nodo riprova — in ordine — attraverso i
+> modelli restanti della catena finché uno non ha successo o si esauriscono; l'output del
+> nodo include allora `_failover: { tried: [...], used: "<model>" }`. Per `llm.agent`, un
+> fallback riuscito è persistente: i passi successivi del loop partono dal modello appena
+> funzionante, invece di riprovare sempre quello originale.
 
 ### Richieste HTTP — `http.request`
 
@@ -95,7 +112,15 @@ con il ramo di errore per flussi "avvisami quando si rompe":
 
 - **`notify.telegram`** — invia `text` alla **chat Telegram collegata al profilo**
   (Impostazioni → Telegram, lo stesso ponte delle notifiche dei promemoria). Fallisce se
-  nessuna chat è collegata; una chat silenziata (`/notify off`) è un no-op silenzioso.
+  nessuna chat è collegata; una chat silenziata (`/notify off`) è un no-op silenzioso. Un
+  `parse_mode` opzionale (`Markdown` / `MarkdownV2` / `HTML`, vuoto = testo semplice) fa
+  renderizzare la formattazione invece di mostrare il markup grezzo — utile quando `text`
+  arriva da un nodo `llm.*` che scrive CommonMark. Il `**grassetto**` (CommonMark) viene
+  normalizzato automaticamente nel `*grassetto*` a singolo asterisco di Telegram quando
+  scegli una modalità Markdown, perché Telegram non riconosce il doppio asterisco e lo
+  stamperebbe altrimenti alla lettera. I messaggi oltre il limite di 4096 caratteri di
+  Telegram vengono divisi automaticamente in più messaggi lungo i confini di riga, così i
+  digest lunghi non vengono mai persi.
 - **`notify.email`** — email in testo semplice (`to`, `subject`, `body`) tramite il
   server SMTP configurato con `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD`
   / `SMTP_FROM` / `SMTP_STARTTLS`. Senza SMTP configurato il nodo fallisce, quindi si
@@ -195,8 +220,68 @@ Dal pannello di esecuzione puoi collegare:
   dallo stesso motore dei promemoria. Un loop di polling in background esegue gli schedule
   scaduti e ricalcola il prossimo orario. (Scatta solo quando il workflow è **Attivo**.)
 - **Webhook** — un URL pubblico con token (`POST /api/v1/wf/hooks/{token}`). Il corpo JSON
-  diventa `$trigger`. Scatta solo quando il workflow è Attivo.
-- **Event** — eventi interni (es. documento ingerito, promemoria scattato).
+  diventa `$trigger`. Scatta solo quando il workflow è Attivo. Puoi proteggerlo con un
+  segreto condiviso: `POST /v1/graph-workflows/triggers/{tid}/rotate-secret` ne genera uno
+  (mostrato una sola volta) e da quel momento la richiesta deve avere l'header
+  `X-Signature: sha256=<hmac-sha256 esadecimale del corpo grezzo>`, altrimenti viene
+  rifiutata con 401 prima ancora di essere interpretata.
+- **Event** — eventi interni. Imposta `config.event` sul nome dell'evento (vuoto o `*` per
+  intercettarli tutti). Oggi sono cablati due eventi: `document.ingested` (dopo l'ingest di
+  un documento/URL nella KB — payload `{doc_id, filename, profile_id}`) e
+  `chat.message.created` (dopo che uno scambio di chat viene salvato — payload
+  `{conversation_id, profile_id}`).
+
+Sia i trigger **schedule** che **event** tengono un contatore di fallimenti consecutivi
+(`fail_count`/`last_error`): dopo `GRAPH_WORKFLOW_TRIGGER_MAX_FAILURES` (default 5)
+fallimenti di fila il trigger si disabilita da solo e viene inviata una notifica in-app,
+così un trigger rotto non fallisce in silenzio per sempre. Riabilitarlo
+(`POST /triggers/{tid}/enable`) azzera il contatore.
+
+### Vista Schedulazioni — panoramica trigger multi-workflow
+
+`/graph-workflows/schedules` (Fase 30.e, stesso gruppo di navbar e feature flag) elenca
+**una riga per trigger** su tutti i workflow del profilo: nome workflow, tipo di trigger,
+prossima esecuzione (trigger schedule), stato/orario dell'ultima esecuzione, contatore di
+fallimenti consecutivi e un interruttore abilita/disabilita — così vedi tutto ciò che è in
+scadenza, o rotto, senza aprire ogni workflow singolarmente, oltre a **Esegui** ed
+**Elimina**. Backend: `GET /v1/graph-workflows/schedules`.
+
+> **Un trigger scatta solo se il suo *workflow* è Attivo** — l'abilitazione del trigger è
+> indipendente dal flag Attivo del workflow (si cambia dal designer, oppure con la
+> pillola Attivo/Inattivo accanto al nome del workflow qui). Un trigger perfettamente
+> configurato e abilitato su un workflow Inattivo non scatterà mai; il pannello
+> **+ Nuovo trigger** avvisa e offre un'attivazione con un click quando il workflow scelto
+> è Inattivo, perché è la causa più comune di una schedulazione appena creata che non
+> fa nulla in silenzio.
+
+**Creare un trigger** (Fase 30.f) — il pannello **+ Nuovo trigger** sceglie un workflow e
+un tipo (`schedule`/`webhook`/`event`); per `schedule` espone un pattern strutturato invece
+del linguaggio naturale libero: **Giornaliero** (un orario HH:MM), **Settimanale** (uno o
+più giorni + orario), **Cron** (preimpostazioni come "ogni 15 minuti"/"ogni ora"/"ogni
+giorno a mezzanotte"/"feriali alle 9:00" che riempiono un **campo cron libero a 5 campi**,
+sempre modificabile, validato con `croniter`), **Una tantum** (data opzionale + orario). I
+trigger `event` prendono un nome evento libero (`document.ingested` e
+`chat.message.created` sono cablati oggi); i `webhook` non richiedono config qui — il
+segreto di firma si genera/ruota dal designer dopo la creazione.
+
+### Produzione: concorrenza, utilizzo token, alert
+
+- **Limite di concorrenza** — un semaforo `GRAPH_WORKFLOW_MAX_CONCURRENT_NODES` (default 8)
+  limita quanti nodi indipendenti girano in parallelo all'interno di una stessa esecuzione.
+- **Utilizzo token** — l'output dei nodi `llm.completion` e `llm.agent` include una chiave
+  `_usage` (`{tokens_in, tokens_out, tokens_total}`, sommata sui passi dell'agente) quando
+  il provider la riporta; `null` altrimenti. Il costo non viene stimato: non esiste ancora
+  una tabella prezzi per modello nel progetto.
+- **Alert su fallimenti ricorrenti** — dopo `GRAPH_WORKFLOW_RUN_FAILURE_ALERT_THRESHOLD`
+  (default 3) esecuzioni fallite consecutive dello stesso workflow, parte una notifica
+  in-app una sola volta (non ad ogni fallimento successivo).
+- **Cache delle risposte** — `llm.completion` e ogni passo di `llm.agent` riusano la stessa
+  cache delle risposte della chat (`RESPONSE_CACHE_ENABLED`, `RESPONSE_CACHE_TTL_SECONDS`,
+  `RESPONSE_CACHE_MAX_ENTRIES`, più il livello fuzzy `SEMANTIC_CACHE_*` di Phase 26). Una
+  richiesta `(model, messages, temperature, max_tokens)` identica salta del tutto il
+  provider; l'output del nodo espone `_cache: "hit" | "semantic" | "miss"` accanto a
+  `_usage`. I passi `llm.agent` che chiamano strumenti non vengono mai messi in cache
+  (stessa regola della chat: una richiesta con `tools` non ottiene mai una chiave cache).
 
 ## Versioni ed esecuzioni
 

@@ -1,0 +1,237 @@
+.btn {
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  text-decoration: none;
+  display: inline-block;
+}
+.btn.small {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.icon-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary, #9ca3af);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0.1rem 0.3rem;
+  border-radius: 6px;
+  margin-left: 0.3rem;
+}
+.icon-btn.danger:hover {
+  color: #f87171;
+}
+
+.schedules-page {
+  padding: 1rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  height: 100%;
+}
+
+.schedules-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.schedules-head h1 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+.schedules-head .subtitle {
+  margin: 0.15rem 0 0;
+  color: var(--text-secondary, #9ca3af);
+  font-size: 0.85rem;
+}
+.head-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.new-trigger-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--border-color, #2a2a35);
+  border-radius: 10px;
+  background: var(--bg-surface);
+}
+.form-row {
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  flex: 1;
+  min-width: 160px;
+}
+.field span {
+  color: var(--text-secondary, #9ca3af);
+  font-size: 0.75rem;
+}
+.field select,
+.field input {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+.hint {
+  color: var(--text-secondary, #9ca3af);
+  font-size: 0.75rem;
+}
+.weekday-picker {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.weekday-chip {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+.weekday-chip.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.schedules-list {
+  overflow: auto;
+  border: 1px solid var(--border-color, #2a2a35);
+  border-radius: 10px;
+}
+.schedules-list table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.schedules-list th,
+.schedules-list td {
+  text-align: left;
+  padding: 0.45rem 0.7rem;
+  border-bottom: 1px solid var(--border-color, #2a2a35);
+  white-space: nowrap;
+}
+.wf-name a {
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.wf-name a:hover {
+  text-decoration: underline;
+}
+.wf-active-toggle {
+  margin-left: 0.4rem;
+  font-size: 0.68rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid #9ca3af44;
+  background: transparent;
+  color: var(--text-secondary, #9ca3af);
+  cursor: pointer;
+}
+.wf-active-toggle.on {
+  color: #34d399;
+  border-color: #34d39944;
+}
+
+.inactive-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid #f59e0b55;
+  background: #f59e0b1a;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: #f59e0b;
+}
+
+.last-run-at {
+  margin-left: 0.4rem;
+  color: var(--text-secondary, #9ca3af);
+  font-size: 0.78rem;
+}
+
+.fail-count {
+  color: var(--text-secondary, #9ca3af);
+}
+.fail-count.warn {
+  color: #f87171;
+  font-weight: 600;
+}
+
+.status-chip {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  border: 1px solid transparent;
+}
+.status-chip[data-status='completed'] {
+  color: #34d399;
+  border-color: #34d39944;
+}
+.status-chip[data-status='running'],
+.status-chip[data-status='pending'] {
+  color: #60a5fa;
+  border-color: #60a5fa44;
+}
+.status-chip[data-status='failed'] {
+  color: #f87171;
+  border-color: #f8717144;
+}
+.status-chip[data-status='cancelled'] {
+  color: #9ca3af;
+  border-color: #9ca3af44;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.row-actions {
+  text-align: right;
+}
+
+.empty {
+  color: var(--text-secondary, #9ca3af);
+  text-align: center;
+  padding: 1rem;
+}

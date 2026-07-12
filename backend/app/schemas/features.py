@@ -39,6 +39,10 @@ FEATURES_OWNER_KEY = "app:features"
 # DB namespace for the global model-catalog selection (Settings → Models).
 MODEL_SELECTION_OWNER_KEY = "app:model_selection"
 
+# DB namespace for named LLM failover chains (Settings → Models), consumed by the
+# `failover_chain` param on llm.completion / llm.agent workflow nodes.
+MODEL_FAILOVER_CHAINS_OWNER_KEY = "app:model_failover_chains"
+
 
 class FeatureFlags(BaseModel):
     """Admin-supplied overrides. Unknown keys are dropped; values coerced to bool."""
@@ -67,6 +71,40 @@ class ModelSelection(BaseModel):
                 seen.add(model_id)
                 out.append(model_id)
         return out
+
+
+class ModelFailoverChains(BaseModel):
+    """Admin-curated named chains of model ids, tried in order until one succeeds."""
+
+    chains: dict[str, list[str]] = Field(default_factory=dict)
+
+    @field_validator("chains")
+    @classmethod
+    def _clean(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        out: dict[str, list[str]] = {}
+        for name, models in (value or {}).items():
+            clean_name = str(name).strip()
+            if not clean_name:
+                continue
+            seen: set[str] = set()
+            clean_models: list[str] = []
+            for item in models or []:
+                model_id = str(item).strip()
+                if model_id and model_id not in seen:
+                    seen.add(model_id)
+                    clean_models.append(model_id)
+            if clean_models:
+                out[clean_name] = clean_models
+        return out
+
+
+def failover_chain_models(blob: dict, name: str) -> list[str]:
+    """Return the ordered model list for a named chain, or [] when unknown/empty."""
+    chains = (blob or {}).get("chains")
+    if not isinstance(chains, dict):
+        return []
+    models = chains.get(name)
+    return [str(m) for m in models] if isinstance(models, list) else []
 
 
 def selected_model_ids(blob: dict) -> set[str] | None:

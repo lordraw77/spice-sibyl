@@ -151,4 +151,23 @@ export class FeatureService {
     );
     return res?.selected ?? models;
   }
+
+  /** Admin: named LLM failover chains (Phase 31.c), tried in order by
+   *  llm.completion / llm.agent workflow nodes on a call failure. */
+  async modelFailoverChains(): Promise<Record<string, string[]>> {
+    const res = await firstValueFrom(
+      this.http.get<{ chains: Record<string, string[]> }>(`${this.config.apiUrl}/admin/model-failover-chains`),
+    );
+    return res?.chains ?? {};
+  }
+
+  async saveModelFailoverChains(chains: Record<string, string[]>): Promise<Record<string, string[]>> {
+    const res = await firstValueFrom(
+      this.http.put<{ chains: Record<string, string[]> }>(
+        `${this.config.apiUrl}/admin/model-failover-chains`,
+        { chains },
+      ),
+    );
+    return res?.chains ?? chains;
+  }
 }

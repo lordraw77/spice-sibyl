@@ -45,6 +45,25 @@ export interface WorkflowTrigger {
   next_run_at?: number | null;
   enabled: boolean;
   created_at: number;
+  /** Phase 30.b: consecutive firing-failure streak; auto-disables past a threshold. */
+  fail_count?: number;
+  last_error?: string | null;
+}
+
+/** One row of the cross-workflow schedules overview (Phase 30.e). */
+export interface WorkflowSchedule {
+  workflow_id: string;
+  workflow_name: string;
+  workflow_active: boolean;
+  trigger_id: string;
+  trigger_type: string;
+  config: Record<string, unknown>;
+  next_run_at?: number | null;
+  enabled: boolean;
+  fail_count: number;
+  last_error?: string | null;
+  last_run_status?: string | null;
+  last_run_at?: number | null;
 }
 
 export interface GraphWorkflow {
@@ -96,6 +115,8 @@ export interface NodeParamSchema {
   label: string;
   kind: string;
   hint?: string;
+  /** kind === 'select': the picklist (empty string is a valid option, e.g. "none"). */
+  options?: string[];
 }
 
 export interface NodeTypeInfo {
@@ -164,6 +185,18 @@ export class GraphWorkflowService {
 
   examples(): Observable<GraphWorkflowExample[]> {
     return this.http.get<GraphWorkflowExample[]>(`${this.base}/examples`);
+  }
+
+  /** Cross-workflow schedules overview: every trigger of every workflow of this
+   *  profile, with its next run and last run status. */
+  schedules(): Observable<WorkflowSchedule[]> {
+    return this.http.get<WorkflowSchedule[]>(`${this.base}/schedules`);
+  }
+
+  /** Named LLM failover chains curated in Settings → Models (Phase 31.c), for the
+   *  `failover_chain` param on llm.completion / llm.agent nodes. */
+  failoverChains(): Observable<{ chains: Record<string, string[]> }> {
+    return this.http.get<{ chains: Record<string, string[]> }>(`${this.config.apiUrl}/models/failover-chains`);
   }
 
   list(): Observable<GraphWorkflow[]> {
@@ -250,6 +283,18 @@ export class GraphWorkflowService {
 
   deleteTrigger(triggerId: string): Observable<void> {
     return this.http.delete<void>(`${this.base}/triggers/${triggerId}`);
+  }
+
+  enableTrigger(triggerId: string): Observable<WorkflowTrigger> {
+    return this.http.post<WorkflowTrigger>(`${this.base}/triggers/${triggerId}/enable`, {});
+  }
+
+  disableTrigger(triggerId: string): Observable<WorkflowTrigger> {
+    return this.http.post<WorkflowTrigger>(`${this.base}/triggers/${triggerId}/disable`, {});
+  }
+
+  rotateWebhookSecret(triggerId: string): Observable<{ secret: string }> {
+    return this.http.post<{ secret: string }>(`${this.base}/triggers/${triggerId}/rotate-secret`, {});
   }
 
   /** Stream a run's live node events over SSE. Uses the Fetch API (native

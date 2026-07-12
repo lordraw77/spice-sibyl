@@ -71,6 +71,17 @@ _STATIC_NODES: list[NodeTypeInfo] = [
         ),
         params_schema=[_param("times", "Times", "number")],
     ),
+    NodeTypeInfo(
+        type="wait", category="logic", label="Wait", outputs=["main"],
+        description=(
+            "Suspends the node for a fixed duration or until a point in time, then "
+            "continues. Output: {waited} (seconds actually slept, capped at 1h)."
+        ),
+        params_schema=[
+            _param("seconds", "Seconds", "number"),
+            _param("until", "Until (unix timestamp or ISO datetime, expression)", "expression"),
+        ],
+    ),
     # ── data ──
     NodeTypeInfo(
         type="set", category="data", label="Set", outputs=["main"],
@@ -89,6 +100,30 @@ _STATIC_NODES: list[NodeTypeInfo] = [
         type="code", category="data", label="Code", outputs=["main"],
         description="Runs Python in the sandbox with `input` in scope; prints become the output.",
         params_schema=[_param("code", "Python code", "code")],
+    ),
+    NodeTypeInfo(
+        type="aggregate", category="data", label="Aggregate", outputs=["main"],
+        description=(
+            "Reduces an array (items, or the node input) with 'op' "
+            "(sum/avg/min/max/count/concat) over a dotted 'field' path. "
+            "Output: {result, count}."
+        ),
+        params_schema=[
+            _param("items", "Items (expression, optional)", "expression"),
+            _param("op", "Operation (sum/avg/min/max/count/concat)", "text"),
+            _param("field", "Field (dotted path)", "text"),
+        ],
+    ),
+    NodeTypeInfo(
+        type="batch", category="data", label="Batch", outputs=["main"],
+        description=(
+            "Splits an array (items, or the node input) into chunks of 'size', "
+            "typically fed into a For-each. Output: {batches, count}."
+        ),
+        params_schema=[
+            _param("items", "Items (expression, optional)", "expression"),
+            _param("size", "Batch size", "number"),
+        ],
     ),
     # ── action ──
     NodeTypeInfo(
@@ -123,9 +158,18 @@ _STATIC_NODES: list[NodeTypeInfo] = [
         type="notify.telegram", category="notify", label="Telegram", outputs=["main"],
         description=(
             "Sends a message to the Telegram chat linked to this profile (Settings → "
-            "Telegram). Fails if no chat is linked; muted chats are a silent no-op."
+            "Telegram). Fails if no chat is linked; muted chats are a silent no-op. "
+            "Pick a parse mode to render Markdown/HTML formatting instead of plain text "
+            "(CommonMark **bold** is normalised to Telegram's single-asterisk bold)."
         ),
-        params_schema=[_param("text", "Message (expression)", "expression")],
+        params_schema=[
+            _param("text", "Message (expression)", "expression"),
+            _param(
+                "parse_mode", "Parse mode", "select",
+                options=["", "Markdown", "MarkdownV2", "HTML"],
+                hint="Plain text, or Telegram formatting (bold/italic/links/…)",
+            ),
+        ],
     ),
     NodeTypeInfo(
         type="notify.email", category="notify", label="Email", outputs=["main"],
@@ -170,6 +214,10 @@ _STATIC_NODES: list[NodeTypeInfo] = [
             _param("model", "Model", "model"),
             _param("system", "System prompt", "text"),
             _param("prompt", "Prompt (expression)", "expression"),
+            _param(
+                "failover_chain", "Failover chain", "model-chain",
+                hint="On call failure, retries in order through this named chain (Settings → Models)",
+            ),
         ],
     ),
     NodeTypeInfo(
@@ -179,6 +227,10 @@ _STATIC_NODES: list[NodeTypeInfo] = [
             _param("model", "Model", "model"),
             _param("goal", "Goal (expression)", "expression"),
             _param("max_steps", "Max steps", "number"),
+            _param(
+                "failover_chain", "Failover chain", "model-chain",
+                hint="On call failure, retries in order through this named chain (Settings → Models)",
+            ),
         ],
     ),
 ]

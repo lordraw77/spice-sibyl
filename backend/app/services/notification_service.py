@@ -65,8 +65,29 @@ def _event_allowed(prefs: dict, event_type: str) -> bool:
     return prefs.get(event_type) is not False
 
 
-async def notify_telegram(db: aiosqlite.Connection, profile_id: str, event_type: str, text: str) -> None:
-    """Push a Telegram message to the profile's linked chat, if opted in."""
+def _chunk_text(text: str, limit: int = 4000) -> list[str]:
+    """Split text into Telegram-safe chunks (≤ limit chars), same line-based
+    approach as app.telegram.bot._split — Telegram hard-caps messages at 4096."""
+    if len(text) <= limit:
+        return [text]
+    parts, buf = [], []
+    for line in text.splitlines(keepends=True):
+        if sum(len(l) for l in buf) + len(line) > limit:
+            parts.append("".join(buf))
+            buf = []
+        buf.append(line)
+    if buf:
+        parts.append("".join(buf))
+    return parts or [text[:limit]]
+
+
+async def notify_telegram(
+    db: aiosqlite.Connection, profile_id: str, event_type: str, text: str, parse_mode: str | None = None
+) -> None:
+    """Push a Telegram message to the profile's linked chat, if opted in.
+
+    ``parse_mode`` is one of Telegram's own literals (``Markdown``, ``MarkdownV2``,
+    ``HTML``) or ``None`` for plain text (unchanged default)."""
     link = await telegram_link_repository.get_by_profile_id(db, profile_id)
     if not link:
         return
@@ -89,7 +110,8 @@ async def notify_telegram(db: aiosqlite.Connection, profile_id: str, event_type:
         return
 
     try:
-        await bot.send_message(chat_id=chat_id, text=text)
+        for chunk in _chunk_text(text):
+            await bot.send_message(chat_id=chat_id, text=chunk, parse_mode=parse_mode)
     except Exception:
         logger.exception("notify_telegram: send failed event=%s chat_id=%s", event_type, chat_id)
 
