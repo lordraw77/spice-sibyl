@@ -18,8 +18,10 @@ from app.schemas.graph_workflows import (
     GraphRunOut,
     GraphWorkflowOut,
     NodeRunOut,
+    WorkflowApprovalOut,
     WorkflowGraph,
     WorkflowScheduleOut,
+    WorkflowStatsOut,
     WorkflowTriggerOut,
 )
 
@@ -31,12 +33,22 @@ def _now() -> int:
 # ── workflows ───────────────────────────────────────────────────────────────
 
 def _row_to_workflow(row: aiosqlite.Row) -> GraphWorkflowOut:
+    try:
+        variables = json.loads(row["variables_json"] or "{}")
+    except (KeyError, IndexError, ValueError):
+        variables = {}
+    try:
+        max_concurrent_runs = int(row["max_concurrent_runs"] or 0)
+    except (KeyError, IndexError, ValueError, TypeError):
+        max_concurrent_runs = 0
     return GraphWorkflowOut(
         id=row["id"],
         profile_id=row["profile_id"],
         name=row["name"],
         description=row["description"],
         graph=WorkflowGraph.model_validate(json.loads(row["graph_json"])),
+        variables=variables if isinstance(variables, dict) else {},
+        max_concurrent_runs=max_concurrent_runs,
         active=bool(row["active"]),
         version=row["version"],
         created_at=row["created_at"],
@@ -45,15 +57,17 @@ def _row_to_workflow(row: aiosqlite.Row) -> GraphWorkflowOut:
 
 
 async def create_workflow(
-    db: aiosqlite.Connection, profile_id: str, name: str, description: str, graph: WorkflowGraph
+    db: aiosqlite.Connection, profile_id: str, name: str, description: str, graph: WorkflowGraph,
+    variables: dict | None = None, max_concurrent_runs: int = 0,
 ) -> GraphWorkflowOut:
     wf_id = str(uuid.uuid4())
     now = _now()
     graph_json = json.dumps(graph.model_dump())
     await db.execute(
-        "INSERT INTO workflows (id, profile_id, name, description, graph_json, active, version, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, 0, 1, ?, ?)",
-        (wf_id, profile_id, name, description, graph_json, now, now),
+        "INSERT INTO workflows (id, profile_id, name, description, graph_json, variables_json, max_concurrent_runs, active, version, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)",
+        (wf_id, profile_id, name, description, graph_json, json.dumps(variables or {}),
+         max(0, int(max_concurrent_runs or 0)), now, now),
     )
     await _snapshot_version(db, wf_id, 1, graph_json)
     await db.commit()
@@ -82,6 +96,8 @@ async def update_workflow(
     description: str | None = None,
     graph: WorkflowGraph | None = None,
     active: bool | None = None,
+    variables: dict | None = None,
+    max_concurrent_runs: int | None = None,
 ) -> GraphWorkflowOut | None:
     current = await get_workflow(db, wf_id)
     if current is None:
@@ -97,12 +113,16 @@ async def update_workflow(
 
     await db.execute(
         "UPDATE workflows SET name = COALESCE(?, name), description = COALESCE(?, description), "
-        "graph_json = COALESCE(?, graph_json), active = COALESCE(?, active), version = ?, updated_at = ? "
+        "graph_json = COALESCE(?, graph_json), variables_json = COALESCE(?, variables_json), "
+        "max_concurrent_runs = COALESCE(?, max_concurrent_runs), "
+        "active = COALESCE(?, active), version = ?, updated_at = ? "
         "WHERE id = ?",
         (
             name,
             description,
             graph_json,
+            None if variables is None else json.dumps(variables),
+            None if max_concurrent_runs is None else max(0, int(max_concurrent_runs)),
             None if active is None else int(active),
             version,
             _now(),
@@ -159,6 +179,53 @@ async def get_version_graph(
     return WorkflowGraph.model_validate(json.loads(row["graph_json"])) if row else None
 
 
+# ── secrets (Phase 32 — roadmap fase 1) ─────────────────────────────────────
+# Values arrive/leave this module already encrypted; encryption itself lives in
+# vault_service so the key handling stays in one place.
+
+async def upsert_secret(
+    db: aiosqlite.Connection, profile_id: str, name: str, value_encrypted: str
+) -> None:
+    now = _now()
+    await db.execute(
+        "INSERT INTO workflow_secrets (id, profile_id, name, value_encrypted, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(profile_id, name) DO UPDATE SET value_encrypted = excluded.value_encrypted, updated_at = excluded.updated_at",
+        (str(uuid.uuid4()), profile_id, name, value_encrypted, now, now),
+    )
+    await db.commit()
+
+
+async def list_secrets(db: aiosqlite.Connection, profile_id: str) -> list[dict]:
+    """Names + timestamps only — the encrypted value never leaves the DB layer
+    except through :func:`get_encrypted_secrets` for the engine."""
+    async with db.execute(
+        "SELECT name, created_at, updated_at FROM workflow_secrets WHERE profile_id = ? ORDER BY name",
+        (profile_id,),
+    ) as cur:
+        rows = await cur.fetchall()
+    return [
+        {"name": r["name"], "created_at": r["created_at"], "updated_at": r["updated_at"]}
+        for r in rows
+    ]
+
+
+async def get_encrypted_secrets(db: aiosqlite.Connection, profile_id: str) -> dict[str, str]:
+    async with db.execute(
+        "SELECT name, value_encrypted FROM workflow_secrets WHERE profile_id = ?", (profile_id,)
+    ) as cur:
+        rows = await cur.fetchall()
+    return {r["name"]: r["value_encrypted"] for r in rows}
+
+
+async def delete_secret(db: aiosqlite.Connection, profile_id: str, name: str) -> bool:
+    cur = await db.execute(
+        "DELETE FROM workflow_secrets WHERE profile_id = ? AND name = ?", (profile_id, name)
+    )
+    await db.commit()
+    return cur.rowcount > 0
+
+
 # ── runs ────────────────────────────────────────────────────────────────────
 
 def _row_to_run(row: aiosqlite.Row) -> GraphRunOut:
@@ -180,16 +247,78 @@ async def create_run(
     profile_id: str,
     trigger_type: str,
     graph_json: str,
+    *,
+    status: str = "pending",
+    context: dict | None = None,
 ) -> str:
+    """``status='queued'`` + ``context={'trigger': payload}`` parks the run in the
+    per-workflow queue (fase 2.3); the engine re-reads the payload on promotion."""
     run_id = str(uuid.uuid4())
     now = _now()
     await db.execute(
-        "INSERT INTO workflow_runs (id, workflow_id, profile_id, status, trigger_type, graph_json, created_at, updated_at) "
-        "VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)",
-        (run_id, workflow_id, profile_id, trigger_type, graph_json, now, now),
+        "INSERT INTO workflow_runs (id, workflow_id, profile_id, status, trigger_type, graph_json, context_json, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (run_id, workflow_id, profile_id, status, trigger_type, graph_json,
+         json.dumps(context) if context is not None else None, now, now),
     )
     await db.commit()
     return run_id
+
+
+async def count_active_runs(db: aiosqlite.Connection, workflow_id: str) -> int:
+    """Runs of the workflow currently holding a slot (pending or running)."""
+    async with db.execute(
+        "SELECT COUNT(*) AS n FROM workflow_runs WHERE workflow_id = ? AND status IN ('pending', 'running')",
+        (workflow_id,),
+    ) as cur:
+        row = await cur.fetchone()
+    return row["n"] if row else 0
+
+
+async def next_queued_run(db: aiosqlite.Connection, workflow_id: str) -> GraphRunOut | None:
+    """The oldest queued run of the workflow (FIFO promotion order)."""
+    async with db.execute(
+        "SELECT * FROM workflow_runs WHERE workflow_id = ? AND status = 'queued' "
+        "ORDER BY created_at ASC, id ASC LIMIT 1",
+        (workflow_id,),
+    ) as cur:
+        row = await cur.fetchone()
+    return _row_to_run(row) if row else None
+
+
+async def list_interrupted_runs(db: aiosqlite.Connection) -> list[GraphRunOut]:
+    """Runs left in a non-terminal state by a crash/restart: 'running'/'pending'
+    rows to resume from their checkpoint (fase 2.4), 'waiting' rows whose
+    human.approval node must re-attach to its pending request (fase 4.4), plus
+    'queued' rows whose promotion may now be possible (fase 2.3)."""
+    async with db.execute(
+        "SELECT * FROM workflow_runs WHERE status IN ('pending', 'running', 'waiting', 'queued') "
+        "ORDER BY created_at ASC",
+    ) as cur:
+        rows = await cur.fetchall()
+    return [_row_to_run(r) for r in rows]
+
+
+async def get_run_graph(db: aiosqlite.Connection, run_id: str) -> str | None:
+    """The graph snapshot stored with the run — resume re-executes exactly what
+    the run started with, not the workflow's possibly-newer graph."""
+    async with db.execute(
+        "SELECT graph_json FROM workflow_runs WHERE id = ?", (run_id,)
+    ) as cur:
+        row = await cur.fetchone()
+    return row["graph_json"] if row else None
+
+
+async def first_error_node(db: aiosqlite.Connection, run_id: str) -> str | None:
+    """The node_id of the first node run that ended in 'error' (fase 2.5 —
+    the ``failed_node`` field of the error-trigger payload)."""
+    async with db.execute(
+        "SELECT node_id FROM workflow_node_runs WHERE run_id = ? AND status = 'error' "
+        "ORDER BY started_at ASC, id ASC LIMIT 1",
+        (run_id,),
+    ) as cur:
+        row = await cur.fetchone()
+    return row["node_id"] if row else None
 
 
 async def set_run_status(
@@ -311,6 +440,17 @@ async def finish_node_run(
     await db.execute(
         "UPDATE workflow_node_runs SET status = ?, output_json = ?, error = ?, finished_at = ? WHERE id = ?",
         (status, json.dumps(output, default=str) if output is not None else None, error, _now(), nr_id),
+    )
+    await db.commit()
+
+
+async def fail_running_node_runs(db: aiosqlite.Connection, run_id: str, error: str) -> None:
+    """Close node runs left 'running' by a crash — resume (fase 2.4) re-executes
+    those nodes, so the orphan rows are settled as errors instead of dangling."""
+    await db.execute(
+        "UPDATE workflow_node_runs SET status = 'error', error = ?, finished_at = ? "
+        "WHERE run_id = ? AND status = 'running'",
+        (error, _now(), run_id),
     )
     await db.commit()
 
@@ -448,6 +588,27 @@ async def list_event_triggers(db: aiosqlite.Connection, event_type: str) -> list
     return out
 
 
+async def list_error_triggers(db: aiosqlite.Connection, failed_workflow_id: str) -> list[dict]:
+    """Enabled ``error`` triggers on active workflows watching ``failed_workflow_id``
+    (fase 2.5). A trigger watches everything when its config has no ``workflow_id``
+    (or ``""``/``"*"``); a workflow never receives its own failures (loop guard)."""
+    async with db.execute(
+        "SELECT t.*, w.profile_id AS wf_profile_id FROM workflow_triggers t "
+        "JOIN workflows w ON w.id = t.workflow_id "
+        "WHERE t.type = 'error' AND t.enabled = 1 AND w.active = 1",
+    ) as cur:
+        rows = await cur.fetchall()
+    out = []
+    for r in rows:
+        if r["workflow_id"] == failed_workflow_id:
+            continue
+        cfg = json.loads(r["config_json"])
+        watched = cfg.get("workflow_id")
+        if watched in (None, "", "*") or watched == failed_workflow_id:
+            out.append(dict(r))
+    return out
+
+
 async def update_trigger_config(db: aiosqlite.Connection, tr_id: str, config: dict) -> None:
     await db.execute(
         "UPDATE workflow_triggers SET config_json = ? WHERE id = ?", (json.dumps(config), tr_id)
@@ -533,3 +694,194 @@ async def delete_trigger(db: aiosqlite.Connection, tr_id: str) -> bool:
     cur = await db.execute("DELETE FROM workflow_triggers WHERE id = ?", (tr_id,))
     await db.commit()
     return cur.rowcount > 0
+
+
+# ── stats (Phase 36 — roadmap fase 5.1) ─────────────────────────────────────
+
+async def workflow_stats_for_profile(db: aiosqlite.Connection, profile_id: str) -> list[WorkflowStatsOut]:
+    """Per-workflow aggregates: run counts by outcome, success rate over terminal
+    runs, average terminal-run duration, and the LLM token totals summed from the
+    `_usage` key that llm.* node outputs carry (json_extract over output_json)."""
+    async with db.execute(
+        """
+        SELECT w.id, w.name, w.active,
+               COUNT(r.id)                                            AS runs,
+               SUM(CASE WHEN r.status = 'completed' THEN 1 ELSE 0 END) AS completed,
+               SUM(CASE WHEN r.status = 'failed'    THEN 1 ELSE 0 END) AS failed,
+               SUM(CASE WHEN r.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+               AVG(CASE WHEN r.status IN ('completed', 'failed')
+                        THEN r.updated_at - r.created_at END)          AS avg_duration_s,
+               MAX(r.created_at)                                       AS last_run_at
+        FROM workflows w
+        LEFT JOIN workflow_runs r ON r.workflow_id = w.id
+        WHERE w.profile_id = ?
+        GROUP BY w.id
+        ORDER BY w.updated_at DESC
+        """,
+        (profile_id,),
+    ) as cur:
+        rows = await cur.fetchall()
+
+    async with db.execute(
+        """
+        SELECT r.workflow_id,
+               SUM(COALESCE(json_extract(nr.output_json, '$._usage.tokens_in'), 0))    AS tokens_in,
+               SUM(COALESCE(json_extract(nr.output_json, '$._usage.tokens_out'), 0))   AS tokens_out,
+               SUM(COALESCE(json_extract(nr.output_json, '$._usage.tokens_total'), 0)) AS tokens_total
+        FROM workflow_node_runs nr
+        JOIN workflow_runs r ON r.id = nr.run_id
+        JOIN workflows w ON w.id = r.workflow_id
+        WHERE w.profile_id = ? AND nr.output_json LIKE '%_usage%'
+        GROUP BY r.workflow_id
+        """,
+        (profile_id,),
+    ) as cur:
+        tokens = {t["workflow_id"]: t for t in await cur.fetchall()}
+
+    out: list[WorkflowStatsOut] = []
+    for row in rows:
+        completed = row["completed"] or 0
+        failed = row["failed"] or 0
+        terminal = completed + failed
+        tok = tokens.get(row["id"])
+        out.append(WorkflowStatsOut(
+            workflow_id=row["id"],
+            workflow_name=row["name"],
+            active=bool(row["active"]),
+            runs=row["runs"] or 0,
+            completed=completed,
+            failed=failed,
+            cancelled=row["cancelled"] or 0,
+            success_rate=(completed / terminal) if terminal else None,
+            avg_duration_s=row["avg_duration_s"],
+            tokens_in=int(tok["tokens_in"] or 0) if tok else 0,
+            tokens_out=int(tok["tokens_out"] or 0) if tok else 0,
+            tokens_total=int(tok["tokens_total"] or 0) if tok else 0,
+            last_run_at=row["last_run_at"],
+        ))
+    return out
+
+
+# ── approvals (Phase 35 — roadmap fase 4.4) ─────────────────────────────────
+
+def _row_to_approval(row: aiosqlite.Row) -> WorkflowApprovalOut:
+    approval = WorkflowApprovalOut(
+        id=row["id"],
+        run_id=row["run_id"],
+        node_id=row["node_id"],
+        workflow_id=row["workflow_id"],
+        profile_id=row["profile_id"],
+        title=row["title"],
+        message=row["message"],
+        status=row["status"],
+        timeout_at=row["timeout_at"],
+        comment=row["comment"],
+        decided_by=row["decided_by"],
+        created_at=row["created_at"],
+        decided_at=row["decided_at"],
+    )
+    try:
+        approval.workflow_name = row["workflow_name"]
+    except (KeyError, IndexError):
+        pass
+    return approval
+
+
+async def create_approval(
+    db: aiosqlite.Connection,
+    run_id: str,
+    node_id: str,
+    workflow_id: str,
+    profile_id: str,
+    *,
+    title: str,
+    message: str,
+    timeout_at: int | None,
+) -> WorkflowApprovalOut:
+    ap_id = str(uuid.uuid4())
+    await db.execute(
+        "INSERT INTO workflow_approvals (id, run_id, node_id, workflow_id, profile_id, title, message, status, timeout_at, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+        (ap_id, run_id, node_id, workflow_id, profile_id, title, message, timeout_at, _now()),
+    )
+    await db.commit()
+    return await get_approval(db, ap_id)  # type: ignore[return-value]
+
+
+async def get_approval(db: aiosqlite.Connection, ap_id: str) -> WorkflowApprovalOut | None:
+    async with db.execute("SELECT * FROM workflow_approvals WHERE id = ?", (ap_id,)) as cur:
+        row = await cur.fetchone()
+    return _row_to_approval(row) if row else None
+
+
+async def get_pending_approval(
+    db: aiosqlite.Connection, run_id: str, node_id: str
+) -> WorkflowApprovalOut | None:
+    """The pending request of a run's approval node — lets a resumed run
+    re-attach to the request it created before the restart."""
+    async with db.execute(
+        "SELECT * FROM workflow_approvals WHERE run_id = ? AND node_id = ? AND status = 'pending' "
+        "ORDER BY created_at DESC LIMIT 1",
+        (run_id, node_id),
+    ) as cur:
+        row = await cur.fetchone()
+    return _row_to_approval(row) if row else None
+
+
+async def list_approvals(
+    db: aiosqlite.Connection,
+    profile_id: str,
+    *,
+    status: str | None = "pending",
+    run_id: str | None = None,
+    limit: int = 100,
+) -> list[WorkflowApprovalOut]:
+    """Approval requests of the profile (newest first), joined to the workflow
+    name — feeds the pending-approvals view and the run detail panel."""
+    sql = (
+        "SELECT a.*, w.name AS workflow_name FROM workflow_approvals a "
+        "LEFT JOIN workflows w ON w.id = a.workflow_id WHERE a.profile_id = ?"
+    )
+    args: list = [profile_id]
+    if status:
+        sql += " AND a.status = ?"
+        args.append(status)
+    if run_id:
+        sql += " AND a.run_id = ?"
+        args.append(run_id)
+    sql += " ORDER BY a.created_at DESC LIMIT ?"
+    args.append(limit)
+    async with db.execute(sql, args) as cur:
+        rows = await cur.fetchall()
+    return [_row_to_approval(r) for r in rows]
+
+
+async def decide_approval(
+    db: aiosqlite.Connection,
+    ap_id: str,
+    *,
+    status: str,
+    decided_by: str | None = None,
+    comment: str | None = None,
+) -> bool:
+    """Settle a pending request (approved|rejected|expired|cancelled). Returns
+    False when it was already decided — the engine's poll and the API can race,
+    and the first writer must win."""
+    cur = await db.execute(
+        "UPDATE workflow_approvals SET status = ?, decided_by = ?, comment = ?, decided_at = ? "
+        "WHERE id = ? AND status = 'pending'",
+        (status, decided_by, comment, _now(), ap_id),
+    )
+    await db.commit()
+    return cur.rowcount > 0
+
+
+async def cancel_pending_approvals(db: aiosqlite.Connection, run_id: str) -> None:
+    """Settle every pending request of a run as 'cancelled' — called when the
+    run itself is cancelled or fails, so no orphan requests linger."""
+    await db.execute(
+        "UPDATE workflow_approvals SET status = 'cancelled', decided_at = ? "
+        "WHERE run_id = ? AND status = 'pending'",
+        (_now(), run_id),
+    )
+    await db.commit()

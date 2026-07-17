@@ -4,6 +4,15 @@ Phase 29 — visual node-graph workflow endpoints.
 Protected routes (under /v1/graph-workflows):
   GET    /node-types           — palette catalog (static nodes + tool.* nodes)
   GET    /schedules            — cross-workflow schedules overview (all triggers + last run)
+  GET    /approvals            — human-approval requests (fase 4.4; ?status=&run_id=)
+  POST   /approvals/{aid}/decision — approve/reject a pending request; the run resumes
+  GET    /stats                — per-workflow metrics: runs, success rate, duration, tokens (fase 5.1)
+  POST   /import               — create from a portable snapshot, with validation warnings (fase 5.2)
+  POST   /generate             — natural language → validated draft graph, NOT saved (fase 5.3)
+  POST   /generate/stream      — same, but streams `log` SSE events then `done`/`error`
+  GET    /secrets              — profile secrets (names only, never values)
+  PUT    /secrets              — upsert one secret ($secrets.<name> in expressions)
+  DELETE /secrets/{name}       — remove a secret
   GET    /                     — list the profile's workflows
   POST   /                     — create a workflow
   GET    /{id}                 — one workflow (+ triggers)
@@ -12,6 +21,7 @@ Protected routes (under /v1/graph-workflows):
   POST   /{id}/activate        — enable the workflow (its triggers start firing)
   POST   /{id}/deactivate      — disable it
   POST   /{id}/run             — run now (manual trigger); body = {payload}
+  POST   /{id}/nodes/{nid}/test — run ONE node in isolation (fase 3.1); no run recorded
   GET    /{id}/runs            — recent runs
   GET    /{id}/node-outputs    — latest persisted output per node (all past runs)
   GET    /{id}/export          — portable JSON snapshot (re-importable via POST /)
@@ -21,6 +31,8 @@ Protected routes (under /v1/graph-workflows):
   GET    /{id}/triggers        — list triggers
   POST   /triggers/{tid}/enable|disable
   DELETE /triggers/{tid}
+  POST   /runs/{rid}/cancel    — stop a pending/running run
+  POST   /runs/{rid}/replay    — re-run the workflow with this run's trigger payload
   GET    /runs/{rid}           — one run with its node runs
   GET    /runs/{rid}/stream    — SSE live run view
 
@@ -52,14 +64,25 @@ from app.dependencies.auth import get_current_user, resolve_profile
 from app.examples import list_graph_workflow_examples
 from app.schemas.auth import UserOut
 from app.schemas.graph_workflows import (
+    ApprovalDecisionIn,
+    ExpressionPreviewIn,
     GraphRunOut,
     GraphWorkflowCreate,
     GraphWorkflowExample,
     GraphWorkflowOut,
     GraphWorkflowUpdate,
+    NodeTestIn,
     NodeTypeInfo,
     RunTriggerIn,
+    WorkflowApprovalOut,
+    WorkflowGenerateIn,
+    WorkflowGenerateOut,
+    WorkflowImportIn,
+    WorkflowImportOut,
+    WorkflowStatsOut,
     WorkflowScheduleOut,
+    WorkflowSecretIn,
+    WorkflowSecretOut,
     WorkflowTriggerCreate,
     WorkflowTriggerOut,
 )
@@ -112,6 +135,225 @@ async def list_schedules(
     return await repo.list_schedules_for_profile(db, profile_id)
 
 
+# ── secrets (Phase 32 — roadmap fase 1) ─────────────────────────────────────
+# Profile-scoped, Fernet-encrypted at rest, referenced in node params as
+# ``{{ $secrets.<name> }}``. Static paths declared before ``/{wf_id}``.
+
+@router.get("/secrets", response_model=list[WorkflowSecretOut])
+async def list_secrets(
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+):
+    """Names + timestamps only — a stored secret value is never returned."""
+    return await repo.list_secrets(db, profile_id)
+
+
+@router.put("/secrets", response_model=WorkflowSecretOut)
+async def put_secret(
+    body: WorkflowSecretIn,
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+    user: UserOut = Depends(get_current_user),
+):
+    """Create or replace one secret (upsert by name)."""
+    from app.services import vault_service
+
+    encrypted = vault_service.encrypt(body.value, settings.vault_secret_key)
+    await repo.upsert_secret(db, profile_id, body.name, encrypted)
+    await audit_repository.record(
+        db, user.id, "graph_workflow.secret.put", resource=body.name, ip=_client_ip(request)
+    )
+    for row in await repo.list_secrets(db, profile_id):
+        if row["name"] == body.name:
+            return row
+    raise HTTPException(status_code=500, detail="Secret not stored")
+
+
+@router.delete("/secrets/{name}", status_code=204)
+async def delete_secret(
+    name: str,
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+    user: UserOut = Depends(get_current_user),
+):
+    if not await repo.delete_secret(db, profile_id, name):
+        raise HTTPException(status_code=404, detail="Secret not found")
+    await audit_repository.record(
+        db, user.id, "graph_workflow.secret.delete", resource=name, ip=_client_ip(request)
+    )
+
+
+# ── stats, import & generation (Phase 36 — roadmap fase 5) ──────────────────
+# Static paths declared before ``/{wf_id}`` so they aren't swallowed by it.
+
+@router.get("/stats", response_model=list[WorkflowStatsOut])
+async def workflow_stats(
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+):
+    """Fase 5.1 — per-workflow aggregates: run counts, success rate, average
+    duration and LLM token totals (from the `_usage` key of llm.* node runs)."""
+    return await repo.workflow_stats_for_profile(db, profile_id)
+
+
+@router.post("/import", response_model=WorkflowImportOut, status_code=201)
+async def import_workflow(
+    body: WorkflowImportIn,
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+    user: UserOut = Depends(get_current_user),
+):
+    """Fase 5.2 — create a workflow from a portable snapshot (the body of
+    GET /{id}/export) with schema validation. Unknown node types, broken edges
+    and `$secrets` references missing from this profile come back as warnings
+    (the workflow still imports and can be fixed in the editor)."""
+    try:
+        warnings = await engine.validate_import(db, profile_id, body.graph)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    wf = await repo.create_workflow(
+        db, profile_id, body.name, body.description, body.graph,
+        variables=body.variables, max_concurrent_runs=body.max_concurrent_runs,
+    )
+    await audit_repository.record(
+        db, user.id, "graph_workflow.import", resource=wf.id, ip=_client_ip(request)
+    )
+    return WorkflowImportOut(workflow=wf, warnings=warnings)
+
+
+@router.post("/generate", response_model=WorkflowGenerateOut)
+async def generate_workflow(
+    body: WorkflowGenerateIn,
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+    user: UserOut = Depends(get_current_user),
+):
+    """Fase 5.3 — natural-language description → validated draft graph (name,
+    description, nodes/edges laid out). The draft is NOT saved: the editor opens
+    it for review and the user saves it explicitly."""
+    try:
+        draft = await engine.generate_workflow(
+            db, profile_id, body.prompt, model=body.model, failover_chain=body.failover_chain
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await audit_repository.record(
+        db, user.id, "graph_workflow.generate", resource=draft["name"], ip=_client_ip(request)
+    )
+    return WorkflowGenerateOut(**draft)
+
+
+@router.post("/generate/stream")
+async def generate_workflow_stream(
+    body: WorkflowGenerateIn,
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+    user: UserOut = Depends(get_current_user),
+):
+    """Fase 5.3 — the streaming twin of POST /generate: emits ``log`` SSE events
+    ({step, detail}) while the draft is being produced — catalog loaded, model
+    called, reply received, graph normalized, layout — then a final ``done``
+    event with the draft (or ``error`` with the reason). The editor's generate
+    dialog renders the log live instead of a bare spinner."""
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def _events():
+        # The generation runs on its own connection: the request-scoped `db`
+        # may already be torn down while this response is still streaming.
+        gen_db = await engine._connect()
+        task = asyncio.get_running_loop().create_task(
+            engine.generate_workflow(
+                gen_db, profile_id, body.prompt,
+                model=body.model, failover_chain=body.failover_chain,
+                on_progress=lambda step, detail: queue.put_nowait({"step": step, "detail": detail}),
+            )
+        )
+        try:
+            while True:
+                try:
+                    ev = await asyncio.wait_for(queue.get(), timeout=0.3)
+                    yield {"event": "log", "data": json.dumps(ev)}
+                except asyncio.TimeoutError:
+                    if task.done():
+                        break
+                    if await request.is_disconnected():
+                        return
+            while not queue.empty():
+                yield {"event": "log", "data": json.dumps(queue.get_nowait())}
+            try:
+                draft = task.result()
+            except Exception as exc:  # noqa: BLE001 — surfaced as an SSE error event
+                yield {"event": "error", "data": json.dumps({"detail": str(exc)})}
+                return
+            await audit_repository.record(
+                gen_db, user.id, "graph_workflow.generate", resource=draft["name"], ip=_client_ip(request)
+            )
+            yield {"event": "done", "data": WorkflowGenerateOut(**draft).model_dump_json()}
+        finally:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                    pass
+            await gen_db.close()
+
+    return EventSourceResponse(_events())
+
+
+# ── approvals (Phase 35 — roadmap fase 4.4) ─────────────────────────────────
+# Static paths declared before ``/{wf_id}`` so they aren't swallowed by it.
+
+@router.get("/approvals", response_model=list[WorkflowApprovalOut])
+async def list_approvals(
+    status: str | None = "pending",
+    run_id: str | None = None,
+    limit: int = 100,
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+):
+    """The profile's human-approval requests, newest first (``status=pending``
+    by default; pass ``status=`` empty for all). ``run_id`` scopes the list to
+    one run — the runs page uses it to render the approve/reject panel."""
+    return await repo.list_approvals(
+        db, profile_id, status=status or None, run_id=run_id, limit=min(max(limit, 1), 500)
+    )
+
+
+@router.post("/approvals/{approval_id}/decision", response_model=WorkflowApprovalOut)
+async def decide_approval(
+    approval_id: str,
+    body: ApprovalDecisionIn,
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+    user: UserOut = Depends(get_current_user),
+):
+    """Approve or reject a pending request. The suspended run picks the decision
+    up within a couple of seconds and continues down the matching branch."""
+    approval = await repo.get_approval(db, approval_id)
+    if not approval or approval.profile_id != profile_id:
+        raise HTTPException(status_code=404, detail="Approval not found")
+    if approval.status != "pending":
+        raise HTTPException(status_code=409, detail=f"Approval is already {approval.status}")
+    decided = await repo.decide_approval(
+        db, approval_id,
+        status="approved" if body.approved else "rejected",
+        decided_by=user.id, comment=body.comment,
+    )
+    if not decided:  # raced the engine's timeout poll — first writer wins
+        raise HTTPException(status_code=409, detail="Approval was just settled")
+    await audit_repository.record(
+        db, user.id, "graph_workflow.approval.decide", resource=approval_id, ip=_client_ip(request)
+    )
+    return await repo.get_approval(db, approval_id)
+
+
 # ── run registry (profile-wide) ─────────────────────────────────────────────
 
 @router.get("/runs", response_model=list[GraphRunOut])
@@ -138,18 +380,48 @@ async def cancel_run(
     profile_id: str = Depends(resolve_profile),
     user: UserOut = Depends(get_current_user),
 ):
-    """Stop a pending/running run. Task cancellation is asynchronous, so the
+    """Stop a queued/pending/running run. Task cancellation is asynchronous, so the
     returned row may still read 'running' for an instant — poll/SSE settles it."""
     run = await repo.get_run(db, run_id)
     if not run or run.profile_id != profile_id:
         raise HTTPException(status_code=404, detail="Run not found")
-    if run.status not in ("pending", "running"):
+    if run.status not in ("queued", "pending", "running", "waiting"):
         raise HTTPException(status_code=409, detail=f"Run is already {run.status}")
     await engine.cancel_run(db, run_id)
     await audit_repository.record(
         db, user.id, "graph_workflow.run.cancel", resource=run_id, ip=_client_ip(request)
     )
     return await repo.get_run(db, run_id)
+
+
+@router.post("/runs/{run_id}/replay")
+async def replay_run(
+    run_id: str,
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+    user: UserOut = Depends(get_current_user),
+):
+    """Re-run the workflow with the exact trigger payload of a past run — a
+    one-click reproduction for debugging. Uses the workflow's *current* graph
+    (so a fix can be verified against the original input); returns the new
+    run id. Partial runs can't be replayed (they have no full trigger payload)."""
+    run = await repo.get_run(db, run_id)
+    if not run or run.profile_id != profile_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.trigger_type == "partial":
+        raise HTTPException(status_code=409, detail="Partial runs cannot be replayed")
+    wf = await _owned(db, run.workflow_id, profile_id)
+    ctx = await repo.get_run_context(db, run_id) or {}
+    payload = ctx.get("trigger") or {}
+    new_run_id = await engine.run_workflow(
+        db, wf.id, profile_id, trigger_type="manual",
+        trigger_payload=payload, graph=wf.graph,
+    )
+    await audit_repository.record(
+        db, user.id, "graph_workflow.run.replay", resource=run_id, ip=_client_ip(request)
+    )
+    return {"run_id": new_run_id}
 
 
 # ── workflow CRUD ───────────────────────────────────────────────────────────
@@ -170,7 +442,10 @@ async def create_workflow(
     profile_id: str = Depends(resolve_profile),
     user: UserOut = Depends(get_current_user),
 ):
-    wf = await repo.create_workflow(db, profile_id, body.name, body.description, body.graph)
+    wf = await repo.create_workflow(
+        db, profile_id, body.name, body.description, body.graph, variables=body.variables,
+        max_concurrent_runs=body.max_concurrent_runs,
+    )
     await audit_repository.record(db, user.id, "graph_workflow.create", resource=wf.id, ip=_client_ip(request))
     return wf
 
@@ -197,7 +472,9 @@ async def update_workflow(
 ):
     await _owned(db, wf_id, profile_id)
     wf = await repo.update_workflow(
-        db, wf_id, name=body.name, description=body.description, graph=body.graph, active=body.active
+        db, wf_id, name=body.name, description=body.description, graph=body.graph,
+        active=body.active, variables=body.variables,
+        max_concurrent_runs=body.max_concurrent_runs,
     )
     await audit_repository.record(db, user.id, "graph_workflow.update", resource=wf_id, ip=_client_ip(request))
     wf.triggers = await repo.list_triggers(db, wf_id)
@@ -255,11 +532,61 @@ async def run_now(
     user: UserOut = Depends(get_current_user),
 ):
     wf = await _owned(db, wf_id, profile_id)
-    run_id = await engine.run_workflow(
-        db, wf_id, profile_id, trigger_type="manual", trigger_payload=body.payload, graph=wf.graph
-    )
+    try:
+        run_id = await engine.run_workflow(
+            db, wf_id, profile_id,
+            trigger_type="partial" if body.start_node_id else "manual",
+            trigger_payload=body.payload, graph=wf.graph,
+            start_node_id=body.start_node_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     await audit_repository.record(db, user.id, "graph_workflow.run", resource=wf_id, ip=_client_ip(request))
     return {"run_id": run_id}
+
+
+@router.post("/{wf_id}/nodes/{node_id}/test")
+async def test_node(
+    wf_id: str,
+    node_id: str,
+    body: NodeTestIn,
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+    user: UserOut = Depends(get_current_user),
+):
+    """Roadmap fase 3.1 — execute a single node with its current (or mocked)
+    input and return the output inline; no run is recorded. ``body.node``
+    may carry the unsaved editor state of the node; ``body.input`` mocks
+    its primary input. Node failures come back as ``{ok: false, error}``."""
+    await _owned(db, wf_id, profile_id)
+    if body.node is not None and body.node.id != node_id:
+        raise HTTPException(status_code=400, detail="node id mismatch")
+    try:
+        result = await engine.test_node(
+            db, wf_id, profile_id, node_id,
+            node_override=body.node, input_override=body.input,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await audit_repository.record(
+        db, user.id, "graph_workflow.node.test", resource=f"{wf_id}/{node_id}", ip=_client_ip(request)
+    )
+    return result
+
+
+@router.post("/{wf_id}/preview-expression")
+async def preview_expression(
+    wf_id: str,
+    body: ExpressionPreviewIn,
+    db: aiosqlite.Connection = Depends(get_db),
+    profile_id: str = Depends(resolve_profile),
+):
+    """Evaluate an expression read-only against the workflow's latest run data
+    (node outputs + trigger). Returns {ok, value} or {ok, error} — never 500s
+    on a bad expression, so the editor can show the message inline."""
+    await _owned(db, wf_id, profile_id)
+    return await engine.preview_expression(db, wf_id, body.expression)
 
 
 @router.get("/{wf_id}/runs", response_model=list[GraphRunOut])
@@ -360,6 +687,13 @@ async def export_workflow(
         "name": wf.name,
         "description": wf.description,
         "graph": wf.graph.model_dump(),
+        # $vars travel with the file (they are plain config); $secrets never do —
+        # references like $secrets.NAME must be re-satisfied in the target env.
+        "variables": wf.variables,
+        "max_concurrent_runs": wf.max_concurrent_runs,
+        # Fase 5.2 — names of the $secrets the graph references (values NEVER
+        # travel): the importer knows which secrets to re-create over there.
+        "secrets": engine.secret_references(wf.graph),
         "workflow_version": wf.version,
         "exported_at": int(time.time()),
     }

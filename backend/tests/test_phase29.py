@@ -27,13 +27,14 @@ def captured_spawns(monkeypatch):
     fire-and-forget tasks, so intercept ``_spawn`` and let the test drive
     ``_execute`` itself (mirrors the Phase 18 ``no_autostart`` fixture)."""
     spawns: list[tuple] = []
-    monkeypatch.setattr(engine, "_spawn", lambda *args: spawns.append(args))
+    monkeypatch.setattr(engine, "_spawn", lambda *args, **kwargs: spawns.append((args, kwargs)))
     return spawns
 
 
 def _drive_last_run(spawns):
     """Execute the most recently spawned run synchronously to completion."""
-    asyncio.run(engine._execute(*spawns[-1]))
+    args, kwargs = spawns[-1]
+    asyncio.run(engine._execute(*args, **kwargs))
 
 
 # ── expression resolver (standalone unit tests) ─────────────────────────────
@@ -96,6 +97,16 @@ def test_interpolation_and_native_type():
     # Literals pass through untouched.
     assert asyncio.run(er.resolve_value("plain", ctx)) == "plain"
     assert asyncio.run(er.resolve_value(7, ctx)) == 7
+
+
+def test_surrounding_whitespace_keeps_native_type():
+    ctx = _ctx()
+    # A trailing newline (stray Enter in the inspector textarea) must not
+    # stringify a native result — the classic broken-for-each slip.
+    assert asyncio.run(er.resolve_value("={{ $node.n1.output.items }}\n", ctx)) == [1, 2, 3]
+    assert asyncio.run(er.resolve_value("  {{ $trigger.count }}\n ", ctx)) == 5
+    # Real surrounding text still stitches to a string.
+    assert asyncio.run(er.resolve_value("n: ={{ $trigger.count }}\n", ctx)) == "n: 5\n"
 
 
 def test_bare_interpolation_without_equals_resolves():
@@ -421,6 +432,37 @@ def test_for_loop_iterates_body_and_collects(client, auth_headers, captured_spaw
     assert by_node["collect"]["output"]["all"] == [{"val": 1}, {"val": 2}, {"val": 3}]
 
 
+def test_loop_body_node_sees_same_iteration_outputs(client, auth_headers, captured_spawns):
+    """Inside an iteration, a body node can read an earlier body node's output
+    as $node.<id>.output — the path the editor's field chooser produces."""
+    graph = {
+        "nodes": [
+            {"id": "t", "type": "manual"},
+            {"id": "loop", "type": "for", "params": {"items": "={{ $trigger.servers }}"}},
+            {"id": "pick", "type": "set", "params": {"fields": "={{ $item }}"}},
+            {"id": "fmt", "type": "set", "params": {"fields": {"line": "={{ $node.pick.output.host }}"}}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "t", "target": "loop"},
+            {"id": "e2", "source": "loop", "target": "pick", "sourceHandle": "loop"},
+            {"id": "e3", "source": "pick", "target": "fmt"},
+        ],
+    }
+    wf = client.post(
+        "/api/v1/graph-workflows", json={"name": "body ctx flow", "graph": graph}, headers=auth_headers
+    ).json()
+    servers = [{"host": "10.0.0.1"}, {"host": "10.0.0.2"}]
+    run_id = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/run", json={"payload": {"servers": servers}}, headers=auth_headers
+    ).json()["run_id"]
+    _drive_last_run(captured_spawns)
+    run = client.get(f"/api/v1/graph-workflows/runs/{run_id}", headers=auth_headers).json()
+    assert run["status"] == "completed", run
+    by_node = {nr["node_id"]: nr for nr in run["node_runs"]}
+    # Each iteration's sink saw THAT iteration's pick output, not a stale one.
+    assert by_node["loop"]["output"]["items"] == [{"line": "10.0.0.1"}, {"line": "10.0.0.2"}]
+
+
 def test_repeat_loop_runs_n_times(client, auth_headers, captured_spawns):
     graph = {
         "nodes": [
@@ -546,11 +588,15 @@ def test_examples_catalog_is_valid_and_importable(client, auth_headers, captured
     resp = client.get("/api/v1/graph-workflows/examples", headers=auth_headers)
     assert resp.status_code == 200, resp.text
     examples = resp.json()
-    assert len(examples) == 6
+    assert len(examples) == 18
     ids = {e["id"] for e in examples}
     assert {
         "rss-morning-digest", "weather-greeting", "webhook-kb-answer",
         "page-keyword-watch", "api-error-fallback", "subworkflow-composer",
+        "switch-routing", "fanout-merge", "orders-filter-total", "batch-loop",
+        "poll-wait-repeat", "python-transform", "event-inapp-alert",
+        "notify-broadcast", "agent-research-brief", "error-alert-hub",
+        "approval-gate-deploy", "ticket-triage-classify",
     } == ids
 
     # CI guard: every node type used by an example must exist in the palette catalog
@@ -1210,3 +1256,718 @@ def test_schedule_trigger_once_pattern_with_explicit_date(client, auth_headers):
     assert body["config"]["recurrence"] == "once"
     fire = datetime.fromtimestamp(body["next_run_at"], _tz())
     assert (fire.year, fire.month, fire.day) == (2030, 1, 1)
+
+
+# ── partial runs + expression preview ───────────────────────────────────────
+
+def _three_step_wf(client, auth_headers):
+    graph = {
+        "nodes": [
+            {"id": "t", "type": "manual"},
+            {"id": "a", "type": "set", "params": {"fields": {"x": 10}}},
+            {"id": "b", "type": "set", "params": {"fields": {"y": "={{ $node.a.output.x * 2 }}"}}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "t", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+    }
+    return client.post(
+        "/api/v1/graph-workflows", json={"name": "partial flow", "graph": graph}, headers=auth_headers
+    ).json()
+
+
+def test_partial_run_reuses_upstream_outputs(client, auth_headers, captured_spawns):
+    wf = _three_step_wf(client, auth_headers)
+    # Full run first: persists every node's output.
+    client.post(f"/api/v1/graph-workflows/{wf['id']}/run", json={"payload": {}}, headers=auth_headers)
+    _drive_last_run(captured_spawns)
+
+    # Partial run from `b`: upstream `t`/`a` must not re-execute, and `b` must
+    # still resolve $node.a.output.x from the seeded historical output.
+    run_id = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/run",
+        json={"payload": {}, "start_node_id": "b"},
+        headers=auth_headers,
+    ).json()["run_id"]
+    _drive_last_run(captured_spawns)
+
+    run = client.get(f"/api/v1/graph-workflows/runs/{run_id}", headers=auth_headers).json()
+    assert run["status"] == "completed", run
+    assert run["trigger_type"] == "partial"
+    executed = {nr["node_id"] for nr in run["node_runs"]}
+    assert executed == {"b"}, executed
+    b = next(nr for nr in run["node_runs"] if nr["node_id"] == "b")
+    assert b["output"] == {"y": 20}
+
+
+def test_partial_run_unknown_start_node_is_400(client, auth_headers, captured_spawns):
+    wf = _three_step_wf(client, auth_headers)
+    resp = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/run",
+        json={"payload": {}, "start_node_id": "nope"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 400
+
+
+def test_expression_preview_against_latest_run(client, auth_headers, captured_spawns):
+    wf = _three_step_wf(client, auth_headers)
+    client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/run",
+        json={"payload": {"who": "world"}}, headers=auth_headers,
+    )
+    _drive_last_run(captured_spawns)
+
+    def preview(expr):
+        return client.post(
+            f"/api/v1/graph-workflows/{wf['id']}/preview-expression",
+            json={"expression": expr}, headers=auth_headers,
+        ).json()
+
+    assert preview("={{ $node.a.output.x + 5 }}") == {"ok": True, "value": 15}
+    assert preview("={{ $trigger.who }}") == {"ok": True, "value": "world"}
+    # Bad expressions surface the message inline instead of erroring the request.
+    bad = preview("={{ open('/etc/passwd') }}")
+    assert bad["ok"] is False and bad["error"]
+    # Plain strings pass through untouched.
+    assert preview("hello") == {"ok": True, "value": "hello"}
+
+
+# ── Phase 30.f: per-node timeout ─────────────────────────────────────────────
+
+def test_node_timeout_aborts_slow_attempt(client, auth_headers, captured_spawns):
+    # A wait node asked to sleep 30s but capped at 50 ms times out; with the
+    # default onError=stop the node errors and the run fails — proving the cap
+    # fires without actually sleeping 30 seconds.
+    graph = {
+        "nodes": [
+            {"id": "t", "type": "manual"},
+            {"id": "slow", "type": "wait", "params": {"seconds": 30}, "timeoutMs": 50},
+        ],
+        "edges": [{"id": "e1", "source": "t", "target": "slow"}],
+    }
+    wf = client.post(
+        "/api/v1/graph-workflows", json={"name": "timeout flow", "graph": graph}, headers=auth_headers
+    ).json()
+    run_id = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/run", json={"payload": {}}, headers=auth_headers
+    ).json()["run_id"]
+    _drive_last_run(captured_spawns)
+    run = client.get(f"/api/v1/graph-workflows/runs/{run_id}", headers=auth_headers).json()
+    assert run["status"] == "failed", run
+    by_node = {nr["node_id"]: nr for nr in run["node_runs"]}
+    assert by_node["slow"]["status"] == "error"
+    assert "timed out" in (by_node["slow"]["error"] or "")
+
+
+def test_node_timeout_continue_on_error_keeps_run_alive(client, auth_headers, captured_spawns):
+    # A timed-out node with onError=continue surfaces {error} on main and the
+    # run still completes — the timeout obeys the normal failure policy.
+    graph = {
+        "nodes": [
+            {"id": "t", "type": "manual"},
+            {"id": "slow", "type": "wait", "params": {"seconds": 30}, "timeoutMs": 50, "onError": "continue"},
+        ],
+        "edges": [{"id": "e1", "source": "t", "target": "slow"}],
+    }
+    wf = client.post(
+        "/api/v1/graph-workflows", json={"name": "timeout continue", "graph": graph}, headers=auth_headers
+    ).json()
+    run_id = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/run", json={"payload": {}}, headers=auth_headers
+    ).json()["run_id"]
+    _drive_last_run(captured_spawns)
+    run = client.get(f"/api/v1/graph-workflows/runs/{run_id}", headers=auth_headers).json()
+    assert run["status"] == "completed", run
+    by_node = {nr["node_id"]: nr for nr in run["node_runs"]}
+    assert "timed out" in str(by_node["slow"]["output"])
+
+
+# ── Phase 30.f: run replay ───────────────────────────────────────────────────
+
+def _echo_trigger_wf(client, auth_headers):
+    graph = {
+        "nodes": [
+            {"id": "t", "type": "manual"},
+            {"id": "echo", "type": "set", "params": {"fields": {"who": "={{ $trigger.who }}"}}},
+        ],
+        "edges": [{"id": "e1", "source": "t", "target": "echo"}],
+    }
+    return client.post(
+        "/api/v1/graph-workflows", json={"name": "echo flow", "graph": graph}, headers=auth_headers
+    ).json()
+
+
+def test_replay_reuses_original_trigger_payload(client, auth_headers, captured_spawns):
+    wf = _echo_trigger_wf(client, auth_headers)
+    run_id = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/run",
+        json={"payload": {"who": "alice"}}, headers=auth_headers,
+    ).json()["run_id"]
+    _drive_last_run(captured_spawns)
+
+    resp = client.post(f"/api/v1/graph-workflows/runs/{run_id}/replay", headers=auth_headers)
+    assert resp.status_code == 200, resp.text
+    replay_id = resp.json()["run_id"]
+    assert replay_id != run_id
+    _drive_last_run(captured_spawns)
+
+    replay = client.get(f"/api/v1/graph-workflows/runs/{replay_id}", headers=auth_headers).json()
+    assert replay["status"] == "completed", replay
+    assert replay["trigger_type"] == "manual"
+    by_node = {nr["node_id"]: nr for nr in replay["node_runs"]}
+    assert by_node["echo"]["output"]["who"] == "alice"
+
+
+def test_replay_rejects_partial_run(client, auth_headers, captured_spawns):
+    wf = _three_step_wf(client, auth_headers)
+    # A partial run has no full trigger payload, so it can't be replayed.
+    run_id = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/run",
+        json={"payload": {}, "start_node_id": "b"}, headers=auth_headers,
+    ).json()["run_id"]
+    resp = client.post(f"/api/v1/graph-workflows/runs/{run_id}/replay", headers=auth_headers)
+    assert resp.status_code == 409, resp.text
+
+
+# ── Phase 32 (roadmap fase 1): $vars + $secrets ──────────────────────────────
+
+def test_workflow_variables_resolve_in_run(client, auth_headers, captured_spawns):
+    graph = {
+        "nodes": [
+            {"id": "t", "type": "manual"},
+            {"id": "s", "type": "set", "params": {"fields": {"msg": "={{ $vars.greeting }} world"}}},
+        ],
+        "edges": [{"id": "e1", "source": "t", "target": "s"}],
+    }
+    wf = client.post(
+        "/api/v1/graph-workflows",
+        json={"name": "vars flow", "graph": graph, "variables": {"greeting": "hello"}},
+        headers=auth_headers,
+    ).json()
+    assert wf["variables"] == {"greeting": "hello"}
+
+    run_id = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/run", json={"payload": {}}, headers=auth_headers
+    ).json()["run_id"]
+    _drive_last_run(captured_spawns)
+
+    run = client.get(f"/api/v1/graph-workflows/runs/{run_id}", headers=auth_headers).json()
+    assert run["status"] == "completed", run
+    by_node = {nr["node_id"]: nr for nr in run["node_runs"]}
+    assert by_node["s"]["output"]["msg"] == "hello world"
+
+
+def test_variables_update_does_not_bump_version(client, auth_headers):
+    wf = client.post(
+        "/api/v1/graph-workflows",
+        json={"name": "v flow", "graph": {"nodes": [], "edges": []}},
+        headers=auth_headers,
+    ).json()
+    assert wf["version"] == 1
+
+    resp = client.patch(
+        f"/api/v1/graph-workflows/{wf['id']}",
+        json={"variables": {"a": 1, "b": "two"}},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["variables"] == {"a": 1, "b": "two"}
+    assert body["version"] == 1  # only graph changes snapshot a new version
+
+
+def test_export_includes_variables(client, auth_headers):
+    wf = client.post(
+        "/api/v1/graph-workflows",
+        json={"name": "exp flow", "graph": {"nodes": [], "edges": []}, "variables": {"k": "v"}},
+        headers=auth_headers,
+    ).json()
+    snap = client.get(f"/api/v1/graph-workflows/{wf['id']}/export", headers=auth_headers).json()
+    assert snap["variables"] == {"k": "v"}
+    # Round-trip: the export body imports back with its variables.
+    wf2 = client.post("/api/v1/graph-workflows", json=snap, headers=auth_headers)
+    assert wf2.status_code == 201
+    assert wf2.json()["variables"] == {"k": "v"}
+
+
+def test_secrets_crud_never_returns_value(client, auth_headers):
+    resp = client.put(
+        "/api/v1/graph-workflows/secrets",
+        json={"name": "API_TOKEN", "value": "super-secret-token"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["name"] == "API_TOKEN"
+    assert "value" not in body
+
+    listed = client.get("/api/v1/graph-workflows/secrets", headers=auth_headers).json()
+    names = [s["name"] for s in listed]
+    assert "API_TOKEN" in names
+    assert all("value" not in s and "value_encrypted" not in s for s in listed)
+
+    assert client.delete("/api/v1/graph-workflows/secrets/API_TOKEN", headers=auth_headers).status_code == 204
+    assert client.delete("/api/v1/graph-workflows/secrets/API_TOKEN", headers=auth_headers).status_code == 404
+
+
+def test_secret_name_validation(client, auth_headers):
+    resp = client.put(
+        "/api/v1/graph-workflows/secrets",
+        json={"name": "bad name!", "value": "x"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+def test_secret_resolves_in_run_but_masked_in_preview(client, auth_headers, captured_spawns):
+    client.put(
+        "/api/v1/graph-workflows/secrets",
+        json={"name": "MY_KEY", "value": "s3cr3t-value"},
+        headers=auth_headers,
+    )
+    graph = {
+        "nodes": [
+            {"id": "t", "type": "manual"},
+            {"id": "s", "type": "set", "params": {"fields": {"auth": "Bearer ={{ $secrets.MY_KEY }}"}}},
+        ],
+        "edges": [{"id": "e1", "source": "t", "target": "s"}],
+    }
+    wf = client.post(
+        "/api/v1/graph-workflows", json={"name": "secret flow", "graph": graph}, headers=auth_headers
+    ).json()
+
+    run_id = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/run", json={"payload": {}}, headers=auth_headers
+    ).json()["run_id"]
+    _drive_last_run(captured_spawns)
+
+    run = client.get(f"/api/v1/graph-workflows/runs/{run_id}", headers=auth_headers).json()
+    assert run["status"] == "completed", run
+    by_node = {nr["node_id"]: nr for nr in run["node_runs"]}
+    assert by_node["s"]["output"]["auth"] == "Bearer s3cr3t-value"
+
+    # The editor's expression preview must never reveal the plaintext.
+    preview = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/preview-expression",
+        json={"expression": "={{ $secrets.MY_KEY }}"},
+        headers=auth_headers,
+    ).json()
+    assert preview["ok"] is True
+    assert preview["value"] == "***"
+
+    client.delete("/api/v1/graph-workflows/secrets/MY_KEY", headers=auth_headers)
+
+
+# ── Phase 33 (roadmap fase 2): engine reliability ────────────────────────────
+
+def _drive_run(spawns, run_id):
+    """Execute a specific captured spawn (by run id) synchronously."""
+    for args, kwargs in spawns:
+        if args[0] == run_id:
+            asyncio.run(engine._execute(*args, **kwargs))
+            return
+    raise AssertionError(f"run {run_id} was never spawned")
+
+
+def test_backoff_strategy_validation(client, auth_headers):
+    graph = {"nodes": [{"id": "n", "type": "manual", "backoffStrategy": "bogus"}], "edges": []}
+    resp = client.post(
+        "/api/v1/graph-workflows", json={"name": "bad backoff", "graph": graph}, headers=auth_headers
+    )
+    assert resp.status_code == 422
+
+
+def test_exponential_backoff_sleeps_grow(client, auth_headers, captured_spawns, monkeypatch):
+    # 2.1 — a failing node with backoffStrategy=exponential sleeps backoff * 2^attempt.
+    delays: list[float] = []
+
+    async def fake_sleep(seconds):
+        delays.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    graph = {
+        "nodes": [
+            {"id": "t", "type": "manual"},
+            {
+                "id": "boom", "type": "http.request",
+                "params": {"url": "not-a-url"},
+                "retry": 2, "backoff": 1, "backoffStrategy": "exponential",
+                "onError": "continue",
+            },
+        ],
+        "edges": [{"id": "e1", "source": "t", "target": "boom"}],
+    }
+    wf = client.post(
+        "/api/v1/graph-workflows", json={"name": "backoff flow", "graph": graph}, headers=auth_headers
+    ).json()
+    run_id = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/run", json={"payload": {}}, headers=auth_headers
+    ).json()["run_id"]
+    _drive_last_run(captured_spawns)
+
+    run = client.get(f"/api/v1/graph-workflows/runs/{run_id}", headers=auth_headers).json()
+    assert run["status"] == "completed", run  # onError=continue swallows the failure
+    assert delays == [1, 2]  # attempt 0 → 1s, attempt 1 → 2s
+
+
+def test_node_catalog_exposes_error_trigger_and_retry_defaults(client, auth_headers):
+    catalog = client.get("/api/v1/graph-workflows/node-types", headers=auth_headers).json()
+    by_type = {t["type"]: t for t in catalog}
+    assert "error" in by_type and by_type["error"]["category"] == "trigger"
+    http_defaults = by_type["http.request"]["defaults"]
+    assert http_defaults["retry"] == 2 and http_defaults["backoffStrategy"] == "exponential"
+    assert by_type["llm.completion"]["defaults"]["retry"] == 1
+
+
+def test_max_concurrent_runs_crud_and_export(client, auth_headers):
+    # 2.3 — the limit persists, PATCHes without a version bump, and travels with exports.
+    wf = client.post(
+        "/api/v1/graph-workflows",
+        json={"name": "limited flow", "graph": {"nodes": [], "edges": []}, "max_concurrent_runs": 2},
+        headers=auth_headers,
+    ).json()
+    assert wf["max_concurrent_runs"] == 2 and wf["version"] == 1
+
+    body = client.patch(
+        f"/api/v1/graph-workflows/{wf['id']}", json={"max_concurrent_runs": 3}, headers=auth_headers
+    ).json()
+    assert body["max_concurrent_runs"] == 3 and body["version"] == 1
+
+    snap = client.get(f"/api/v1/graph-workflows/{wf['id']}/export", headers=auth_headers).json()
+    assert snap["max_concurrent_runs"] == 3
+    wf2 = client.post("/api/v1/graph-workflows", json=snap, headers=auth_headers).json()
+    assert wf2["max_concurrent_runs"] == 3
+
+
+def test_runs_beyond_limit_queue_and_promote(client, auth_headers, captured_spawns):
+    # 2.3 — with max_concurrent_runs=1 the second run queues; finishing the first
+    # promotes it FIFO (the engine re-spawns it from its parked trigger payload).
+    graph = {
+        "nodes": [
+            {"id": "t", "type": "manual"},
+            {"id": "s", "type": "set", "params": {"fields": {"who": "={{ $trigger.who }}"}}},
+        ],
+        "edges": [{"id": "e1", "source": "t", "target": "s"}],
+    }
+    wf = client.post(
+        "/api/v1/graph-workflows",
+        json={"name": "queue flow", "graph": graph, "max_concurrent_runs": 1},
+        headers=auth_headers,
+    ).json()
+
+    first = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/run", json={"payload": {"who": "one"}}, headers=auth_headers
+    ).json()["run_id"]
+    second = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/run", json={"payload": {"who": "two"}}, headers=auth_headers
+    ).json()["run_id"]
+
+    assert len(captured_spawns) == 1  # the second run must not have spawned
+    second_row = client.get(f"/api/v1/graph-workflows/runs/{second}", headers=auth_headers).json()
+    assert second_row["status"] == "queued"
+
+    _drive_run(captured_spawns, first)  # finishing the first promotes the queued one
+    assert len(captured_spawns) == 2
+    _drive_run(captured_spawns, second)
+
+    for run_id, who in ((first, "one"), (second, "two")):
+        run = client.get(f"/api/v1/graph-workflows/runs/{run_id}", headers=auth_headers).json()
+        assert run["status"] == "completed", run
+        by_node = {nr["node_id"]: nr for nr in run["node_runs"]}
+        assert by_node["s"]["output"]["who"] == who  # the parked payload survived the queue
+
+
+def test_queued_run_can_be_cancelled(client, auth_headers, captured_spawns):
+    graph = {"nodes": [{"id": "t", "type": "manual"}], "edges": []}
+    wf = client.post(
+        "/api/v1/graph-workflows",
+        json={"name": "queue cancel flow", "graph": graph, "max_concurrent_runs": 1},
+        headers=auth_headers,
+    ).json()
+    client.post(f"/api/v1/graph-workflows/{wf['id']}/run", json={"payload": {}}, headers=auth_headers)
+    queued = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/run", json={"payload": {}}, headers=auth_headers
+    ).json()["run_id"]
+    resp = client.post(f"/api/v1/graph-workflows/runs/{queued}/cancel", headers=auth_headers)
+    assert resp.status_code == 200
+    assert client.get(
+        f"/api/v1/graph-workflows/runs/{queued}", headers=auth_headers
+    ).json()["status"] == "cancelled"
+
+
+def test_resume_interrupted_run_skips_checkpointed_nodes(client, auth_headers, captured_spawns):
+    # 2.4 — a run left 'running' resumes from its checkpoint: nodes with a
+    # persisted {output, handles} entry don't re-execute, downstream expressions
+    # still resolve against their checkpointed outputs.
+    graph = {
+        "nodes": [
+            {"id": "t", "type": "manual"},
+            {"id": "a", "type": "set", "params": {"fields": {"x": 41}}},
+            {"id": "b", "type": "set", "params": {"fields": {"y": "={{ $node.a.output.x + 1 }}"}}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "t", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+    }
+    wf = client.post(
+        "/api/v1/graph-workflows", json={"name": "resume flow", "graph": graph}, headers=auth_headers
+    ).json()
+    run_id = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/run", json={"payload": {}}, headers=auth_headers
+    ).json()["run_id"]
+
+    async def simulate_crash_mid_run():
+        from app.db import graph_workflow_repository as repo
+        db = await engine._connect()
+        try:
+            # t and a completed (checkpoint incl. handles); b never started.
+            await repo.set_run_status(db, run_id, "running", context={
+                "node": {
+                    "t": {"output": {}, "handles": ["main"]},
+                    "a": {"output": {"x": 41}, "handles": ["main"]},
+                },
+                "trigger": {},
+            })
+        finally:
+            await db.close()
+
+    asyncio.run(simulate_crash_mid_run())
+    before = len(captured_spawns)
+    asyncio.run(engine.resume_interrupted_runs())
+    assert any(args[0] == run_id for args, _ in captured_spawns[before:])
+    _drive_run(captured_spawns[before:], run_id)
+
+    run = client.get(f"/api/v1/graph-workflows/runs/{run_id}", headers=auth_headers).json()
+    assert run["status"] == "completed", run
+    executed = [nr["node_id"] for nr in run["node_runs"] if nr["status"] == "ok"]
+    assert executed == ["b"]  # only the missing node ran
+    by_node = {nr["node_id"]: nr for nr in run["node_runs"]}
+    assert by_node["b"]["output"]["y"] == 42  # resolved from the checkpointed output
+
+
+def test_error_trigger_fires_with_failure_payload(client, auth_headers, captured_spawns):
+    # 2.5 — when a run fails, active workflows with an `error` trigger fire and
+    # receive {workflow_id, workflow_name, run_id, error, failed_node}.
+    handler_graph = {
+        "nodes": [
+            {"id": "err", "type": "error"},
+            {"id": "cap", "type": "set", "params": {"fields": {
+                "failed_wf": "={{ $trigger.workflow_id }}",
+                "failed_node": "={{ $trigger.failed_node }}",
+                "error": "={{ $trigger.error }}",
+            }}},
+        ],
+        "edges": [{"id": "e1", "source": "err", "target": "cap"}],
+    }
+    handler = client.post(
+        "/api/v1/graph-workflows", json={"name": "alert handler", "graph": handler_graph},
+        headers=auth_headers,
+    ).json()
+    client.post(f"/api/v1/graph-workflows/{handler['id']}/activate", headers=auth_headers)
+    resp = client.post(
+        f"/api/v1/graph-workflows/{handler['id']}/triggers",
+        json={"type": "error", "config": {}}, headers=auth_headers,
+    )
+    assert resp.status_code == 201, resp.text
+
+    # A second handler watching a different workflow id must NOT fire.
+    other = client.post(
+        "/api/v1/graph-workflows", json={"name": "other handler", "graph": handler_graph},
+        headers=auth_headers,
+    ).json()
+    client.post(f"/api/v1/graph-workflows/{other['id']}/activate", headers=auth_headers)
+    client.post(
+        f"/api/v1/graph-workflows/{other['id']}/triggers",
+        json={"type": "error", "config": {"workflow_id": "someone-else"}}, headers=auth_headers,
+    )
+
+    failing_graph = {
+        "nodes": [
+            {"id": "t", "type": "manual"},
+            {"id": "boom", "type": "http.request", "params": {"url": "not-a-url"}},
+        ],
+        "edges": [{"id": "e1", "source": "t", "target": "boom"}],
+    }
+    failing = client.post(
+        "/api/v1/graph-workflows", json={"name": "doomed flow", "graph": failing_graph},
+        headers=auth_headers,
+    ).json()
+    run_id = client.post(
+        f"/api/v1/graph-workflows/{failing['id']}/run", json={"payload": {}}, headers=auth_headers
+    ).json()["run_id"]
+    before = len(captured_spawns)
+    _drive_run(captured_spawns, run_id)
+
+    # Exactly one handler run spawned (the catch-all; the filtered one stayed quiet).
+    new_spawns = captured_spawns[before + 0:]
+    handler_spawns = [s for s in new_spawns if s[0][0] != run_id and s[0][3] == "error"]
+    assert len(handler_spawns) == 1
+    handler_run_id = handler_spawns[0][0][0]
+    asyncio.run(engine._execute(*handler_spawns[0][0], **handler_spawns[0][1]))
+
+    handler_run = client.get(
+        f"/api/v1/graph-workflows/runs/{handler_run_id}", headers=auth_headers
+    ).json()
+    assert handler_run["status"] == "completed", handler_run
+    assert handler_run["workflow_id"] == handler["id"]
+    assert handler_run["trigger_type"] == "error"
+    by_node = {nr["node_id"]: nr for nr in handler_run["node_runs"]}
+    cap = by_node["cap"]["output"]
+    assert cap["failed_wf"] == failing["id"]
+    assert cap["failed_node"] == "boom"
+    assert "http.request" in cap["error"]
+
+    runs_other = client.get(
+        f"/api/v1/graph-workflows/{other['id']}/runs", headers=auth_headers
+    ).json()
+    assert runs_other == []  # the filtered handler never fired
+
+
+# ── Phase 34 (roadmap fase 3): editor DX — node test + pinned outputs ────────
+
+def test_single_node_test_executes_with_seeded_input(client, auth_headers, captured_spawns):
+    # 3.1 — a full run persists outputs, then testing `b` alone re-executes only
+    # it, resolving $node.a.output.x from history. No new run row is created.
+    wf = _three_step_wf(client, auth_headers)
+    client.post(f"/api/v1/graph-workflows/{wf['id']}/run", json={"payload": {}}, headers=auth_headers)
+    _drive_last_run(captured_spawns)
+    runs_before = client.get(f"/api/v1/graph-workflows/{wf['id']}/runs", headers=auth_headers).json()
+
+    resp = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/nodes/b/test", json={}, headers=auth_headers
+    )
+    assert resp.status_code == 200, resp.text
+    res = resp.json()
+    assert res["ok"] is True, res
+    assert res["output"] == {"y": 20}
+    assert res["handles"] == ["main"]
+    assert res["duration_ms"] >= 0
+
+    runs_after = client.get(f"/api/v1/graph-workflows/{wf['id']}/runs", headers=auth_headers).json()
+    assert len(runs_after) == len(runs_before)  # tests never record runs
+
+
+def test_node_test_accepts_unsaved_node_state_and_mock_input(client, auth_headers):
+    # 3.1 — `node` carries the canvas' unsaved params; `input` mocks $json.
+    wf = _three_step_wf(client, auth_headers)
+    override = {"id": "b", "type": "set", "params": {"fields": {"z": "={{ $json.v + 1 }}"}}}
+    res = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/nodes/b/test",
+        json={"node": override, "input": {"v": 41}}, headers=auth_headers,
+    ).json()
+    assert res == {**res, "ok": True, "output": {"z": 42}}
+
+    # id mismatch between path and body is rejected.
+    bad = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/nodes/a/test",
+        json={"node": override}, headers=auth_headers,
+    )
+    assert bad.status_code == 400
+
+
+def test_node_test_failure_and_unknown_node(client, auth_headers):
+    wf = _three_step_wf(client, auth_headers)
+    # A failing node comes back as ok=False with the error inline (HTTP 200).
+    res = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/nodes/b/test",
+        json={"node": {"id": "b", "type": "http.request", "params": {"url": "not-a-url"}}},
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is False and "http.request" in body["error"]
+    # Unknown node id → 404.
+    assert client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/nodes/nope/test", json={}, headers=auth_headers
+    ).status_code == 404
+
+
+def test_pinned_output_feeds_node_test_and_partial_run(client, auth_headers, captured_spawns):
+    # 3.2 — pin `a`'s output: node tests and partial runs must use the pin
+    # instead of run history (no full run ever executed here).
+    graph = {
+        "nodes": [
+            {"id": "t", "type": "manual"},
+            {"id": "a", "type": "set", "params": {"fields": {"x": 10}}, "pinnedOutput": {"x": 100}},
+            {"id": "b", "type": "set", "params": {"fields": {"y": "={{ $node.a.output.x * 2 }}"}}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "t", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+    }
+    wf = client.post(
+        "/api/v1/graph-workflows", json={"name": "pinned flow", "graph": graph}, headers=auth_headers
+    ).json()
+    assert wf["graph"]["nodes"][1]["pinnedOutput"] == {"x": 100}  # persisted with the graph
+
+    res = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/nodes/b/test", json={}, headers=auth_headers
+    ).json()
+    assert res["ok"] is True and res["output"] == {"y": 200}, res
+
+    # Partial run from b: seeded from the pin as well.
+    run_id = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/run",
+        json={"payload": {}, "start_node_id": "b"}, headers=auth_headers,
+    ).json()["run_id"]
+    _drive_last_run(captured_spawns)
+    run = client.get(f"/api/v1/graph-workflows/runs/{run_id}", headers=auth_headers).json()
+    assert run["status"] == "completed", run
+    b = next(nr for nr in run["node_runs"] if nr["node_id"] == "b")
+    assert b["output"] == {"y": 200}
+
+    # Expression preview honours the pin too.
+    prev = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/preview-expression",
+        json={"expression": "={{ $node.a.output.x }}"}, headers=auth_headers,
+    ).json()
+    assert prev == {"ok": True, "value": 100}
+
+
+def test_pinned_output_is_ignored_by_production_runs(client, auth_headers, captured_spawns):
+    # 3.2 — a full (manual/schedule/webhook/event) run executes the real node:
+    # the pin never leaks into production data.
+    graph = {
+        "nodes": [
+            {"id": "t", "type": "manual"},
+            {"id": "a", "type": "set", "params": {"fields": {"x": 10}}, "pinnedOutput": {"x": 100}},
+            {"id": "b", "type": "set", "params": {"fields": {"y": "={{ $node.a.output.x * 2 }}"}}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "t", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+    }
+    wf = client.post(
+        "/api/v1/graph-workflows", json={"name": "pinned prod flow", "graph": graph}, headers=auth_headers
+    ).json()
+    run_id = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/run", json={"payload": {}}, headers=auth_headers
+    ).json()["run_id"]
+    _drive_last_run(captured_spawns)
+    run = client.get(f"/api/v1/graph-workflows/runs/{run_id}", headers=auth_headers).json()
+    assert run["status"] == "completed", run
+    by_node = {nr["node_id"]: nr for nr in run["node_runs"]}
+    assert by_node["a"]["output"] == {"x": 10}   # the real node ran
+    assert by_node["b"]["output"] == {"y": 20}   # downstream saw the real output
+
+
+def test_loop_nodes_are_not_testable_in_isolation(client, auth_headers):
+    graph = {
+        "nodes": [
+            {"id": "t", "type": "manual"},
+            {"id": "loop", "type": "for", "params": {"items": [1, 2]}},
+        ],
+        "edges": [{"id": "e1", "source": "t", "target": "loop"}],
+    }
+    wf = client.post(
+        "/api/v1/graph-workflows", json={"name": "loop test flow", "graph": graph}, headers=auth_headers
+    ).json()
+    res = client.post(
+        f"/api/v1/graph-workflows/{wf['id']}/nodes/loop/test", json={}, headers=auth_headers
+    ).json()
+    assert res["ok"] is False and "for/repeat" in res["error"]

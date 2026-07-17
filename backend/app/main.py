@@ -66,6 +66,13 @@ async def lifespan(application: FastAPI):
     if settings.graph_workflow_scheduler_enabled:
         from app.services import workflow_graph_service
         workflow_graph_service.start_scheduler()
+        # Phase 33 (roadmap fase 2.4): resume runs interrupted by the previous
+        # shutdown/crash from their checkpoints and re-evaluate queued runs.
+        if settings.graph_workflow_resume_on_startup:
+            try:
+                await workflow_graph_service.resume_interrupted_runs()
+            except Exception:  # noqa: BLE001 — a bad old run must not block startup
+                logging.getLogger(__name__).exception("workflow resume-on-startup failed")
 
     # Start Telegram bot if a token is configured
     tg_app = None

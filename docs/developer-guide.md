@@ -610,7 +610,8 @@ Routing rules evaluated in order on the model-ID prefix:
 - `PATCH /graph-workflows/{id}` — `{ name?, description?, graph?, active? }` (a graph change bumps the version)
 - `DELETE /graph-workflows/{id}`
 - `POST /graph-workflows/{id}/activate` · `/deactivate`
-- `POST /graph-workflows/{id}/run` — `{ payload }` (manual trigger) → `{ run_id }`
+- `POST /graph-workflows/{id}/run` — `{ payload, start_node_id? }` (manual trigger; `start_node_id` = partial run) → `{ run_id }`
+- `POST /graph-workflows/{id}/nodes/{node_id}/test` — fase 3.1: run ONE node in isolation with `{ input?, node? }` (mock input / unsaved node state); returns `{ ok, output, handles, duration_ms }` or `{ ok: false, error }`; no run recorded
 - `GET /graph-workflows/{id}/runs` — recent runs
 - `GET /graph-workflows/{id}/node-outputs` — latest persisted output per node across all past runs (feeds the editor's edge inspector)
 - `GET /graph-workflows/{id}/export` — portable JSON snapshot (re-importable via `POST /graph-workflows`)
@@ -619,6 +620,13 @@ Routing rules evaluated in order on the model-ID prefix:
 - `POST /graph-workflows/triggers/{tid}/enable` · `/disable` · `DELETE /graph-workflows/triggers/{tid}`
 - `GET /graph-workflows/runs/{rid}` — one run with its node runs
 - `GET /graph-workflows/runs/{rid}/stream` — SSE live run view (snapshot + per-node events)
+- `GET /graph-workflows/approvals` — fase 4.4: human-approval requests (`?status=pending&run_id=`); a `human.approval` node suspends its run as `waiting` until decided
+- `POST /graph-workflows/approvals/{aid}/decision` — `{ approved: bool, comment? }`; the waiting run resumes down the `approved`/`rejected` branch (409 when already settled)
+- `GET /graph-workflows/stats` — fase 5.1: per-workflow metrics (run counts by outcome, success rate, avg duration, LLM token totals from `_usage`)
+- `POST /graph-workflows/import` — fase 5.2: create from a portable snapshot with validation; returns `{ workflow, warnings }` (unknown node types, missing `$secrets`)
+- `POST /graph-workflows/generate` — fase 5.3: `{ prompt, model?, failover_chain? }` → validated, normalized draft graph (NOT saved; the editor opens it)
+- `POST /graph-workflows/generate/stream` — streaming twin: SSE `log` events ({step, detail} — catalog/calling/received/normalized/trigger_added/layout), then `done` with the draft or `error`
+- Workspace sharing (fase 5.2, under `/workspaces`): `GET|POST /{ws}/workflows`, `DELETE /{ws}/workflows/{wid}`, `POST /{ws}/workflows/{wid}/import` (copy into the caller's profile, "… (shared)")
 - `POST /api/v1/wf/hooks/{token}` — **public** token-scoped webhook receiver; JSON body → `$trigger`
 
 #### Stats

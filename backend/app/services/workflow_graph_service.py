@@ -41,18 +41,23 @@ import aiosqlite
 
 from app.core.config import settings
 from app.db import graph_workflow_repository as repo
-from app.schemas.graph_workflows import GraphNode, WorkflowGraph
+from app.schemas.graph_workflows import GraphEdge, GraphNode, WorkflowGraph
 
 logger = logging.getLogger(__name__)
 
-_TRIGGER_TYPES = frozenset({"manual", "schedule", "webhook", "event"})
+_TRIGGER_TYPES = frozenset({"manual", "schedule", "webhook", "event", "error"})
 _LOOP_TYPES = frozenset({"for", "repeat"})
 _TOOL_RESULT_MAX_CHARS = 12000
 _MAX_LOOP_ITERATIONS = 1000
 _MAX_SUBWORKFLOW_DEPTH = 5
 _HTTP_MAX_TIMEOUT = 120.0
 _WAIT_MAX_SECONDS = 3600.0
+_RETRY_MAX_BACKOFF_SECONDS = 60.0  # cap per pause, even with exponential growth
 _SCHEDULE_POLL_SECONDS = 20
+# Phase 35 (roadmap fase 4) — new node bounds.
+_APPROVAL_POLL_SECONDS = 2.0        # how often a waiting human.approval re-checks its request
+_DB_QUERY_MAX_ROWS = 1000           # rows returned by db.query, hard cap
+_FILE_MAX_BYTES = 10 * 1024 * 1024  # file.read/file.write size guard
 _ENV_WHITELIST_PREFIX = "WF_"  # only WF_*-prefixed env vars are exposed as $env
 
 # Live SSE subscribers, keyed by run id.
@@ -104,6 +109,30 @@ def _env_context() -> dict:
     }
 
 
+async def _secrets_context(db: aiosqlite.Connection, profile_id: str) -> dict:
+    """Decrypt the profile's workflow secrets for the duration of a run —
+    exposed to expressions as ``$secrets.<name>``. Never persisted:
+    ``_ctx_snapshot`` drops this key before the context is checkpointed."""
+    from app.services import vault_service
+
+    encrypted = await repo.get_encrypted_secrets(db, profile_id)
+    out: dict[str, str] = {}
+    for name, ciphertext in encrypted.items():
+        plain = vault_service.decrypt(ciphertext, settings.vault_secret_key)
+        if plain is not None:
+            out[name] = plain
+    return out
+
+
+async def _workflow_variables(db: aiosqlite.Connection, run_id: str) -> dict:
+    """The owning workflow's ``$vars`` for a run (empty when unavailable)."""
+    run = await repo.get_run(db, run_id)
+    if run is None:
+        return {}
+    wf = await repo.get_workflow(db, run.workflow_id)
+    return (wf.variables if wf else None) or {}
+
+
 # ── public entry point ──────────────────────────────────────────────────────
 
 async def run_workflow(
@@ -114,32 +143,66 @@ async def run_workflow(
     trigger_type: str = "manual",
     trigger_payload: dict | None = None,
     graph: WorkflowGraph | None = None,
+    start_node_id: str | None = None,
 ) -> str:
     """Create a run row and start executing the graph in the background.
 
     Returns the run id immediately; progress is observable via ``get_run`` /
-    the SSE stream.
+    the SSE stream. When ``start_node_id`` is set the run is **partial**:
+    only that node and its downstream subgraph execute, with every other
+    node seeded from its latest persisted output.
+
+    Fase 2.3 — when the workflow has ``max_concurrent_runs`` > 0 and that many
+    runs are already active, the run is created in status ``queued`` (its
+    trigger payload parked in the run context) and starts when a slot frees.
+    Partial runs bypass the queue: they are interactive editor actions.
     """
+    wf = await repo.get_workflow(db, workflow_id)
     if graph is None:
-        wf = await repo.get_workflow(db, workflow_id)
         if wf is None:
             raise ValueError("workflow not found")
         graph = wf.graph
 
+    if wf is not None and wf.max_concurrent_runs > 0 and start_node_id is None:
+        active_runs = await repo.count_active_runs(db, workflow_id)
+        if active_runs >= wf.max_concurrent_runs:
+            graph_json = json.dumps(graph.model_dump())
+            run_id = await repo.create_run(
+                db, workflow_id, profile_id, trigger_type, graph_json,
+                status="queued", context={"node": {}, "trigger": trigger_payload or {}},
+            )
+            logger.info("Graph run %s queued (workflow %s at %d/%d active runs)",
+                        run_id, workflow_id, active_runs, wf.max_concurrent_runs)
+            return run_id
+
+    seed_outputs: dict[str, object] | None = None
+    if start_node_id is not None:
+        if start_node_id not in {n.id for n in graph.nodes}:
+            raise ValueError("start node not in graph")
+        hist = await repo.latest_node_outputs(db, workflow_id)
+        seed_outputs = {nid: entry["output"] for nid, entry in hist.items()}
+        # Fase 3.2 — a pinned output beats history when seeding a dev partial run.
+        for n in graph.nodes:
+            if n.pinnedOutput is not None:
+                seed_outputs[n.id] = n.pinnedOutput
+
     graph_json = json.dumps(graph.model_dump())
     run_id = await repo.create_run(db, workflow_id, profile_id, trigger_type, graph_json)
-    _spawn(run_id, profile_id, graph, trigger_type, trigger_payload or {})
+    _spawn(run_id, profile_id, graph, trigger_type, trigger_payload or {},
+           start_node_id=start_node_id, seed_outputs=seed_outputs)
     return run_id
 
 
 def _spawn(
-    run_id: str, profile_id: str, graph: WorkflowGraph, trigger_type: str, trigger_payload: dict
+    run_id: str, profile_id: str, graph: WorkflowGraph, trigger_type: str, trigger_payload: dict,
+    start_node_id: str | None = None, seed_outputs: dict | None = None, resume: bool = False,
 ) -> None:
     """Detach the graph execution as a background task. Isolated so tests can
     drive ``_execute`` deterministically (the TestClient's per-request loop
     cancels fire-and-forget tasks — see ``tests/test_phase29.py``)."""
     task = asyncio.get_running_loop().create_task(
-        _execute(run_id, profile_id, graph, trigger_type, trigger_payload)
+        _execute(run_id, profile_id, graph, trigger_type, trigger_payload,
+                 start_node_id=start_node_id, seed_outputs=seed_outputs, resume=resume)
     )
     _run_tasks.add(task)
     _tasks_by_run[run_id] = task
@@ -160,12 +223,171 @@ async def cancel_run(db: aiosqlite.Connection, run_id: str) -> bool:
         task.cancel()
         return True
     status = await repo.get_run_status(db, run_id)
-    if status in ("pending", "running"):
+    if status in ("queued", "pending", "running", "waiting"):
         await repo.set_run_status(db, run_id, "cancelled")
+        await repo.cancel_pending_approvals(db, run_id)
         _publish(run_id, {"kind": "run", "status": "cancelled"})
         _publish(run_id, {"kind": "done"})
         return True
     return False
+
+
+async def preview_expression(db: aiosqlite.Connection, workflow_id: str, expression: str) -> dict:
+    """Evaluate an expression read-only against the workflow's latest run data.
+
+    The context mirrors what a node would see at run time: ``$node`` from the
+    latest persisted output of every node (cross-run), ``$trigger`` from the
+    most recent run's context, plus ``$env`` / ``$now``. Returns
+    ``{ok: True, value}`` or ``{ok: False, error}`` — never raises.
+    """
+    from app.services import expression_resolver
+
+    node_ctx: dict[str, dict] = {}
+    hist = await repo.latest_node_outputs(db, workflow_id)
+    for nid, entry in hist.items():
+        node_ctx[nid] = {"output": entry.get("output")}
+    trigger: dict = {}
+    runs = await repo.list_runs(db, workflow_id, limit=1)
+    if runs:
+        run_ctx = await repo.get_run_context(db, runs[0].id) or {}
+        trigger = run_ctx.get("trigger") or {}
+        for nid, entry in (run_ctx.get("node") or {}).items():
+            node_ctx.setdefault(nid, entry)
+    wf = await repo.get_workflow(db, workflow_id)
+    # Secrets stay usable in previews ($secrets.NAME resolves) but masked, so
+    # the editor can never be used to read a stored secret back in plaintext.
+    masked_secrets = {}
+    if wf is not None:
+        masked_secrets = {
+            name: "***" for name in await repo.get_encrypted_secrets(db, wf.profile_id)
+        }
+        # Fase 3.2 — pinned outputs beat run history in editor previews too.
+        for n in wf.graph.nodes:
+            if n.pinnedOutput is not None:
+                node_ctx[n.id] = {"output": n.pinnedOutput}
+    ctx = {
+        "node": node_ctx,
+        "trigger": trigger,
+        "env": _env_context(),
+        "vars": (wf.variables if wf else None) or {},
+        "secrets": masked_secrets,
+        "now": int(time.time()),
+        "item": None,
+        "index": None,
+    }
+    try:
+        value = await expression_resolver.resolve_value(expression, ctx)
+        return {"ok": True, "value": _preview(value)}
+    except Exception as exc:  # noqa: BLE001 — surface the error to the editor UI
+        return {"ok": False, "error": str(exc)}
+
+
+async def test_node(
+    db: aiosqlite.Connection,
+    workflow_id: str,
+    profile_id: str,
+    node_id: str,
+    *,
+    node_override: GraphNode | None = None,
+    input_override: object | None = None,
+) -> dict:
+    """Fase 3.1 — execute ONE node in isolation and return its output inline.
+
+    No run/node-run rows are created: this is the editor's "run this node"
+    debugging action, not an execution. The context mirrors a partial run —
+    ``$node`` from each node's pinned output (fase 3.2) or latest persisted
+    output, ``$trigger`` from the most recent run — and the node's primary
+    input comes from ``input_override``, else from the first incoming edge's
+    seeded output, else from the trigger payload. Retries are intentionally
+    skipped (a test should fail fast); the per-attempt timeout still applies.
+    Returns ``{ok, output, handles, input, duration_ms}`` or
+    ``{ok: False, error, input, duration_ms}`` — never raises on node failure.
+    """
+    from app.services import expression_resolver
+
+    wf = await repo.get_workflow(db, workflow_id)
+    if wf is None:
+        raise ValueError("workflow not found")
+    nodes = {n.id: n for n in wf.graph.nodes}
+    node = node_override if node_override is not None else nodes.get(node_id)
+    if node is None or node.id != node_id or (node_override is not None and node_id not in nodes):
+        raise ValueError("node not in graph")
+    if node.type in _LOOP_TYPES:
+        return {"ok": False, "error": "for/repeat nodes cannot be tested in isolation — use 'run from this node' instead", "input": None, "duration_ms": 0}
+
+    node_ctx: dict[str, dict] = {}
+    for nid, entry in (await repo.latest_node_outputs(db, workflow_id)).items():
+        node_ctx[nid] = {"output": entry.get("output")}
+    for n in wf.graph.nodes:
+        if n.pinnedOutput is not None:
+            node_ctx[n.id] = {"output": n.pinnedOutput}
+    trigger: dict = {}
+    runs = await repo.list_runs(db, workflow_id, limit=1)
+    if runs:
+        trigger = ((await repo.get_run_context(db, runs[0].id)) or {}).get("trigger") or {}
+
+    if input_override is not None:
+        node_input = input_override
+    else:
+        node_input = trigger
+        incoming = sorted(
+            (e for e in wf.graph.edges if e.target == node_id),
+            key=lambda e: 0 if e.targetHandle == "main" else 1,
+        )
+        for e in incoming:
+            if e.source in node_ctx:
+                node_input = node_ctx[e.source].get("output")
+                break
+
+    ctx = {
+        "node": node_ctx,
+        "trigger": trigger,
+        "env": _env_context(),
+        "vars": wf.variables or {},
+        "secrets": await _secrets_context(db, profile_id),
+        "now": int(time.time()),
+        "item": None,
+        "index": None,
+        "_depth": 0,
+        "_run_id": None,  # no run: human.approval refuses to execute in a node test
+        "json": node_input,
+    }
+    started = time.time()
+    try:
+        params = await expression_resolver.resolve_params(node.params, ctx)
+        dispatch = _dispatch(db, profile_id, node, node_input, params, ctx)
+        timeout_s = node.timeoutMs / 1000.0 if node.timeoutMs > 0 else None
+        if timeout_s is not None:
+            try:
+                output, handles = await asyncio.wait_for(dispatch, timeout_s)
+            except asyncio.TimeoutError:
+                raise TimeoutError(f"node timed out after {node.timeoutMs} ms") from None
+        else:
+            output, handles = await dispatch
+        return {
+            "ok": True,
+            "output": _jsonable(output),
+            "handles": list(handles),
+            "input": _preview(node_input),
+            "duration_ms": int((time.time() - started) * 1000),
+        }
+    except Exception as exc:  # noqa: BLE001 — surface the failure to the editor UI
+        return {
+            "ok": False,
+            "error": str(exc),
+            "input": _preview(node_input),
+            "duration_ms": int((time.time() - started) * 1000),
+        }
+
+
+def _jsonable(value) -> object:
+    """A JSON-safe copy of a node output (the test result travels as JSON and
+    may be pinned verbatim by the editor, so keep it full-fidelity, not the
+    size-bounded ``_preview`` used for SSE frames)."""
+    try:
+        return json.loads(json.dumps(value, default=str))
+    except (TypeError, ValueError):
+        return str(value)
 
 
 # ── scheduler ───────────────────────────────────────────────────────────────
@@ -177,6 +399,9 @@ async def _execute(
     trigger_type: str,
     trigger_payload: dict,
     depth: int = 0,
+    start_node_id: str | None = None,
+    seed_outputs: dict | None = None,
+    resume: bool = False,
 ) -> None:
     db = await _connect()
     try:
@@ -215,14 +440,20 @@ async def _execute(
             "node": {},
             "trigger": trigger_payload,
             "env": _env_context(),
+            "vars": await _workflow_variables(db, run_id),
+            "secrets": await _secrets_context(db, profile_id),
             "now": int(time.time()),
             "_depth": depth,  # subworkflow nesting level (recursion guard)
+            "_run_id": run_id,  # fase 4.4 — lets human.approval bind its request to the run
         }
 
         def is_root(nid: str) -> bool:
             return not incoming[nid]
 
         def is_entry(nid: str) -> bool:
+            # Partial run: the requested start node is the sole entry point.
+            if start_node_id is not None:
+                return nid == start_node_id
             # Only *trigger* roots start on their own; a non-trigger node that
             # was dropped on the canvas but never wired up must not fire at run
             # start — it gets recorded as skipped instead (n8n semantics).
@@ -240,7 +471,9 @@ async def _execute(
             live_in = [e for e in incoming[nid] if e.id in live_edges]
             live_in.sort(key=lambda e: 0 if e.targetHandle == "main" else 1)
             if not live_in:
-                return trigger_payload if is_root(nid) else None
+                # A partial-run start node with no seeded predecessor falls back
+                # to the trigger payload, like a root would.
+                return trigger_payload if (is_root(nid) or nid == start_node_id) else None
             src_out = ctx["node"].get(live_in[0].source, {}).get("output")
             return src_out
 
@@ -272,6 +505,65 @@ async def _execute(
             body = reach(loop_targets) - cont - {loop_id}
             entry = [t for t in loop_targets if t in body]
             return body, entry
+
+        # ── partial run: only the start node + its downstream subgraph execute.
+        # Everything else is pre-marked done and seeded with its latest persisted
+        # output, so downstream expressions ($node.<id>.output…) keep resolving.
+        if start_node_id is not None and start_node_id in nodes:
+            reachable: set[str] = set()
+            stack = [start_node_id]
+            while stack:
+                x = stack.pop()
+                if x in reachable or x not in nodes:
+                    continue
+                reachable.add(x)
+                stack.extend(e.target for e in outgoing.get(x, []))
+            seed = seed_outputs or {}
+            for nid in nodes:
+                if nid in reachable:
+                    continue
+                done.add(nid)
+                if nid in seed:
+                    ctx["node"][nid] = {"output": seed[nid]}
+            for e in edges:
+                if e.source not in done:
+                    continue
+                # A seeded source feeding the live subgraph counts as a live edge
+                # (its historical output becomes the target's input); everything
+                # else upstream is dead.
+                if e.target in reachable and e.source in ctx["node"]:
+                    live_edges.add(e.id)
+                else:
+                    dead_edges.add(e.id)
+
+        # ── resume (fase 2.4): a run interrupted by a crash/restart restarts from
+        # its checkpoint — every node with a persisted {output, handles} entry is
+        # marked done and its live/dead edges re-derived, so only the remaining
+        # subgraph executes. Previously-skipped nodes stay skipped.
+        if resume:
+            persisted = await repo.get_run_context(db, run_id) or {}
+            if persisted.get("trigger"):
+                ctx["trigger"] = persisted["trigger"]
+            for nid, entry in (persisted.get("node") or {}).items():
+                if nid not in nodes or not isinstance(entry, dict):
+                    continue
+                ctx["node"][nid] = entry
+                done.add(nid)
+                handles = set(entry.get("handles") or ["main"])
+                for e in outgoing[nid]:
+                    (live_edges if e.sourceHandle in handles else dead_edges).add(e.id)
+                if nodes[nid].type in _LOOP_TYPES:
+                    body_ids, _ = loop_body(nid)
+                    for b in body_ids:
+                        done.add(b)
+                        for e in outgoing[b]:
+                            dead_edges.add(e.id)
+            for nr in await repo.list_node_runs(db, run_id):
+                if nr.status == "skipped" and nr.node_id in nodes and nr.node_id not in done:
+                    skipped.add(nr.node_id)
+                    for e in outgoing[nr.node_id]:
+                        dead_edges.add(e.id)
+            logger.info("Graph run %s resumed: %d/%d nodes already done", run_id, len(done), len(nodes))
 
         run_error: str | None = None
 
@@ -332,7 +624,9 @@ async def _execute(
                 status, output, handles, err = outcome
                 done.add(nid)
                 if status == "ok":
-                    ctx["node"][nid] = {"output": output}
+                    # `handles` is checkpointed with the output so a resumed run
+                    # (fase 2.4) can re-derive which outgoing edges were live.
+                    ctx["node"][nid] = {"output": output, "handles": list(handles)}
                     active = set(handles)
                     for e in outgoing[nid]:
                         if e.sourceHandle in active:
@@ -364,19 +658,31 @@ async def _execute(
         _publish(run_id, {"kind": "done"})
         logger.info("Graph run %s finished: %s", run_id, final_status)
         if run_error:
+            await repo.cancel_pending_approvals(db, run_id)
             await _maybe_alert_recurring_failures(db, run_id, profile_id)
+            await _fire_error_triggers(db, run_id, run_error, trigger_type)
 
     except asyncio.CancelledError:
         await repo.set_run_status(db, run_id, "cancelled")
+        await repo.cancel_pending_approvals(db, run_id)
         _publish(run_id, {"kind": "run", "status": "cancelled"})
         _publish(run_id, {"kind": "done"})
         raise
     except Exception as exc:  # noqa: BLE001 — a run failure must be recorded, not raised
         logger.exception("Graph run %s crashed", run_id)
         await repo.set_run_status(db, run_id, "failed", error=str(exc))
+        await repo.cancel_pending_approvals(db, run_id)
         _publish(run_id, {"kind": "run", "status": "failed", "error": str(exc)})
         _publish(run_id, {"kind": "done"})
+        await _fire_error_triggers(db, run_id, str(exc), trigger_type)
     finally:
+        # Fase 2.3 — this run leaving its slot may allow a queued run to start.
+        try:
+            run = await repo.get_run(db, run_id)
+            if run is not None:
+                await _maybe_start_queued(db, run.workflow_id)
+        except Exception:  # noqa: BLE001 — promotion must never mask the run outcome
+            logger.exception("Graph run %s: queued-run promotion failed", run_id)
         await db.close()
 
 
@@ -413,6 +719,108 @@ async def _maybe_alert_recurring_failures(db: aiosqlite.Connection, run_id: str,
         logger.exception("failed to check recurring-failure alert for run %s", run_id)
 
 
+async def _maybe_start_queued(db: aiosqlite.Connection, workflow_id: str) -> None:
+    """Promote queued runs of the workflow (FIFO) while slots are free (fase 2.3).
+    Called when a run reaches a terminal state and at startup."""
+    wf = await repo.get_workflow(db, workflow_id)
+    if wf is None:
+        return
+    while True:
+        limit = wf.max_concurrent_runs
+        if limit > 0 and await repo.count_active_runs(db, workflow_id) >= limit:
+            return
+        queued = await repo.next_queued_run(db, workflow_id)
+        if queued is None:
+            return
+        graph_json = await repo.get_run_graph(db, queued.id)
+        try:
+            graph = WorkflowGraph.model_validate(json.loads(graph_json or ""))
+        except (ValueError, TypeError) as exc:
+            await repo.set_run_status(db, queued.id, "failed", error=f"queued run has an invalid graph snapshot: {exc}")
+            continue
+        payload = ((await repo.get_run_context(db, queued.id)) or {}).get("trigger") or {}
+        await repo.set_run_status(db, queued.id, "pending")
+        _publish(queued.id, {"kind": "run", "status": "pending"})
+        logger.info("Graph run %s promoted from queue (workflow %s)", queued.id, workflow_id)
+        _spawn(queued.id, queued.profile_id, graph, queued.trigger_type, payload)
+
+
+async def _fire_error_triggers(
+    db: aiosqlite.Connection, run_id: str, error: str, failing_trigger_type: str
+) -> None:
+    """Fase 2.5 — fire every active workflow with a matching ``error`` trigger when
+    a run fails, passing ``{workflow_id, workflow_name, run_id, error, failed_node}``
+    as ``$trigger``. Runs that were themselves started by an error trigger never
+    cascade (loop guard); a workflow never reacts to its own failures. Best-effort:
+    a broken handler workflow must not disturb the failing run's bookkeeping."""
+    if failing_trigger_type == "error":
+        return
+    try:
+        run = await repo.get_run(db, run_id)
+        if run is None:
+            return
+        triggers = await repo.list_error_triggers(db, run.workflow_id)
+        if not triggers:
+            return
+        wf = await repo.get_workflow(db, run.workflow_id)
+        payload = {
+            "workflow_id": run.workflow_id,
+            "workflow_name": wf.name if wf else None,
+            "run_id": run_id,
+            "error": error,
+            "failed_node": await repo.first_error_node(db, run_id),
+        }
+        for row in triggers:
+            try:
+                await run_workflow(
+                    db, row["workflow_id"], row["wf_profile_id"],
+                    trigger_type="error", trigger_payload=payload,
+                )
+                await _note_trigger_success(db, row["id"])
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("error trigger firing failed id=%s", row.get("id"))
+                await _note_trigger_failure(
+                    db, row["id"], row["workflow_id"], row["wf_profile_id"], str(exc)
+                )
+    except Exception:  # noqa: BLE001
+        logger.exception("error-trigger dispatch failed for run %s", run_id)
+
+
+async def resume_interrupted_runs() -> None:
+    """Fase 2.4 — called once at startup: resume every run left 'running'/'pending'
+    by a crash/restart from its checkpointed context (each run re-executes its own
+    graph snapshot), and re-evaluate queued runs whose slot may now be free."""
+    db = await _connect()
+    try:
+        runs = await repo.list_interrupted_runs(db)
+        queued_workflows: list[str] = []
+        resumed = 0
+        for run in runs:
+            if run.status == "queued":
+                if run.workflow_id not in queued_workflows:
+                    queued_workflows.append(run.workflow_id)
+                continue
+            graph_json = await repo.get_run_graph(db, run.id)
+            try:
+                graph = WorkflowGraph.model_validate(json.loads(graph_json or ""))
+            except (ValueError, TypeError) as exc:
+                await repo.set_run_status(db, run.id, "failed", error=f"resume: invalid graph snapshot: {exc}")
+                continue
+            await repo.fail_running_node_runs(db, run.id, "interrupted by restart")
+            payload = ((await repo.get_run_context(db, run.id)) or {}).get("trigger") or {}
+            _spawn(run.id, run.profile_id, graph, run.trigger_type, payload, resume=True)
+            resumed += 1
+        for wf_id in queued_workflows:
+            await _maybe_start_queued(db, wf_id)
+        if resumed or queued_workflows:
+            logger.info(
+                "workflow_graph_service: resumed %d interrupted run(s), re-evaluated %d workflow queue(s)",
+                resumed, len(queued_workflows),
+            )
+    finally:
+        await db.close()
+
+
 def _ctx_snapshot(ctx: dict) -> dict:
     return {"node": ctx["node"], "trigger": ctx.get("trigger")}
 
@@ -434,11 +842,19 @@ async def _run_node(
     local_ctx = {**ctx, "json": node_input}
     attempts = node.retry + 1
     last_err: str | None = None
+    timeout_s = node.timeoutMs / 1000.0 if node.timeoutMs > 0 else None
 
     for attempt in range(attempts):
         try:
             params = await expression_resolver.resolve_params(node.params, local_ctx)
-            output, handles = await _dispatch(db, profile_id, node, node_input, params, local_ctx)
+            dispatch = _dispatch(db, profile_id, node, node_input, params, local_ctx)
+            if timeout_s is not None:
+                try:
+                    output, handles = await asyncio.wait_for(dispatch, timeout_s)
+                except asyncio.TimeoutError:
+                    raise TimeoutError(f"node timed out after {node.timeoutMs} ms")
+            else:
+                output, handles = await dispatch
             await repo.finish_node_run(db, nr_id, "ok", output=output)
             _publish(run_id, {"kind": "node", "node_id": node.id, "status": "ok", "output": _preview(output)})
             return "ok", output, handles, None
@@ -446,7 +862,10 @@ async def _run_node(
             last_err = str(exc)
             logger.warning("Graph node %s attempt %d/%d failed: %s", node.id, attempt + 1, attempts, exc)
             if attempt + 1 < attempts and node.backoff:
-                await asyncio.sleep(node.backoff)
+                delay = node.backoff
+                if node.backoffStrategy == "exponential":
+                    delay = node.backoff * (2 ** attempt)
+                await asyncio.sleep(min(delay, _RETRY_MAX_BACKOFF_SECONDS))
 
     if node.continueOnFail or node.onError == "continue":
         await repo.finish_node_run(db, nr_id, "ok", output={"error": last_err}, error=last_err)
@@ -556,6 +975,11 @@ async def _run_body_once(
     output of the body's sink node(s)."""
     done: set[str] = set()
     outputs: dict[str, object] = {}
+    # Per-iteration node map: body nodes already executed in THIS iteration are
+    # addressable as $node.<id>.output downstream in the body (the paths the
+    # editor's field chooser produces), without leaking into other iterations
+    # or the main graph.
+    ctx = {**ctx, "node": dict(ctx.get("node") or {})}
 
     def internal_in(nid: str) -> list:
         return [e for e in incoming[nid] if e.source in body_ids]
@@ -585,6 +1009,7 @@ async def _run_body_once(
             remaining.discard(nid)
             if status == "ok":
                 outputs[nid] = output
+                ctx["node"][nid] = {"output": output}
             else:
                 raise RuntimeError(err or f"loop body node {nid} failed")
 
@@ -662,6 +1087,28 @@ async def _dispatch(
 
     if ntype == "llm.agent":
         return await _exec_llm_agent(db, profile_id, params), ["main"]
+
+    # ── Phase 35 (roadmap fase 4) ──
+    if ntype == "llm.classify":
+        return await _exec_llm_classify(db, profile_id, params, node_input), ["main"]
+
+    if ntype == "llm.extract":
+        return await _exec_llm_extract(db, profile_id, params, node_input), ["main"]
+
+    if ntype == "db.query":
+        return await _exec_db_query(params), ["main"]
+
+    if ntype == "file.read":
+        return await _exec_file_read(params), ["main"]
+
+    if ntype == "file.write":
+        return await _exec_file_write(params, node_input), ["main"]
+
+    if ntype == "file.parse":
+        return _exec_file_parse(params, node_input), ["main"]
+
+    if ntype == "human.approval":
+        return await _exec_human_approval(db, profile_id, node, params, ctx)
 
     raise ValueError(f"unknown node type: {ntype}")
 
@@ -1177,6 +1624,591 @@ async def _exec_llm_agent(db: aiosqlite.Connection, profile_id: str, params: dic
     if failover:
         out["_failover"] = failover
     return out
+
+
+# ── structured LLM nodes (Phase 35 — roadmap fase 4.1) ─────────────────────
+
+def _parse_llm_json(content: str) -> object:
+    """The JSON value inside an LLM reply: tolerates code fences and prose
+    around the first JSON object/array. Raises ``ValueError`` when none parses
+    (so node retry/onError apply)."""
+    text = str(content or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", text)
+        text = re.sub(r"\s*```$", "", text).strip()
+    start = min((i for i in (text.find("{"), text.find("[")) if i >= 0), default=-1)
+    if start < 0:
+        raise ValueError(f"no JSON found in the model reply: {text[:200]!r}")
+    try:
+        value, _ = json.JSONDecoder().raw_decode(text[start:])
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"model reply is not valid JSON: {exc}") from None
+    return value
+
+
+async def _llm_json_call(
+    db: aiosqlite.Connection, profile_id: str, params: dict, system: str, prompt: str
+) -> tuple[object, dict]:
+    """One completion (with failover chain + response cache, like llm.completion)
+    that MUST come back as JSON. Returns (parsed_value, meta)."""
+    from app.schemas.chat import ChatCompletionRequest, ChatMessage
+
+    model = params.get("model") or settings.default_model
+    messages = [
+        ChatMessage(role="system", content=system),
+        ChatMessage(role="user", content=prompt),
+    ]
+    candidates = await _candidate_models(db, model, params.get("failover_chain"))
+    tried: list[str] = []
+    last_exc: Exception | None = None
+    for candidate in candidates:
+        tried.append(candidate)
+        request = ChatCompletionRequest(
+            model=candidate, messages=messages, stream=False, profile_id=profile_id
+        )
+        try:
+            response, cache_status = await _cached_complete(request)
+            choices = response.get("choices") or []
+            content = ((choices[0].get("message") or {}).get("content") if choices else "") or ""
+            value = _parse_llm_json(content)
+        except Exception as exc:  # noqa: BLE001 — a bad reply (call failure or invalid JSON)
+            # falls through to the next chain candidate, same as a provider failure
+            last_exc = exc
+            continue
+        meta = {"model": candidate, "_usage": _extract_usage(response), "_cache": cache_status}
+        if len(candidates) > 1:
+            meta["_failover"] = {"tried": tried, "used": candidate}
+        return value, meta
+    raise last_exc
+
+
+def _classify_categories(params: dict) -> list[str]:
+    raw = params.get("categories")
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text.startswith("["):
+            try:
+                raw = json.loads(text)
+            except json.JSONDecodeError:
+                raw = None
+        else:
+            raw = [c.strip() for c in text.split(",") if c.strip()]
+    if not isinstance(raw, list) or not raw:
+        raise ValueError("llm.classify: 'categories' must be a non-empty array (or comma-separated list)")
+    return [str(c) for c in raw]
+
+
+async def _exec_llm_classify(
+    db: aiosqlite.Connection, profile_id: str, params: dict, node_input
+) -> dict:
+    """Guaranteed-structured classification: the model must answer with a JSON
+    object whose ``category`` is one of the allowed values — anything else
+    raises, so retry/onError apply instead of garbage flowing downstream."""
+    categories = _classify_categories(params)
+    text = params.get("input") or params.get("text")
+    if text is None or str(text) == "":
+        text = node_input
+    if not isinstance(text, str):
+        text = json.dumps(text, default=str, ensure_ascii=False)
+    instructions = str(params.get("instructions") or "").strip()
+    system = (
+        "You are a strict classifier. Reply with ONLY a JSON object — no prose, no code fences — "
+        'shaped exactly like {"category": "<one allowed category>", "confidence": <number 0..1>}. '
+        f"Allowed categories: {json.dumps(categories, ensure_ascii=False)}."
+        + (f" Additional instructions: {instructions}" if instructions else "")
+    )
+    data, meta = await _llm_json_call(db, profile_id, params, system, text)
+    if not isinstance(data, dict):
+        raise ValueError("llm.classify: model did not return a JSON object")
+    category = str(data.get("category") or "")
+    if category not in categories:
+        # Tolerate case slips before failing — determinism beats strictness here.
+        by_lower = {c.lower(): c for c in categories}
+        if category.lower() in by_lower:
+            category = by_lower[category.lower()]
+        else:
+            raise ValueError(f"llm.classify: model returned {category!r}, not one of {categories}")
+    confidence = data.get("confidence")
+    if not isinstance(confidence, (int, float)):
+        confidence = None
+    return {"category": category, "confidence": confidence, **meta}
+
+
+async def _exec_llm_extract(
+    db: aiosqlite.Connection, profile_id: str, params: dict, node_input
+) -> dict:
+    """Guaranteed-structured extraction against a JSON Schema declared in the
+    inspector. Top-level ``required`` properties are enforced; a non-conforming
+    reply raises, so retry/onError apply."""
+    schema = params.get("schema")
+    if isinstance(schema, str):
+        try:
+            schema = json.loads(schema)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"llm.extract: 'schema' is not valid JSON: {exc}") from None
+    if not isinstance(schema, dict) or not schema:
+        raise ValueError("llm.extract: 'schema' must be a JSON Schema object")
+    text = params.get("input") or params.get("text")
+    if text is None or str(text) == "":
+        text = node_input
+    if not isinstance(text, str):
+        text = json.dumps(text, default=str, ensure_ascii=False)
+    instructions = str(params.get("instructions") or "").strip()
+    system = (
+        "You extract structured data. Reply with ONLY a JSON value matching this JSON Schema "
+        "— no prose, no code fences, no extra keys: "
+        f"{json.dumps(schema, ensure_ascii=False)}."
+        + (f" Additional instructions: {instructions}" if instructions else "")
+    )
+    data, meta = await _llm_json_call(db, profile_id, params, system, text)
+    required = schema.get("required")
+    if isinstance(required, list) and isinstance(data, dict):
+        missing = [k for k in required if k not in data]
+        if missing:
+            raise ValueError(f"llm.extract: model reply is missing required properties: {missing}")
+    elif isinstance(required, list) and not isinstance(data, dict):
+        raise ValueError("llm.extract: model did not return a JSON object")
+    return {"data": data, **meta}
+
+
+# ── export/import & generation helpers (Phase 36 — roadmap fase 5) ─────────
+
+_SECRET_REF_RE = re.compile(r"\$secrets\.([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def secret_references(graph: WorkflowGraph) -> list[str]:
+    """The distinct `$secrets.<name>` references used anywhere in the graph —
+    exported alongside the definition (fase 5.2) so an import can tell which
+    secrets must be re-created in the target environment (values never travel)."""
+    found = _SECRET_REF_RE.findall(json.dumps(graph.model_dump()))
+    return sorted(set(found))
+
+
+async def validate_import(
+    db: aiosqlite.Connection, profile_id: str, graph: WorkflowGraph
+) -> list[str]:
+    """Non-blocking import validation (fase 5.2): unknown node types (a renamed
+    tool, an MCP server not configured here) and `$secrets` references missing
+    from this profile become warnings, not errors — the workflow still imports
+    and can be fixed in the editor."""
+    from app.data.node_catalog import node_catalog
+
+    warnings: list[str] = []
+    if len(graph.nodes) > settings.graph_workflow_max_nodes:
+        raise ValueError(f"graph exceeds the {settings.graph_workflow_max_nodes}-node limit")
+    known = {t.type for t in await node_catalog(db, profile_id)}
+    for n in graph.nodes:
+        if n.type not in known:
+            warnings.append(f"unknown node type '{n.type}' (node '{n.id}') — not available in this environment")
+    ids = {n.id for n in graph.nodes}
+    for e in graph.edges:
+        if e.source not in ids or e.target not in ids:
+            warnings.append(f"edge '{e.id}' references a missing node")
+    stored = set(await repo.get_encrypted_secrets(db, profile_id))
+    for name in secret_references(graph):
+        if name not in stored:
+            warnings.append(f"$secrets.{name} is referenced but not defined in this profile")
+    return warnings
+
+
+def _generation_catalog_context(catalog) -> str:
+    """A compact, token-cheap description of every node type the generator may
+    use: `type [outputs] (params)` one per line."""
+    lines = []
+    for t in catalog:
+        params = ", ".join(p.get("name") for p in t.params_schema if p.get("name"))
+        outputs = "/".join(t.outputs)
+        lines.append(f"- {t.type} [{outputs}]" + (f" params: {params}" if params else ""))
+    return "\n".join(lines)
+
+
+def _layout_generated_nodes(graph: WorkflowGraph) -> None:
+    """Give nodes without a position a simple layered (longest-path) layout so
+    the draft opens readable on the canvas."""
+    if all(isinstance(n.position, dict) and "x" in n.position for n in graph.nodes):
+        return
+    incoming: dict[str, list[str]] = {n.id: [] for n in graph.nodes}
+    for e in graph.edges:
+        if e.target in incoming and e.source in incoming:
+            incoming[e.target].append(e.source)
+    level: dict[str, int] = {}
+
+    def depth(nid: str, seen: frozenset = frozenset()) -> int:
+        if nid in level:
+            return level[nid]
+        if nid in seen:  # cycle guard — generated graphs may be malformed
+            return 0
+        d = 0 if not incoming[nid] else 1 + max(depth(p, seen | {nid}) for p in incoming[nid])
+        level[nid] = d
+        return d
+
+    per_level: dict[int, int] = {}
+    for n in graph.nodes:
+        d = depth(n.id)
+        row = per_level.get(d, 0)
+        per_level[d] = row + 1
+        n.position = {"x": 40 + d * 260, "y": 60 + row * 130}
+
+
+async def generate_workflow(
+    db: aiosqlite.Connection,
+    profile_id: str,
+    prompt: str,
+    model: str | None = None,
+    failover_chain: str | None = None,
+    on_progress=None,
+) -> dict:
+    """Fase 5.3 — "describe what you want" → a validated draft graph. The node
+    catalog (types, outputs, param names) is the model's context; the reply is
+    parsed, unknown node types and broken edges are dropped with warnings, a
+    missing trigger gets a `manual` node prepended, and positions are laid out.
+    The draft is returned, NOT saved — the editor opens it for review.
+
+    ``failover_chain`` names a Settings → Models chain to fall back through on
+    call failure (same semantics as llm.* nodes). ``on_progress(step, detail)``
+    — when given — is invoked at each stage so the UI can show a live log
+    (steps: catalog, calling, received, normalized, trigger_added, layout)."""
+    from app.data.node_catalog import node_catalog
+
+    def progress(step: str, detail: dict | None = None) -> None:
+        if on_progress is not None:
+            try:
+                on_progress(step, detail or {})
+            except Exception:  # noqa: BLE001 — a UI log must never break generation
+                logger.exception("generate_workflow: on_progress callback failed")
+
+    catalog = await node_catalog(db, profile_id)
+    known = {t.type for t in catalog}
+    progress("catalog", {"count": len(catalog)})
+    system = (
+        "You design workflow graphs for a visual DAG engine. Reply with ONLY a JSON object "
+        "— no prose, no code fences — shaped exactly like: "
+        '{"name": "<short title>", "description": "<one sentence>", "graph": {"nodes": '
+        '[{"id": "<slug>", "type": "<node type>", "name": "<label>", "params": {…}}], '
+        '"edges": [{"id": "e1", "source": "<node id>", "target": "<node id>", '
+        '"sourceHandle": "<optional: true/false for if, case:<v>/default for switch, '
+        "loop/done for for/repeat, approved/rejected for human.approval, error for the "
+        'error branch>"}]}}. Rules: exactly one trigger node (manual, schedule, webhook, '
+        "event or error) with no incoming edges; every other node reachable from it; use "
+        "expressions like ={{ $trigger.<field> }} and ={{ $node.<id>.output.<field> }} in "
+        "params; inside for/repeat bodies use $item / $index; reference credentials as "
+        "={{ $secrets.<NAME> }}, never inline. Use ONLY these node types:\n"
+        + _generation_catalog_context(catalog)
+    )
+    progress("calling", {
+        "model": model or settings.default_model,
+        "chain": failover_chain or "",
+    })
+    data, meta = await _llm_json_call(
+        db, profile_id, {"model": model, "failover_chain": failover_chain}, system, prompt
+    )
+    progress("received", {"model": meta.get("model") or "", "cache": meta.get("_cache") or ""})
+    if not isinstance(data, dict) or not isinstance(data.get("graph"), dict):
+        raise ValueError("generation: model did not return {name, description, graph}")
+
+    warnings: list[str] = []
+    raw_graph = data["graph"]
+    raw_nodes = [n for n in raw_graph.get("nodes") or [] if isinstance(n, dict)]
+    kept_nodes = []
+    for n in raw_nodes[: settings.graph_workflow_max_nodes]:
+        if not n.get("id") or not n.get("type"):
+            warnings.append("dropped a node without id/type")
+            continue
+        if n["type"] not in known:
+            warnings.append(f"dropped node '{n['id']}': unknown type '{n['type']}'")
+            continue
+        kept_nodes.append(n)
+    ids = {n["id"] for n in kept_nodes}
+    kept_edges = []
+    for i, e in enumerate(raw_graph.get("edges") or []):
+        if not isinstance(e, dict) or e.get("source") not in ids or e.get("target") not in ids:
+            warnings.append(f"dropped edge #{i + 1}: references a missing node")
+            continue
+        e.setdefault("id", f"e{i + 1}")
+        kept_edges.append(e)
+
+    graph = WorkflowGraph.model_validate({"nodes": kept_nodes, "edges": kept_edges})
+    progress("normalized", {
+        "nodes": len(graph.nodes), "edges": len(graph.edges), "dropped": len(warnings),
+    })
+    if not any(n.type in _TRIGGER_TYPES for n in graph.nodes):
+        # A graph must start somewhere: prepend a manual trigger wired to the roots.
+        warnings.append("no trigger node generated — a manual trigger was added")
+        progress("trigger_added", {})
+        targets = {e.target for e in graph.edges}
+        roots = [n.id for n in graph.nodes if n.id not in targets]
+        trigger_id = "trigger" if "trigger" not in ids else "trigger_start"
+        graph.nodes.insert(0, GraphNode(id=trigger_id, type="manual", name="Start"))
+        for i, root in enumerate(roots):
+            graph.edges.append(GraphEdge(id=f"et{i + 1}", source=trigger_id, target=root))
+    _layout_generated_nodes(graph)
+    progress("layout", {})
+
+    return {
+        "name": str(data.get("name") or "Generated workflow")[:200],
+        "description": str(data.get("description") or "")[:2000],
+        "graph": graph,
+        "warnings": warnings,
+        "model": meta.get("model"),
+    }
+
+
+# ── db / file nodes (Phase 35 — roadmap fase 4.2) ───────────────────────────
+
+def _safe_workspace_path(raw, *, create_dirs: bool = False):
+    """Resolve a node-supplied path INSIDE the workspace storage root
+    (``GRAPH_WORKFLOW_FILES_DIR``). Absolute paths and ``..`` traversal that
+    escape the root are rejected — file/db nodes can never touch the host FS."""
+    from pathlib import Path
+
+    rel = str(raw or "").strip()
+    if not rel:
+        raise ValueError("'path' is required")
+    root = Path(settings.graph_workflow_files_dir).resolve()
+    candidate = (root / rel).resolve()
+    if candidate != root and root not in candidate.parents:
+        raise ValueError(f"path {rel!r} escapes the workspace storage")
+    if create_dirs:
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+    return candidate
+
+
+async def _exec_db_query(params: dict) -> dict:
+    """Parameterised SQL. sqlite databases live inside the workspace storage;
+    postgres connects via a DSN (typically ``={{ $secrets.PG_DSN }}``). Output:
+    ``{rows, count, rowcount}`` (rows capped at 1000)."""
+    query = str(params.get("query") or "").strip()
+    if not query:
+        raise ValueError("db.query: 'query' is required")
+    args = params.get("params")
+    if not isinstance(args, list):
+        args = [] if args in (None, "") else [args]
+    driver = str(params.get("driver") or "sqlite").strip().lower()
+
+    if driver == "sqlite":
+        path = _safe_workspace_path(params.get("database"), create_dirs=True)
+        conn = await aiosqlite.connect(path)
+        try:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(query, args)
+            rows = [dict(r) for r in await cur.fetchmany(_DB_QUERY_MAX_ROWS)] if cur.description else []
+            rowcount = cur.rowcount
+            await conn.commit()
+        finally:
+            await conn.close()
+        return {"rows": rows, "count": len(rows), "rowcount": rowcount}
+
+    if driver == "postgres":
+        dsn = str(params.get("dsn") or "").strip()
+        if not dsn:
+            raise ValueError("db.query: postgres needs a 'dsn' (use ={{ $secrets.<name> }})")
+        try:
+            import asyncpg  # noqa: PLC0415 — optional dependency
+        except ImportError:
+            raise RuntimeError(
+                "db.query: postgres support requires the 'asyncpg' package in the backend image"
+            ) from None
+        conn = await asyncpg.connect(dsn=dsn, timeout=15)
+        try:
+            records = await conn.fetch(query, *args)
+            rows = [dict(r) for r in records[:_DB_QUERY_MAX_ROWS]]
+        finally:
+            await conn.close()
+        return {"rows": rows, "count": len(rows), "rowcount": len(rows)}
+
+    raise ValueError(f"db.query: unknown driver {driver!r} (sqlite|postgres)")
+
+
+def _file_format(params: dict, path) -> str:
+    fmt = str(params.get("format") or "auto").strip().lower()
+    if fmt != "auto":
+        return fmt
+    suffix = str(getattr(path, "suffix", "") or "").lower()
+    return {".json": "json", ".csv": "csv"}.get(suffix, "text")
+
+
+def _parse_structured(text: str, fmt: str, delimiter: str) -> dict:
+    """Shared by file.read and file.parse: a text payload → structured output."""
+    import csv
+    import io
+
+    if fmt == "json":
+        try:
+            return {"data": json.loads(text)}
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid JSON: {exc}") from None
+    if fmt == "csv":
+        rows = list(csv.DictReader(io.StringIO(text), delimiter=delimiter or ","))
+        return {"rows": rows, "count": len(rows)}
+    if fmt == "lines":
+        lines = [ln for ln in text.splitlines() if ln.strip() != ""]
+        return {"lines": lines, "count": len(lines)}
+    return {"text": text, "size": len(text.encode("utf-8"))}
+
+
+async def _exec_file_read(params: dict) -> dict:
+    path = _safe_workspace_path(params.get("path"))
+    if not path.is_file():
+        raise FileNotFoundError(f"file.read: {params.get('path')!r} not found in the workspace storage")
+    if path.stat().st_size > _FILE_MAX_BYTES:
+        raise ValueError(f"file.read: file exceeds the {_FILE_MAX_BYTES // (1024 * 1024)} MB limit")
+    encoding = str(params.get("encoding") or "utf-8")
+    text = await asyncio.to_thread(path.read_text, encoding)
+    fmt = _file_format(params, path)
+    return {"path": str(params.get("path")), "format": fmt,
+            **_parse_structured(text, fmt, str(params.get("delimiter") or ","))}
+
+
+def _render_file_content(content, fmt: str, delimiter: str) -> str:
+    import csv
+    import io
+
+    if fmt == "json" or (fmt == "text" and isinstance(content, (dict, list))):
+        return json.dumps(content, indent=2, ensure_ascii=False, default=str)
+    if fmt == "csv":
+        rows = content if isinstance(content, list) else [content]
+        if not rows:
+            return ""
+        buf = io.StringIO()
+        if all(isinstance(r, dict) for r in rows):
+            fieldnames: list[str] = []
+            for r in rows:
+                fieldnames.extend(k for k in r if k not in fieldnames)
+            writer = csv.DictWriter(buf, fieldnames=fieldnames, delimiter=delimiter or ",")
+            writer.writeheader()
+            writer.writerows(rows)
+        else:
+            plain = csv.writer(buf, delimiter=delimiter or ",")
+            for r in rows:
+                plain.writerow(r if isinstance(r, (list, tuple)) else [r])
+        return buf.getvalue()
+    return content if isinstance(content, str) else json.dumps(content, default=str, ensure_ascii=False)
+
+
+async def _exec_file_write(params: dict, node_input) -> dict:
+    path = _safe_workspace_path(params.get("path"), create_dirs=True)
+    content = params.get("content")
+    if content is None:
+        content = node_input
+    fmt = _file_format(params, path)
+    text = _render_file_content(content, fmt, str(params.get("delimiter") or ","))
+    if len(text.encode("utf-8")) > _FILE_MAX_BYTES:
+        raise ValueError(f"file.write: content exceeds the {_FILE_MAX_BYTES // (1024 * 1024)} MB limit")
+    append = _as_bool(params.get("append"))
+
+    def _write() -> int:
+        mode = "a" if append else "w"
+        with open(path, mode, encoding=str(params.get("encoding") or "utf-8")) as fh:
+            return fh.write(text)
+
+    written = await asyncio.to_thread(_write)
+    return {"path": str(params.get("path")), "format": fmt,
+            "bytes_written": len(text.encode("utf-8")), "chars_written": written, "append": append}
+
+
+def _exec_file_parse(params: dict, node_input) -> dict:
+    """Parse an in-flight text payload (an http.request body, a tool result…)
+    without touching disk. ``content`` defaults to the node input."""
+    content = params.get("content")
+    if content is None or content == "":
+        content = node_input
+    fmt = str(params.get("format") or "auto").strip().lower()
+    if not isinstance(content, str):
+        # Already-structured input passes through as parsed data.
+        return {"data": content} if fmt in ("auto", "json") else {"rows": content if isinstance(content, list) else [content], "count": len(content) if isinstance(content, list) else 1}
+    if fmt == "auto":
+        stripped = content.strip()
+        fmt = "json" if stripped[:1] in ("{", "[") else "csv" if ("," in stripped.splitlines()[0] if stripped else False) else "lines"
+    return _parse_structured(content, fmt, str(params.get("delimiter") or ","))
+
+
+# ── human-in-the-loop (Phase 35 — roadmap fase 4.4) ─────────────────────────
+
+async def _notify_approval_request(
+    db: aiosqlite.Connection, profile_id: str, approval, params: dict
+) -> None:
+    """Best-effort notification that a decision is awaited — a broken channel
+    must never fail the node (the request row itself is the source of truth)."""
+    from app.services import notification_service
+
+    body = approval.message or "Apri Workflow → Esecuzioni per approvare o rifiutare."
+    try:
+        await notification_service.notify_web(db, profile_id, "workflow", approval.title, body)
+    except Exception:  # noqa: BLE001
+        logger.exception("human.approval: in-app notification failed for %s", approval.id)
+    if _as_bool(params.get("telegram")):
+        try:
+            await notification_service.notify_telegram(
+                db, profile_id, "workflow", f"{approval.title}\n{body}"
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("human.approval: telegram notification failed for %s", approval.id)
+
+
+async def _exec_human_approval(
+    db: aiosqlite.Connection, profile_id: str, node: GraphNode, params: dict, ctx: dict
+) -> tuple[object, list[str]]:
+    """Suspend the run until a human decides (roadmap fase 4.4). Creates a
+    ``workflow_approvals`` row (or re-attaches to the pending one after a
+    restart — the fase 2.4 resume machinery re-executes this node), flips the
+    run to ``waiting``, notifies, then polls the row until it is decided or
+    ``timeout_at`` passes. Routes through the ``approved``/``rejected`` handle;
+    a timeout follows ``onTimeout`` (reject | fail)."""
+    run_id = ctx.get("_run_id")
+    if not run_id:
+        raise ValueError("human.approval: only runs inside a real execution (single-node test unsupported)")
+    run = await repo.get_run(db, run_id)
+    workflow_id = run.workflow_id if run else ""
+    wf = await repo.get_workflow(db, workflow_id) if workflow_id else None
+
+    approval = await repo.get_pending_approval(db, run_id, node.id)
+    if approval is None:
+        timeout_s = float(params.get("timeout") or 86400)
+        timeout_s = max(1.0, min(timeout_s, float(settings.graph_workflow_approval_max_timeout)))
+        title = str(params.get("title") or "").strip() or (
+            f"Approvazione richiesta: {wf.name}" if wf else "Approvazione richiesta"
+        )
+        message = _notify_text(params)
+        approval = await repo.create_approval(
+            db, run_id, node.id, workflow_id, profile_id,
+            title=title, message=message, timeout_at=int(time.time() + timeout_s),
+        )
+        await _notify_approval_request(db, profile_id, approval, params)
+
+    await repo.set_run_status(db, run_id, "waiting")
+    _publish(run_id, {"kind": "run", "status": "waiting", "approval_id": approval.id})
+    try:
+        while True:
+            current = await repo.get_approval(db, approval.id)
+            if current is None:
+                raise RuntimeError("human.approval: request row disappeared")
+            if current.status != "pending":
+                break
+            if current.timeout_at is not None and time.time() >= current.timeout_at:
+                # First writer wins: the poll may race the decision endpoint.
+                await repo.decide_approval(db, approval.id, status="expired")
+                current = await repo.get_approval(db, approval.id) or current
+                break
+            await asyncio.sleep(_APPROVAL_POLL_SECONDS)
+    finally:
+        # Back to running for the rest of the graph; a cancelled/failing run
+        # overwrites this right after in _execute's handlers.
+        await repo.set_run_status(db, run_id, "running")
+        _publish(run_id, {"kind": "run", "status": "running"})
+
+    output = {
+        "approved": current.status == "approved",
+        "status": current.status,
+        "comment": current.comment,
+        "decided_by": current.decided_by,
+        "approval_id": current.id,
+        "title": current.title,
+    }
+    if current.status == "approved":
+        return output, ["approved"]
+    if current.status == "expired" and str(params.get("onTimeout") or "reject").lower() == "fail":
+        raise RuntimeError("human.approval: request expired without a decision")
+    return output, ["rejected"]
 
 
 async def _note_trigger_success(db: aiosqlite.Connection, tr_id: str) -> None:

@@ -98,7 +98,39 @@ src/app/
 │   ├── tools/         ToolsPageComponent — custom tools + MCP-grouped available tools
 │   ├── workflows/     WorkflowsPageComponent — persistent multi-step (agent) workflows
 │   │                  GraphWorkflowPageComponent — visual node-graph editor (Phase 29):
-│   │                  dependency-free SVG canvas, node palette, inspector, live SSE run panel
+│   │                  since roadmap fase 1 a thin orchestrator (graph state, persistence,
+│   │                  undo/redo, run streaming, connect-time mapping dialog) over the
+│   │                  standalone components in workflows/editor/:
+│   │                    editor/graph-canvas.component      — dependency-free SVG canvas (geometry, drag, connect,
+│   │                                                         pan/zoom + minimap + multi-select, fase 3.4/3.5)
+│   │                    editor/node-palette.component      — categorised searchable palette (MCP two-level groups)
+│   │                    editor/editor-toolbar.component    — undo/redo, copy/paste (multi), comment,
+│   │                                                         auto-layout + fit view (fase 3.5)
+│   │                    editor/node-inspector.component    — typed params, expression tester, single-node test
+│   │                                                         with mock input (fase 3.1), pinned output (fase 3.2),
+│   │                                                         last-execution panel (fase 3.3),
+│   │                                                         retry/backoff(+strategy fixed|exponential)/timeout/onError (fase 2.1)
+│   │                    editor/edge-inspector.component    — last payload through an edge, copyable $node paths
+│   │                    editor/graph-preview.component     — tiny read-only graph rendering (template gallery, fase 3.6)
+│   │                    editor/run-panel.component         — triggers (schedule/webhook/error), run payload, live statuses,
+│   │                                                         Execution settings (max concurrent runs, fase 2.3),
+│   │                                                         $vars editor, $secrets manager, version history/restore
+│   │                  WorkflowShellComponent — /graph-workflows/:id shell with
+│   │                  Editor | Runs | Schedules tabs scoped to one workflow (fase 1.2)
+│   │                  WorkflowRunsPageComponent — profile-wide run registry with filters,
+│   │                  launch, live detail; since fase 4.4 it renders the `waiting` status
+│   │                  (purple chip) and an inline ✓ Approve / ✕ Reject panel for the
+│   │                  pending human.approval requests of the opened run; since fase 5.1
+│   │                  a metrics strip (runs, success rate, avg duration, LLM tokens from
+│   │                  GET /stats, scoped by the workflow filter) + per-run token total.
+│   │                  Editor sidebar: the workflow list is collapsible (▾/▸, persisted in
+│   │                  localStorage) and the ✨ template gallery opens as a large centered
+│   │                  modal (multi-column cards: bigger graph preview, category, flow
+│   │                  chain, node/edge counts). 🪄 opens the fase 5.3 generate dialog
+│   │                  (description → validated draft) with a model picker + optional
+│   │                  failover chain and a live progress log streamed over SSE from
+│   │                  POST /generate/stream (catalog → call → validation → layout);
+│   │                  file import goes through POST /import and surfaces warnings.
 │   └── workspaces/    WorkspacesPageComponent — shared workspaces & comments
 ├── layout/            NavbarComponent
 └── shared/
@@ -119,6 +151,8 @@ src/app/
 /tools           → ToolsPageComponent       (authGuard)
 /workflows       → WorkflowsPageComponent   (authGuard)
 /graph-workflows → GraphWorkflowPageComponent (authGuard)   ← v2.2 (Phase 29)
+/graph-workflows/:id → WorkflowShellComponent (authGuard)   ← roadmap fase 1.2
+                   children: '' (editor) | runs | schedules — scoped to :id
 /workspaces      → WorkspacesPageComponent  (authGuard)
 /templates       → TemplatesPageComponent   (authGuard)   ← v2.0
 /tags            → TagsPageComponent        (authGuard)   ← v2.0

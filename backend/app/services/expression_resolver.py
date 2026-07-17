@@ -19,8 +19,9 @@ concrete values. Every string parameter is dispatched by prefix:
 
 Context keys exposed to expressions: ``$node`` (per-node outputs, addressed as
 ``$node.<id>.output.<path>``), ``$json`` (the current node's primary input),
-``$trigger`` (the trigger payload), ``$env`` (whitelisted env vars) and
-``$now`` (unix seconds).
+``$trigger`` (the trigger payload), ``$env`` (whitelisted env vars), ``$vars``
+(the workflow's own variables), ``$secrets`` (profile secrets, decrypted only
+for the duration of the run) and ``$now`` (unix seconds).
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ _PY_PREFIX = "=py:"
 # ``$foo`` isn't a valid Python identifier, so expressions are rewritten to a
 # safe prefix before parsing and the context is keyed the same way.
 _VAR_PREFIX = "__ctx_"
-_CTX_VARS = ("node", "json", "trigger", "env", "now", "item", "index")
+_CTX_VARS = ("node", "json", "trigger", "env", "vars", "secrets", "now", "item", "index")
 
 
 class ExpressionError(ValueError):
@@ -304,6 +305,8 @@ async def _run_py(code: str, ctx: dict) -> Any:
         "item = ctx.get('item')\n"
         "index = ctx.get('index')\n"
         "input_json = ctx.get('json')\n"
+        "variables = ctx.get('vars') or {}\n"
+        "secrets = ctx.get('secrets') or {}\n"
     )
     if is_expr:
         wrapper += f"result = ({body})\n"
@@ -354,9 +357,12 @@ async def resolve_value(value: Any, ctx: dict) -> Any:
         segments = _split_interpolations(value, _BARE_PREFIX)
     else:
         return value
-    # A single pure expression keeps its native type.
-    if len(segments) == 1 and segments[0][0]:
-        return eval_expression(segments[0][1], ctx)
+    # A single pure expression keeps its native type. Whitespace-only literal
+    # segments don't count: a stray trailing newline typed in the inspector
+    # textarea must not demote a list/dict result to its string form.
+    expr_segments = [s for s in segments if s[0]]
+    if len(expr_segments) == 1 and all(is_expr or not text.strip() for is_expr, text in segments):
+        return eval_expression(expr_segments[0][1], ctx)
     # Otherwise stitch the parts back into a string.
     parts: list[str] = []
     for is_expr, text in segments:

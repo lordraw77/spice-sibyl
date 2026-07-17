@@ -1,7 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 
 import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { I18nService } from '../../core/i18n/i18n.service';
@@ -9,7 +9,7 @@ import { NotificationService } from '../../core/services/notification.service';
 import { GraphWorkflow, GraphWorkflowService, WorkflowSchedule } from '../../core/services/graph-workflow.service';
 
 type SchedulePattern = 'daily' | 'weekly' | 'cron' | 'once';
-type TriggerKind = 'schedule' | 'webhook' | 'event';
+type TriggerKind = 'schedule' | 'webhook' | 'event' | 'error';
 
 const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
 
@@ -36,6 +36,11 @@ export class WorkflowSchedulesPageComponent implements OnInit {
   private readonly api = inject(GraphWorkflowService);
   private readonly notify = inject(NotificationService);
   private readonly i18n = inject(I18nService);
+  private readonly route = inject(ActivatedRoute);
+
+  /** Roadmap fase 1 (1.2): inside the /graph-workflows/:id shell the table and
+   *  the create form are scoped to that workflow. */
+  lockedWorkflow = '';
 
   readonly schedules = signal<WorkflowSchedule[]>([]);
   readonly workflows = signal<GraphWorkflow[]>([]);
@@ -56,10 +61,23 @@ export class WorkflowSchedulesPageComponent implements OnInit {
   formCron = CRON_PRESETS[0].value;
   formDate = '';
   formEventName = 'document.ingested';
+  /** Fase 2.5 — the workflow watched by an `error` trigger ('' = any). */
+  formErrorWorkflowId = '';
 
   ngOnInit(): void {
+    const shellId = this.route.parent?.snapshot.paramMap.get('id');
+    if (shellId) {
+      this.lockedWorkflow = shellId;
+      this.formWorkflowId = shellId;
+    }
     this.refresh();
     this.api.list().subscribe({ next: (l) => this.workflows.set(l), error: () => {} });
+  }
+
+  /** Rows shown in the table — all of them, or only the shell's workflow. */
+  visibleSchedules(): WorkflowSchedule[] {
+    const rows = this.schedules();
+    return this.lockedWorkflow ? rows.filter((r) => r.workflow_id === this.lockedWorkflow) : rows;
   }
 
   refresh(): void {
@@ -179,6 +197,9 @@ export class WorkflowSchedulesPageComponent implements OnInit {
       }
     } else if (this.formKind === 'event') {
       config = { event: this.formEventName.trim() };
+    } else if (this.formKind === 'error') {
+      // Fase 2.5 — empty = react to any failed workflow.
+      config = this.formErrorWorkflowId ? { workflow_id: this.formErrorWorkflowId } : {};
     }
 
     this.saving.set(true);

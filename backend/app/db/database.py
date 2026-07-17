@@ -440,18 +440,36 @@ CREATE INDEX IF NOT EXISTS idx_agent_run_steps_run ON agent_run_steps(run_id, st
 -- `graph_json` ({nodes, edges}) is the source of truth for a workflow; each
 -- activation snapshots an immutable row into workflow_versions.
 CREATE TABLE IF NOT EXISTS workflows (
-    id          TEXT    PRIMARY KEY,
-    profile_id  TEXT    NOT NULL DEFAULT 'default',
-    name        TEXT    NOT NULL,
-    description TEXT    NOT NULL DEFAULT '',
-    graph_json  TEXT    NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
-    active      INTEGER NOT NULL DEFAULT 0,
-    version     INTEGER NOT NULL DEFAULT 1,
-    created_at  INTEGER NOT NULL,
-    updated_at  INTEGER NOT NULL
+    id             TEXT    PRIMARY KEY,
+    profile_id     TEXT    NOT NULL DEFAULT 'default',
+    name           TEXT    NOT NULL,
+    description    TEXT    NOT NULL DEFAULT '',
+    graph_json     TEXT    NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    variables_json TEXT    NOT NULL DEFAULT '{}',
+    -- Phase 33 (roadmap fase 2.3): runs beyond this many simultaneously active
+    -- go to status 'queued' and start when a slot frees. 0 = unlimited.
+    max_concurrent_runs INTEGER NOT NULL DEFAULT 0,
+    active         INTEGER NOT NULL DEFAULT 0,
+    version        INTEGER NOT NULL DEFAULT 1,
+    created_at     INTEGER NOT NULL,
+    updated_at     INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_workflows_profile ON workflows(profile_id, updated_at DESC);
+
+-- Phase 32 (roadmap fase 1): profile-scoped workflow secrets, Fernet-encrypted
+-- at rest (VAULT_SECRET_KEY). Exposed to expressions as $secrets.<name>; the
+-- plaintext is never returned by the API nor persisted in run contexts.
+CREATE TABLE IF NOT EXISTS workflow_secrets (
+    id              TEXT    PRIMARY KEY,
+    profile_id      TEXT    NOT NULL DEFAULT 'default',
+    name            TEXT    NOT NULL,
+    value_encrypted TEXT    NOT NULL,
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_secrets_profile_name ON workflow_secrets(profile_id, name);
 
 -- Immutable version history: one row per saved graph revision.
 CREATE TABLE IF NOT EXISTS workflow_versions (
@@ -521,6 +539,29 @@ CREATE INDEX IF NOT EXISTS idx_workflow_triggers_wf ON workflow_triggers(workflo
 CREATE INDEX IF NOT EXISTS idx_workflow_triggers_sched ON workflow_triggers(type, enabled, next_run_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_triggers_token ON workflow_triggers(token);
 
+-- Phase 35 (roadmap fase 4.4): human-in-the-loop approval requests. One row per
+-- suspended `human.approval` node; the run stays in status 'waiting' until the
+-- request is decided via POST /approvals/{id}/decision or `timeout_at` passes.
+CREATE TABLE IF NOT EXISTS workflow_approvals (
+    id          TEXT    PRIMARY KEY,
+    run_id      TEXT    NOT NULL,
+    node_id     TEXT    NOT NULL,
+    workflow_id TEXT    NOT NULL,
+    profile_id  TEXT    NOT NULL DEFAULT 'default',
+    title       TEXT    NOT NULL DEFAULT '',
+    message     TEXT    NOT NULL DEFAULT '',
+    status      TEXT    NOT NULL DEFAULT 'pending',    -- pending|approved|rejected|expired|cancelled
+    timeout_at  INTEGER,                               -- unix ts after which the request expires
+    comment     TEXT,                                  -- optional note left by the decider
+    decided_by  TEXT,                                  -- user id that took the decision
+    created_at  INTEGER NOT NULL,
+    decided_at  INTEGER,
+    FOREIGN KEY (run_id) REFERENCES workflow_runs(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_approvals_run ON workflow_approvals(run_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_workflow_approvals_pending ON workflow_approvals(profile_id, status, created_at DESC);
+
 -- Phase 19: per-profile persistent memory. One row per remembered fact;
 -- auto-extracted after each exchange (MEMORY_EXTRACTION_MODEL) or added
 -- manually from the UI / Telegram. Injected into the system prompt when the
@@ -584,6 +625,21 @@ CREATE TABLE IF NOT EXISTS workspace_documents (
     FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
     FOREIGN KEY (document_id) REFERENCES kb_documents(id) ON DELETE CASCADE
 );
+
+-- Phase 36 (roadmap fase 5.2): graph workflows shared into a workspace. Members
+-- can inspect the shared definition and import a copy into their own profile
+-- ($secrets never travel — references must be re-satisfied by the importer).
+CREATE TABLE IF NOT EXISTS workspace_workflows (
+    workspace_id TEXT    NOT NULL,
+    workflow_id  TEXT    NOT NULL,
+    shared_by    TEXT    NOT NULL,
+    shared_at    INTEGER NOT NULL,
+    PRIMARY KEY (workspace_id, workflow_id),
+    FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_workflows_wf ON workspace_workflows(workflow_id);
 
 -- Phase 20.b: threaded comments / annotations. A comment targets a
 -- conversation (message_id NULL) or a specific message within it; threading is
@@ -696,6 +752,10 @@ _MIGRATIONS = [
     # Phase 30.b: trigger resilience — auto-disable after N consecutive firing failures
     "ALTER TABLE workflow_triggers ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE workflow_triggers ADD COLUMN last_error TEXT",
+    # Phase 32 (roadmap fase 1): per-workflow variables exposed as $vars
+    "ALTER TABLE workflows ADD COLUMN variables_json TEXT NOT NULL DEFAULT '{}'",
+    # Phase 33 (roadmap fase 2.3): per-workflow run concurrency limit (0 = unlimited)
+    "ALTER TABLE workflows ADD COLUMN max_concurrent_runs INTEGER NOT NULL DEFAULT 0",
 ]
 
 

@@ -159,6 +159,70 @@
   color: #9ca3af;
   border-color: #9ca3af44;
 }
+/* Fase 2.3 — a run parked by the per-workflow concurrency limit. */
+.status-chip[data-status='queued'] {
+  color: #fbbf24;
+  border-color: #fbbf2444;
+}
+/* Fase 4.4 — a run suspended on a human.approval node. */
+.status-chip[data-status='waiting'] {
+  color: #c084fc;
+  border-color: #c084fc44;
+}
+
+/* Fase 5.1 — aggregate metrics strip above the run registry. */
+.stats-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0.2rem 0 0.7rem;
+}
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 120px;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--border-color, #2a2a35);
+  border-radius: 10px;
+}
+.stat-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+.stat-label {
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+/* Fase 4.4 — inline approve/reject panel in the run detail. */
+.approvals {
+  border: 1px solid #c084fc44;
+  border-radius: 8px;
+  padding: 0.55rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.approval-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.approval-msg {
+  margin: 0;
+  font-size: 0.82rem;
+  opacity: 0.85;
+  white-space: pre-wrap;
+}
+.approval-comment {
+  width: 100%;
+  box-sizing: border-box;
+}
+.approval-actions {
+  display: flex;
+  gap: 0.4rem;
+}
 
 .run-detail {
   border: 1px solid var(--border-color, #2a2a35);

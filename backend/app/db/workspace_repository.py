@@ -13,6 +13,7 @@ Role hierarchy (descending privilege): owner > admin > editor > viewer.
   * viewer — read-only access + comment
 """
 
+import json
 import time
 import uuid
 
@@ -287,6 +288,71 @@ async def list_shared_documents(
         )
         for r in rows
     ]
+
+
+# --- Shared graph workflows (Phase 36 — roadmap fase 5.2) -------------------
+
+
+async def share_workflow(
+    db: aiosqlite.Connection, workspace_id: str, workflow_id: str, shared_by: str
+) -> None:
+    await db.execute(
+        "INSERT OR IGNORE INTO workspace_workflows "
+        "(workspace_id, workflow_id, shared_by, shared_at) VALUES (?, ?, ?, ?)",
+        (workspace_id, workflow_id, shared_by, int(time.time())),
+    )
+    await db.commit()
+
+
+async def unshare_workflow(
+    db: aiosqlite.Connection, workspace_id: str, workflow_id: str
+) -> None:
+    await db.execute(
+        "DELETE FROM workspace_workflows WHERE workspace_id = ? AND workflow_id = ?",
+        (workspace_id, workflow_id),
+    )
+    await db.commit()
+
+
+async def list_shared_workflows(db: aiosqlite.Connection, workspace_id: str) -> list[dict]:
+    """Graph workflows shared into the workspace, joined to their definition
+    header (name/description/version). Returned as plain dicts — the schema
+    (`SharedWorkflowOut`) lives with the graph-workflow schemas."""
+    async with db.execute(
+        """
+        SELECT ww.workflow_id, ww.shared_by, ww.shared_at,
+               w.name, w.description, w.version, w.updated_at, w.graph_json
+        FROM workspace_workflows ww
+        JOIN workflows w ON w.id = ww.workflow_id
+        WHERE ww.workspace_id = ?
+        ORDER BY ww.shared_at DESC
+        """,
+        (workspace_id,),
+    ) as cursor:
+        rows = await cursor.fetchall()
+    out = []
+    for r in rows:
+        try:
+            node_count = len((json.loads(r["graph_json"]) or {}).get("nodes") or [])
+        except (ValueError, TypeError):
+            node_count = 0
+        out.append({
+            "workflow_id": r["workflow_id"], "name": r["name"],
+            "description": r["description"], "version": r["version"],
+            "node_count": node_count, "shared_by": r["shared_by"],
+            "shared_at": r["shared_at"], "updated_at": r["updated_at"],
+        })
+    return out
+
+
+async def is_workflow_shared(
+    db: aiosqlite.Connection, workspace_id: str, workflow_id: str
+) -> bool:
+    async with db.execute(
+        "SELECT 1 FROM workspace_workflows WHERE workspace_id = ? AND workflow_id = ?",
+        (workspace_id, workflow_id),
+    ) as cursor:
+        return (await cursor.fetchone()) is not None
 
 
 # --- Cross-cutting access -------------------------------------------------

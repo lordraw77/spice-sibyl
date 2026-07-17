@@ -105,6 +105,39 @@ export const routes: Routes = [
       ),
   },
   {
+    // Roadmap fase 1 (1.2): per-workflow shell with Editor | Runs | Schedules
+    // tabs scoped to :id. Declared after the literal /runs and /schedules
+    // routes so those keep matching the global pages.
+    path: 'graph-workflows/:id',
+    canActivate: [authGuard, featureGuard],
+    data: { feature: 'graph_workflows' },
+    loadComponent: () =>
+      import('./features/workflows/workflow-shell.component').then((m) => m.WorkflowShellComponent),
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./features/workflows/graph-workflow-page.component').then(
+            (m) => m.GraphWorkflowPageComponent
+          ),
+      },
+      {
+        path: 'runs',
+        loadComponent: () =>
+          import('./features/workflows/workflow-runs-page.component').then(
+            (m) => m.WorkflowRunsPageComponent
+          ),
+      },
+      {
+        path: 'schedules',
+        loadComponent: () =>
+          import('./features/workflows/workflow-schedules-page.component').then(
+            (m) => m.WorkflowSchedulesPageComponent
+          ),
+      },
+    ],
+  },
+  {
     path: 'reminders',
     canActivate: [authGuard, featureGuard],
     data: { feature: 'reminders' },

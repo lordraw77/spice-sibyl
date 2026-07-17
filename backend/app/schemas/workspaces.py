@@ -50,6 +50,12 @@ class ShareDocumentRequest(BaseModel):
     document_id: str
 
 
+class ShareWorkflowRequest(BaseModel):
+    """Phase 36 (roadmap fase 5.2) — share one of my graph workflows into a workspace."""
+
+    workflow_id: str
+
+
 class SharedConversationOut(BaseModel):
     conversation_id: str
     title: str

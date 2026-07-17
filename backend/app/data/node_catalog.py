@@ -36,6 +36,16 @@ _STATIC_NODES: list[NodeTypeInfo] = [
         description="Fires on an internal event (document ingested, reminder fired, run completed).",
         params_schema=[_param("note", "Note", "text")],
     ),
+    NodeTypeInfo(
+        type="error", category="trigger", label="On workflow error", inputs=0, outputs=["main"],
+        description=(
+            "Fires when another workflow's run fails (attach an 'error' trigger to "
+            "choose which workflow to watch, or watch them all). $trigger carries "
+            "{workflow_id, workflow_name, run_id, error, failed_node} — ideal for "
+            "centralised alerting via the notify nodes."
+        ),
+        params_schema=[_param("note", "Note", "text")],
+    ),
     # ── logic ──
     NodeTypeInfo(
         type="if", category="logic", label="If", outputs=["true", "false"],
@@ -125,6 +135,61 @@ _STATIC_NODES: list[NodeTypeInfo] = [
             _param("size", "Batch size", "number"),
         ],
     ),
+    # ── data: db / file nodes (Phase 35 — roadmap fase 4.2) ──
+    NodeTypeInfo(
+        type="db.query", category="data", label="DB Query", outputs=["main"],
+        description=(
+            "Runs a parameterised SQL query. sqlite databases live inside the workspace "
+            "storage (GRAPH_WORKFLOW_FILES_DIR); postgres connects via a DSN — keep it in "
+            "$secrets. Output: {rows, count, rowcount} (max 1000 rows)."
+        ),
+        params_schema=[
+            _param("driver", "Driver", "select", options=["sqlite", "postgres"]),
+            _param("database", "Database (sqlite path in workspace storage)", "text"),
+            _param("dsn", "DSN (postgres, expression)", "expression",
+                   hint="e.g. ={{ $secrets.PG_DSN }}"),
+            _param("query", "SQL query (use ? / $1 placeholders)", "code"),
+            _param("params", "Parameters (JSON array)", "json"),
+        ],
+    ),
+    NodeTypeInfo(
+        type="file.read", category="data", label="File Read", outputs=["main"],
+        description=(
+            "Reads a file from the workspace storage and parses it. Output by format: "
+            "json → {data}, csv → {rows, count}, lines → {lines, count}, text → {text, size}."
+        ),
+        params_schema=[
+            _param("path", "Path (inside workspace storage)", "text"),
+            _param("format", "Format", "select", options=["auto", "text", "json", "csv", "lines"]),
+            _param("delimiter", "CSV delimiter", "text"),
+        ],
+    ),
+    NodeTypeInfo(
+        type="file.write", category="data", label="File Write", outputs=["main"],
+        description=(
+            "Writes content (or this node's input) to a file in the workspace storage. "
+            "Objects/arrays serialise as JSON; format csv renders rows of objects. "
+            "Output: {path, format, bytes_written, append}."
+        ),
+        params_schema=[
+            _param("path", "Path (inside workspace storage)", "text"),
+            _param("content", "Content (expression, defaults to input)", "expression"),
+            _param("format", "Format", "select", options=["auto", "text", "json", "csv"]),
+            _param("append", "Append (true/false)", "text"),
+        ],
+    ),
+    NodeTypeInfo(
+        type="file.parse", category="data", label="Parse", outputs=["main"],
+        description=(
+            "Parses an in-flight text payload (http body, tool result…) without touching "
+            "disk: json → {data}, csv → {rows, count}, lines → {lines, count}."
+        ),
+        params_schema=[
+            _param("content", "Content (expression, defaults to input)", "expression"),
+            _param("format", "Format", "select", options=["auto", "json", "csv", "lines"]),
+            _param("delimiter", "CSV delimiter", "text"),
+        ],
+    ),
     # ── action ──
     NodeTypeInfo(
         type="http.request", category="action", label="HTTP Request", outputs=["main"],
@@ -141,6 +206,9 @@ _STATIC_NODES: list[NodeTypeInfo] = [
             _param("timeout", "Timeout (seconds, max 120)", "number"),
             _param("allow_errors", "Allow non-2xx (true/false)", "text"),
         ],
+        # Fase 2.1 — sensible retry preset applied by the editor on drop:
+        # transient HTTP failures retry twice with exponential backoff.
+        defaults={"retry": 2, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 60000},
     ),
     NodeTypeInfo(
         type="subworkflow", category="action", label="Subworkflow", outputs=["main"],
@@ -151,6 +219,23 @@ _STATIC_NODES: list[NodeTypeInfo] = [
         params_schema=[
             _param("workflow_id", "Workflow", "workflow"),
             _param("payload", "Payload (JSON object → child $trigger)", "json"),
+        ],
+    ),
+    NodeTypeInfo(
+        type="human.approval", category="action", label="Human approval",
+        outputs=["approved", "rejected"],
+        description=(
+            "Suspends the run (status 'waiting') until someone approves or rejects the "
+            "request from Workflow → Runs (or POST /approvals/{id}/decision), then routes "
+            "through the matching branch. Sends an in-app notification (and optionally "
+            "Telegram). A timeout follows 'On timeout' (reject | fail). Survives restarts."
+        ),
+        params_schema=[
+            _param("title", "Title", "text"),
+            _param("message", "Message (expression)", "expression"),
+            _param("timeout", "Timeout (seconds, default 86400, max 7 days)", "number"),
+            _param("onTimeout", "On timeout", "select", options=["reject", "fail"]),
+            _param("telegram", "Also notify via Telegram (true/false)", "text"),
         ],
     ),
     # ── notify ──
@@ -212,13 +297,14 @@ _STATIC_NODES: list[NodeTypeInfo] = [
         description="A single provider chat completion.",
         params_schema=[
             _param("model", "Model", "model"),
-            _param("system", "System prompt", "text"),
+            _param("system", "System prompt", "code"),
             _param("prompt", "Prompt (expression)", "expression"),
             _param(
                 "failover_chain", "Failover chain", "model-chain",
                 hint="On call failure, retries in order through this named chain (Settings → Models)",
             ),
         ],
+        defaults={"retry": 1, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 120000},
     ),
     NodeTypeInfo(
         type="llm.agent", category="ai", label="LLM Agent", outputs=["main"],
@@ -232,6 +318,45 @@ _STATIC_NODES: list[NodeTypeInfo] = [
                 hint="On call failure, retries in order through this named chain (Settings → Models)",
             ),
         ],
+        defaults={"retry": 1, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 300000},
+    ),
+    # ── ai: structured-output nodes (Phase 35 — roadmap fase 4.1) ──
+    NodeTypeInfo(
+        type="llm.classify", category="ai", label="LLM Classify", outputs=["main"],
+        description=(
+            "Classifies the input into one of the allowed categories with guaranteed "
+            "structure: a reply outside the list raises (so retry / On error apply). "
+            "Output: {category, confidence}."
+        ),
+        params_schema=[
+            _param("model", "Model", "model"),
+            _param("input", "Input (expression, defaults to node input)", "expression"),
+            _param("categories", "Categories (JSON array or comma-separated)", "json"),
+            _param("instructions", "Extra instructions", "text"),
+            _param(
+                "failover_chain", "Failover chain", "model-chain",
+                hint="On call failure, retries in order through this named chain (Settings → Models)",
+            ),
+        ],
+        defaults={"retry": 1, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 120000},
+    ),
+    NodeTypeInfo(
+        type="llm.extract", category="ai", label="LLM Extract", outputs=["main"],
+        description=(
+            "Extracts structured data matching a JSON Schema declared in the inspector. "
+            "Missing required properties raise (so retry / On error apply). Output: {data}."
+        ),
+        params_schema=[
+            _param("model", "Model", "model"),
+            _param("input", "Input (expression, defaults to node input)", "expression"),
+            _param("schema", "JSON Schema (object)", "json"),
+            _param("instructions", "Extra instructions", "text"),
+            _param(
+                "failover_chain", "Failover chain", "model-chain",
+                hint="On call failure, retries in order through this named chain (Settings → Models)",
+            ),
+        ],
+        defaults={"retry": 1, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 120000},
     ),
 ]
 

@@ -125,6 +125,20 @@ class Settings(BaseSettings):
     # A workflow raises an in-app alert after this many consecutive failed runs.
     graph_workflow_run_failure_alert_threshold: int = 3
 
+    # --- Phase 33: engine reliability (roadmap fase 2) ---
+    # At startup, resume runs left 'running'/'pending' by a crash from their
+    # checkpointed node outputs, and re-evaluate per-workflow queued runs.
+    graph_workflow_resume_on_startup: bool = True
+
+    # --- Phase 35: new nodes & capabilities (roadmap fase 4) ---
+    # Workspace storage root for the file.read/file.write nodes and sqlite
+    # db.query databases. Every path a node uses is resolved INSIDE this
+    # directory (traversal outside it is rejected). Created on first use.
+    graph_workflow_files_dir: str = "data/workflow_files"
+    # A human.approval node waits at most this many seconds even when the node
+    # asks for a longer timeout (default cap: 7 days).
+    graph_workflow_approval_max_timeout: int = 604800
+
     # --- SMTP (notify.email workflow node) — leave host empty to disable ---
     smtp_host: str | None = None
     smtp_port: int = 587

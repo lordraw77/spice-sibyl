@@ -8,13 +8,16 @@
   </header>
 
   <div class="runs-toolbar">
-    <select [(ngModel)]="filterWorkflow" (ngModelChange)="refresh()">
+    <!-- Inside the /graph-workflows/:id shell the page is locked to one workflow. -->
+    <select *ngIf="!lockedWorkflow" [(ngModel)]="filterWorkflow" (ngModelChange)="refresh()">
       <option value="">{{ 'gwr.allWorkflows' | t }}</option>
       <option *ngFor="let w of workflows()" [value]="w.id">{{ w.name }}</option>
     </select>
     <select [(ngModel)]="filterStatus" (ngModelChange)="refresh()">
       <option value="">{{ 'gwr.allStatuses' | t }}</option>
+      <option value="queued">queued</option>
       <option value="running">running</option>
+      <option value="waiting">waiting</option>
       <option value="completed">completed</option>
       <option value="failed">failed</option>
       <option value="cancelled">cancelled</option>
@@ -23,7 +26,7 @@
 
     <span class="launch-sep"></span>
 
-    <select [(ngModel)]="launchWorkflow">
+    <select *ngIf="!lockedWorkflow" [(ngModel)]="launchWorkflow">
       <option value="">{{ 'gwr.launchPick' | t }}</option>
       <option *ngFor="let w of workflows()" [value]="w.id">{{ w.name }}</option>
     </select>
@@ -35,6 +38,26 @@
     <button class="btn primary" [disabled]="!launchWorkflow" (click)="launch()">
       ▶ {{ 'gwr.launch' | t }}
     </button>
+  </div>
+
+  <!-- Fase 5.1 — aggregate metrics strip (scoped by the workflow filter). -->
+  <div class="stats-strip" *ngIf="statsSummary() as s">
+    <div class="stat-card">
+      <span class="stat-value">{{ s.runs }}</span>
+      <span class="stat-label">{{ 'gwr.statRuns' | t }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ percent(s.successRate) }}</span>
+      <span class="stat-label">{{ 'gwr.statSuccess' | t }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ seconds(s.avgDuration) }}</span>
+      <span class="stat-label">{{ 'gwr.statAvgDuration' | t }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ s.tokensIn + s.tokensOut }}</span>
+      <span class="stat-label">{{ 'gwr.statTokens' | t }} ({{ s.tokensIn }}↑ {{ s.tokensOut }}↓)</span>
+    </div>
   </div>
 
   <div class="runs-body">
@@ -89,17 +112,50 @@
           <button *ngIf="isStoppable(run)" class="btn small danger" (click)="stopRun(run)">
             ■ {{ 'gwr.stop' | t }}
           </button>
-          <a class="btn small" [routerLink]="['/graph-workflows']" [queryParams]="{ wf: run.workflow_id }">
+          <button
+            *ngIf="isReplayable(run)"
+            class="btn small"
+            (click)="replayRun(run)"
+            [title]="'gwr.replayHint' | t"
+          >
+            ↻ {{ 'gwr.replay' | t }}
+          </button>
+          <a class="btn small" [routerLink]="['/graph-workflows', run.workflow_id]">
             {{ 'gwr.openDesigner' | t }}
           </a>
           <button class="icon-btn" (click)="closeRun()">✕</button>
         </div>
       </div>
       <div class="detail-meta">
-        <span>{{ when(run) }} · {{ run.trigger_type }} · {{ duration(run) }}</span>
+        <span>
+          {{ when(run) }} · {{ run.trigger_type }} · {{ duration(run) }}
+          <ng-container *ngIf="runTokens(run) as tok"> · {{ tok }} {{ 'gwr.statTokens' | t }}</ng-container>
+        </span>
         <code class="run-id" [title]="run.id">{{ run.id }}</code>
       </div>
       <p class="run-error" *ngIf="run.error">{{ run.error }}</p>
+
+      <!-- Fase 4.4 — pending human-approval requests: decide inline. -->
+      <div class="approvals" *ngIf="pendingApprovals().length">
+        <div class="side-subhead">{{ 'gwr.approvals' | t }}</div>
+        <div class="approval-item" *ngFor="let ap of pendingApprovals()">
+          <strong>{{ ap.title }}</strong>
+          <p class="approval-msg" *ngIf="ap.message">{{ ap.message }}</p>
+          <input
+            class="approval-comment"
+            [(ngModel)]="approvalComment"
+            [placeholder]="'gwr.approvalCommentPh' | t"
+          />
+          <div class="approval-actions">
+            <button class="btn small primary" (click)="decide(ap, true)">
+              ✓ {{ 'gwr.approve' | t }}
+            </button>
+            <button class="btn small danger" (click)="decide(ap, false)">
+              ✕ {{ 'gwr.reject' | t }}
+            </button>
+          </div>
+        </div>
+      </div>
 
       <div class="node-runs">
         <div class="side-subhead">{{ 'gwr.nodeRuns' | t }}</div>

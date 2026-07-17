@@ -13,7 +13,7 @@
 
   <form class="new-trigger-form" *ngIf="formOpen()" (ngSubmit)="submit()">
     <div class="form-row">
-      <label class="field">
+      <label class="field" *ngIf="!lockedWorkflow">
         <span>{{ 'gws.workflow' | t }}</span>
         <select [(ngModel)]="formWorkflowId" name="workflowId" required>
           <option value="">—</option>
@@ -26,6 +26,7 @@
           <option value="schedule">{{ 'gws.kind.schedule' | t }}</option>
           <option value="webhook">{{ 'gws.kind.webhook' | t }}</option>
           <option value="event">{{ 'gws.kind.event' | t }}</option>
+          <option value="error">{{ 'gws.kind.error' | t }}</option>
         </select>
       </label>
     </div>
@@ -93,6 +94,16 @@
 
     <p class="hint" *ngIf="formKind === 'webhook'">{{ 'gws.webhookHint' | t }}</p>
 
+    <!-- ── error: watched workflow (fase 2.5) ── -->
+    <label class="field" *ngIf="formKind === 'error'">
+      <span>{{ 'gws.errorWatched' | t }}</span>
+      <select [(ngModel)]="formErrorWorkflowId" name="errorWorkflow">
+        <option value="">{{ 'gws.errorAnyWorkflow' | t }}</option>
+        <option *ngFor="let w of workflows()" [value]="w.id">{{ w.name }}</option>
+      </select>
+      <span class="hint">{{ 'gws.errorHint' | t }}</span>
+    </label>
+
     <div class="form-actions">
       <button type="button" class="btn" (click)="toggleForm()">{{ 'gws.cancel' | t }}</button>
       <button type="submit" class="btn primary" [disabled]="saving()">{{ 'gws.create' | t }}</button>
@@ -113,9 +124,9 @@
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let row of schedules()">
+        <tr *ngFor="let row of visibleSchedules()">
           <td class="wf-name">
-            <a [routerLink]="['/graph-workflows']" [queryParams]="{ wf: row.workflow_id }">{{ row.workflow_name }}</a>
+            <a [routerLink]="['/graph-workflows', row.workflow_id]">{{ row.workflow_name }}</a>
             <button
               type="button"
               class="wf-active-toggle"
@@ -148,7 +159,7 @@
             <button class="icon-btn danger" (click)="remove(row)" [title]="'gws.delete' | t">🗑</button>
           </td>
         </tr>
-        <tr *ngIf="!schedules().length && !loading()">
+        <tr *ngIf="!visibleSchedules().length && !loading()">
           <td colspan="7" class="empty">{{ 'gws.noSchedules' | t }}</td>
         </tr>
       </tbody>

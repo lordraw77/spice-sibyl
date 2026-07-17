@@ -20,6 +20,11 @@ Routes (under /v1/workspaces):
   POST   /{ws}/documents                — share one of my documents (editor+)
   DELETE /{ws}/documents/{did}          — unshare (editor+)
 
+  GET    /{ws}/workflows                — graph workflows shared into the workspace (fase 5.2)
+  POST   /{ws}/workflows                — share one of my graph workflows (editor+)
+  DELETE /{ws}/workflows/{wid}          — unshare (editor+)
+  POST   /{ws}/workflows/{wid}/import   — copy a shared workflow into my profile (member)
+
 Access model: every route requires membership; mutations require a minimum role
 (see role_at_least). Sharing a resource additionally requires the caller to own
 that resource.
@@ -30,14 +35,16 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.db import (
     audit_repository,
+    graph_workflow_repository,
     kb_repository,
     profile_repository,
     user_repository,
     workspace_repository as repo,
 )
 from app.db.database import get_db
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, resolve_profile
 from app.schemas.auth import UserOut
+from app.schemas.graph_workflows import SharedWorkflowOut, WorkflowImportOut
 from app.schemas.workspaces import (
     MemberAdd,
     MemberOut,
@@ -46,6 +53,7 @@ from app.schemas.workspaces import (
     ShareDocumentRequest,
     SharedConversationOut,
     SharedDocumentOut,
+    ShareWorkflowRequest,
     WorkspaceCreate,
     WorkspaceOut,
     WorkspaceUpdate,
@@ -296,3 +304,86 @@ async def unshare_document(
 ):
     await _require_membership(db, workspace_id, user, minimum="editor")
     await repo.unshare_document(db, workspace_id, document_id)
+
+
+# --- Shared graph workflows (Phase 36 — roadmap fase 5.2) --------------------
+
+
+async def _assert_owns_workflow(
+    db: aiosqlite.Connection, workflow_id: str, user: UserOut
+) -> None:
+    wf = await graph_workflow_repository.get_workflow(db, workflow_id)
+    if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    profile = await profile_repository.get_profile(db, wf.profile_id)
+    if not profile or profile.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Workflow does not belong to you")
+
+
+@router.get("/{workspace_id}/workflows", response_model=list[SharedWorkflowOut])
+async def list_shared_workflows(
+    workspace_id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+    user: UserOut = Depends(get_current_user),
+):
+    await _require_membership(db, workspace_id, user)
+    return await repo.list_shared_workflows(db, workspace_id)
+
+
+@router.post("/{workspace_id}/workflows", response_model=list[SharedWorkflowOut], status_code=201)
+async def share_workflow(
+    workspace_id: str,
+    body: ShareWorkflowRequest,
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    user: UserOut = Depends(get_current_user),
+):
+    await _require_membership(db, workspace_id, user, minimum="editor")
+    await _assert_owns_workflow(db, body.workflow_id, user)
+    await repo.share_workflow(db, workspace_id, body.workflow_id, user.id)
+    await audit_repository.record(
+        db, user.id, "workspace.workflow.share", resource=body.workflow_id, ip=_client_ip(request)
+    )
+    return await repo.list_shared_workflows(db, workspace_id)
+
+
+@router.delete("/{workspace_id}/workflows/{workflow_id}", status_code=204)
+async def unshare_workflow(
+    workspace_id: str,
+    workflow_id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+    user: UserOut = Depends(get_current_user),
+):
+    await _require_membership(db, workspace_id, user, minimum="editor")
+    await repo.unshare_workflow(db, workspace_id, workflow_id)
+
+
+@router.post("/{workspace_id}/workflows/{workflow_id}/import", response_model=WorkflowImportOut, status_code=201)
+async def import_shared_workflow(
+    workspace_id: str,
+    workflow_id: str,
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    user: UserOut = Depends(get_current_user),
+    profile_id: str = Depends(resolve_profile),
+):
+    """Copy a workflow shared into the workspace into the caller's own profile
+    (fase 5.2). $secrets values never travel — the copy carries the references
+    and the response's warnings list which ones are missing over here."""
+    from app.services import workflow_graph_service as engine
+
+    await _require_membership(db, workspace_id, user)
+    if not await repo.is_workflow_shared(db, workspace_id, workflow_id):
+        raise HTTPException(status_code=404, detail="Workflow not shared into this workspace")
+    src = await graph_workflow_repository.get_workflow(db, workflow_id)
+    if not src:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    warnings = await engine.validate_import(db, profile_id, src.graph)
+    wf = await graph_workflow_repository.create_workflow(
+        db, profile_id, f"{src.name} (shared)", src.description, src.graph,
+        variables=src.variables, max_concurrent_runs=src.max_concurrent_runs,
+    )
+    await audit_repository.record(
+        db, user.id, "workspace.workflow.import", resource=workflow_id, ip=_client_ip(request)
+    )
+    return WorkflowImportOut(workflow=wf, warnings=warnings)

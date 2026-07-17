@@ -25,24 +25,38 @@
     </div>
   </header>
 
-  <div class="gwf-toolbar" *ngIf="current()">
-    <button class="icon-btn" [disabled]="!canUndo()" (click)="undo()" [title]="'gwf.undo' | t">↶</button>
-    <button class="icon-btn" [disabled]="!canRedo()" (click)="redo()" [title]="'gwf.redo' | t">↷</button>
-    <span class="toolbar-sep"></span>
-    <button class="icon-btn" [disabled]="!selectedNode()" (click)="copySelectedNode()" [title]="'gwf.copyNode' | t">⧉</button>
-    <button class="icon-btn" [disabled]="!hasClipboard()" (click)="pasteNode()" [title]="'gwf.pasteNode' | t">📋</button>
-    <span class="toolbar-sep"></span>
-    <button class="btn small" (click)="addComment()" [title]="'gwf.addComment' | t">🗒 {{ 'gwf.addComment' | t }}</button>
-  </div>
+  <app-editor-toolbar
+    *ngIf="current()"
+    [canUndo]="canUndo()"
+    [canRedo]="canRedo()"
+    [canCopy]="!!selectedNode()"
+    [canPaste]="hasClipboard()"
+    (undo)="undo()"
+    (redo)="redo()"
+    (copy)="copySelectedNode()"
+    (paste)="pasteNode()"
+    (addComment)="addComment()"
+    (layout)="autoLayout()"
+    (fit)="fitView()"
+  ></app-editor-toolbar>
 
   <div class="gwf-body">
     <!-- ── left: workflow list + palette ─────────────────────── -->
     <aside class="gwf-side">
-      <div class="gwf-list">
+      <div class="gwf-list" [class.collapsed]="listCollapsed()">
         <div class="side-head">
-          <span>{{ 'gwf.workflows' | t }}</span>
+          <button
+            class="icon-btn list-toggle"
+            (click)="toggleList()"
+            [title]="(listCollapsed() ? 'gwf.listExpand' : 'gwf.listCollapse') | t"
+          >{{ listCollapsed() ? '▸' : '▾' }}</button>
+          <span class="list-title" (click)="toggleList()">
+            {{ 'gwf.workflows' | t }}
+            <span class="list-count" *ngIf="listCollapsed()">({{ workflows().length }})</span>
+          </span>
           <span class="head-actions">
             <button class="icon-btn" (click)="toggleExamples()" title="{{ 'gwf.ex.show' | t }}">✨</button>
+            <button class="icon-btn" (click)="toggleGenerate()" title="{{ 'gwf.gen.show' | t }}">🪄</button>
             <button class="icon-btn" (click)="triggerImport()" title="{{ 'gwf.importHint' | t }}">📥</button>
             <input
               #importInput
@@ -54,7 +68,7 @@
             <button class="icon-btn" (click)="newWorkflow()" title="{{ 'gwf.new' | t }}">＋</button>
           </span>
         </div>
-        <ul>
+        <ul *ngIf="!listCollapsed()">
           <li
             *ngFor="let wf of workflows()"
             [class.selected]="current()?.id === wf.id"
@@ -62,178 +76,38 @@
           >
             <span class="dot" [class.on]="wf.active"></span>
             <span class="wf-name">{{ wf.name }}</span>
+            <a
+              class="icon-btn wf-open"
+              [routerLink]="['/graph-workflows', wf.id]"
+              (click)="$event.stopPropagation()"
+              [title]="'gwf.openShell' | t"
+            >⧉</a>
             <button class="icon-btn danger" (click)="removeWorkflow(wf, $event)" title="✕">✕</button>
           </li>
           <li *ngIf="!workflows().length" class="empty">{{ 'gwf.empty' | t }}</li>
         </ul>
       </div>
 
-      <div class="gwf-examples" *ngIf="examplesOpen()">
-        <div class="side-head">
-          <span>{{ 'gwf.ex.title' | t }}</span>
-          <button class="icon-btn" (click)="toggleExamples()">✕</button>
-        </div>
-        <p class="muted small">{{ 'gwf.ex.subtitle' | t }}</p>
-        <div class="example-card" *ngFor="let ex of examples()">
-          <div class="example-head">
-            <span class="example-title">{{ ex.title }}</span>
-            <button class="btn small" (click)="importExample(ex)">{{ 'gwf.ex.import' | t }}</button>
-          </div>
-          <p class="example-desc">{{ ex.description }}</p>
-          <div class="example-chips">
-            <span class="chip" *ngFor="let nt of ex.node_types">{{ nt }}</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="gwf-palette" *ngIf="current()">
-        <div class="side-head">
-          <span>{{ 'gwf.palette' | t }}</span>
-          <button class="icon-btn" (click)="paletteOpen.set(!paletteOpen())">
-            {{ paletteOpen() ? '▾' : '▸' }}
-          </button>
-        </div>
-        <div *ngIf="paletteOpen()">
-          <input
-            class="palette-search"
-            [ngModel]="nodeSearch()"
-            (ngModelChange)="nodeSearch.set($event)"
-            [placeholder]="'gwf.searchNodes' | t"
-          />
-          <div *ngFor="let cat of categories" class="palette-group">
-            <button class="palette-cat" (click)="toggleCat(cat)">
-              <span class="cat-caret">{{ isCatCollapsed(cat) ? '▸' : '▾' }}</span>
-              {{ 'gwf.cat.' + cat | t }}
-            </button>
-
-            <ng-container *ngIf="!isCatCollapsed(cat)">
-              <!-- MCP & custom: two-level (server → tools) -->
-              <ng-container *ngIf="cat === 'mcp'; else flatNodes">
-                <div *ngFor="let g of mcpGroups()" class="mcp-group">
-                  <button class="palette-subcat" (click)="toggleServer(g.server)">
-                    <span class="cat-caret">{{ isServerExpanded(g.server) ? '▾' : '▸' }}</span>
-                    {{ g.server }}
-                    <span class="subcat-count">{{ g.nodes.length }}</span>
-                  </button>
-                  <button
-                    *ngFor="let t of (isServerExpanded(g.server) || nodeSearch() ? g.nodes : [])"
-                    class="palette-node nested"
-                    [attr.data-cat]="'mcp'"
-                    (click)="addNode(t)"
-                    [title]="t.description"
-                  >
-                    {{ t.label }}
-                  </button>
-                </div>
-                <div *ngIf="!mcpGroups().length" class="palette-empty">{{ 'gwf.noMcp' | t }}</div>
-              </ng-container>
-
-              <!-- everything else: flat node list -->
-              <ng-template #flatNodes>
-                <button
-                  *ngFor="let t of nodesInCategory(cat)"
-                  class="palette-node"
-                  [attr.data-cat]="cat"
-                  (click)="addNode(t)"
-                  [title]="t.description"
-                >
-                  {{ t.label }}
-                </button>
-              </ng-template>
-            </ng-container>
-          </div>
-        </div>
-      </div>
+      <app-node-palette *ngIf="current()" [nodeTypes]="nodeTypes()" (add)="addNode($event)"></app-node-palette>
     </aside>
 
     <!-- ── center: canvas ────────────────────────────────────── -->
     <main class="gwf-canvas-wrap" *ngIf="current(); else noWf">
-      <svg
-        #canvas
-        class="gwf-canvas"
-        (mousemove)="onCanvasMove($event)"
-        (mouseup)="onCanvasUp()"
-        (click)="onCanvasClick()"
-      >
-        <defs>
-          <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
-            <path d="M0,0 L8,3 L0,6 Z" class="arrow-head" />
-          </marker>
-        </defs>
-
-        <!-- edges -->
-        <g class="edges">
-          <path
-            *ngFor="let e of edges"
-            [attr.d]="edgePath(e)"
-            class="edge"
-            [class.selected]="selectedEdgeId() === e.id"
-            marker-end="url(#arrow)"
-            (click)="selectEdge(e, $event)"
-          />
-          <path *ngIf="pendingSource" [attr.d]="pendingPath()" class="edge pending" />
-        </g>
-
-        <!-- nodes -->
-        <g
-          *ngFor="let n of nodes"
-          class="node"
-          [attr.transform]="'translate(' + (n.position?.x || 0) + ',' + (n.position?.y || 0) + ')'"
-          [class.selected]="selectedNodeId() === n.id"
-          [attr.data-status]="nodeVisualStatus(n.id)"
-        >
-          <rect
-            [attr.width]="NODE_W"
-            [attr.height]="NODE_H"
-            rx="10"
-            class="node-box"
-            [attr.data-cat]="n.type === 'comment' ? 'comment' : typeInfo(n.type)?.category"
-            (mousedown)="startDrag(n, $event)"
-            (click)="$event.stopPropagation()"
-          />
-          <ng-container *ngIf="n.type !== 'comment'; else commentText">
-            <text [attr.x]="12" [attr.y]="24" class="node-title">{{ n.name || n.type }}</text>
-            <text [attr.x]="12" [attr.y]="42" class="node-type">{{ n.type }}</text>
-          </ng-container>
-          <ng-template #commentText>
-            <text [attr.x]="12" [attr.y]="24" class="node-comment-icon">🗒</text>
-            <text [attr.x]="30" [attr.y]="24" class="node-comment-text">{{ commentPreview(n) }}</text>
-          </ng-template>
-
-          <!-- input handle -->
-          <circle
-            *ngIf="n.type !== 'comment' && typeInfo(n.type)?.inputs !== 0"
-            [attr.cx]="0"
-            [attr.cy]="NODE_H / 2"
-            [attr.r]="HANDLE_R"
-            class="handle in"
-            (mouseup)="completeConnect(n, $event)"
-            (click)="$event.stopPropagation()"
-          />
-
-          <!-- output handles -->
-          <g *ngFor="let h of outputsFor(n); let i = index">
-            <circle
-              [attr.cx]="NODE_W"
-              [attr.cy]="(NODE_H / (outputsFor(n).length + 1)) * (i + 1)"
-              [attr.r]="HANDLE_R"
-              class="handle out"
-              (mousedown)="startConnect(n, h, $event)"
-              (click)="$event.stopPropagation()"
-            />
-            <text
-              *ngIf="outputsFor(n).length > 1"
-              [attr.x]="NODE_W - 6"
-              [attr.y]="(NODE_H / (outputsFor(n).length + 1)) * (i + 1) - 8"
-              class="handle-label"
-            >
-              {{ h }}
-            </text>
-          </g>
-        </g>
-      </svg>
-
-      <div class="canvas-hint" *ngIf="!nodes.length">{{ 'gwf.canvasHint' | t }}</div>
+      <app-graph-canvas
+        [nodes]="nodes"
+        [edges]="edges"
+        [nodeTypes]="nodeTypes()"
+        [selectedNodeId]="selectedNodeId()"
+        [selectedNodeIds]="selectedNodeIds()"
+        [selectedEdgeId]="selectedEdgeId()"
+        [nodeStatus]="nodeStatus()"
+        (nodeSelected)="onNodeSelected($event)"
+        (edgeSelected)="onEdgeSelected($event)"
+        (cleared)="onCanvasCleared()"
+        (moveStarted)="pushUndoSnapshot()"
+        (changed)="onNodeMoved()"
+        (connectRequested)="onConnectRequested($event)"
+      ></app-graph-canvas>
     </main>
 
     <ng-template #noWf>
@@ -247,186 +121,188 @@
 
     <!-- ── right: inspector ──────────────────────────────────── -->
     <aside class="gwf-inspector" *ngIf="current() as wf">
-      <!-- ── edge inspector: what flows through this connection ── -->
-      <ng-container *ngIf="selectedEdge() as edge">
-        <div class="side-head">
-          <span>{{ 'gwf.edgePanel' | t }}</span>
-          <button class="icon-btn danger" (click)="deleteSelectedEdge()" [title]="'gwf.edgeDelete' | t">🗑</button>
-        </div>
-        <div class="edge-route">
-          <span class="edge-node">{{ nodeLabel(edge.source) }}</span>
-          <span class="edge-handle" *ngIf="(edge.sourceHandle || 'main') !== 'main'">{{ edge.sourceHandle }}</span>
-          <span class="edge-arrow">→</span>
-          <span class="edge-node">{{ nodeLabel(edge.target) }}</span>
-        </div>
-        <ng-container *ngIf="edgeFields(edge) as fields">
-          <ng-container *ngIf="fields.length; else noEdgeData">
-            <p class="muted small edge-origin" *ngIf="edgeDataOrigin(edge) as origin">{{ origin }}</p>
-            <div class="side-subhead">{{ 'gwf.edgeFields' | t }}</div>
-            <div class="edge-fields">
-              <button
-                *ngFor="let f of fields"
-                class="edge-field"
-                (click)="copyFieldPath(f.path)"
-                [title]="'gwf.fieldCopyHint' | t"
-              >
-                <code class="ef-path">{{ f.path }}</code>
-                <span class="ef-preview">{{ f.preview }}</span>
-              </button>
-            </div>
-            <div class="side-subhead">{{ 'gwf.edgePayload' | t }}</div>
-            <pre class="edge-payload">{{ edgePayload(edge) }}</pre>
-          </ng-container>
-        </ng-container>
-        <ng-template #noEdgeData>
-          <p class="muted small">{{ 'gwf.edgeNoData' | t }}</p>
-        </ng-template>
-        <p class="muted small">{{ 'gwf.edgeHint' | t }}</p>
-      </ng-container>
+      <app-edge-inspector
+        *ngIf="selectedEdge() as edge"
+        [edge]="edge"
+        [nodes]="nodes"
+        [nodeOutputs]="nodeOutputs()"
+        [nodeOutputMeta]="nodeOutputMeta()"
+        [liveRunId]="runId()"
+        (removeEdge)="deleteSelectedEdge()"
+      ></app-edge-inspector>
 
       <ng-container *ngIf="!selectedEdge()">
-      <ng-container *ngIf="selectedNode() as node; else runPanel">
-        <div class="side-head">
-          <span>{{ 'gwf.inspector' | t }}</span>
-          <button class="icon-btn danger" (click)="deleteSelectedNode()">🗑</button>
-        </div>
-        <label class="field" *ngIf="node.type !== 'comment'">
-          <span>{{ 'gwf.nodeName' | t }}</span>
-          <input [(ngModel)]="node.name" (ngModelChange)="dirty.set(true)" />
-        </label>
-        <div class="node-kind" *ngIf="node.type !== 'comment'">
-          {{ node.type }}
-          <span class="node-id" [title]="'gwf.nodeIdHint' | t">· $node.{{ node.id }}</span>
-        </div>
+        <app-node-inspector
+          *ngIf="selectedNode() as node; else runPanel"
+          [node]="node"
+          [workflowId]="wf.id"
+          [nodeTypes]="nodeTypes()"
+          [workflows]="workflows()"
+          [failoverChainNames]="failoverChainNames()"
+          [running]="running()"
+          [lastOutput]="nodeOutputs()[node.id]"
+          [lastStatus]="nodeStatus()[node.id] ?? null"
+          [lastError]="nodeErrors()[node.id] ?? null"
+          (changed)="dirty.set(true)"
+          (remove)="deleteSelectedNode()"
+          (runFromNode)="runFromSelectedNode()"
+          (onErrorChanged)="onNodeErrorPolicyChanged()"
+          (tested)="onNodeTested(node.id, $event)"
+        ></app-node-inspector>
 
-        <div class="field" *ngFor="let p of paramsSchema(node)">
-          <span>{{ p.label }}</span>
-          <app-model-picker
-            *ngIf="p.kind === 'model'"
-            [inline]="true"
-            [value]="paramValue(node, p.name)"
-            (valueChange)="setParam(node, p.name, $event, 'text')"
-          ></app-model-picker>
-          <select
-            *ngIf="p.kind === 'workflow'"
-            [ngModel]="paramValue(node, p.name)"
-            (ngModelChange)="setParam(node, p.name, $event, 'text')"
-          >
-            <option value="">—</option>
-            <option
-              *ngIf="paramValue(node, p.name) && !isKnownWorkflowId(paramValue(node, p.name))"
-              [value]="paramValue(node, p.name)"
-            >
-              {{ paramValue(node, p.name) }}
-            </option>
-            <option *ngFor="let w of selectableWorkflows()" [value]="w.id">{{ w.name }}</option>
-          </select>
-          <select
-            *ngIf="p.kind === 'model-chain'"
-            [ngModel]="paramValue(node, p.name)"
-            (ngModelChange)="setParam(node, p.name, $event, 'text')"
-            [title]="p.hint || ''"
-          >
-            <option value="">—</option>
-            <option *ngFor="let name of failoverChainNames()" [value]="name">{{ name }}</option>
-          </select>
-          <select
-            *ngIf="p.kind === 'select'"
-            [ngModel]="paramValue(node, p.name)"
-            (ngModelChange)="setParam(node, p.name, $event, 'text')"
-            [title]="p.hint || ''"
-          >
-            <option *ngFor="let opt of p.options" [value]="opt">{{ opt || '—' }}</option>
-          </select>
-          <textarea
-            *ngIf="p.kind === 'code' || p.kind === 'json' || p.kind === 'expression'"
-            rows="3"
-            [value]="paramValue(node, p.name)"
-            (input)="setParam(node, p.name, $any($event.target).value, p.kind)"
-            [placeholder]="p.hint || ''"
-          ></textarea>
-          <input
-            *ngIf="p.kind === 'text' || p.kind === 'number'"
-            [type]="p.kind === 'number' ? 'number' : 'text'"
-            [value]="paramValue(node, p.name)"
-            (input)="setParam(node, p.name, $any($event.target).value, p.kind)"
-            [placeholder]="p.hint || ''"
-          />
-        </div>
-
-        <details class="advanced" *ngIf="node.type !== 'comment'">
-          <summary>{{ 'gwf.advanced' | t }}</summary>
-          <label class="field">
-            <span>{{ 'gwf.retry' | t }}</span>
-            <input type="number" [(ngModel)]="node.retry" (ngModelChange)="dirty.set(true)" min="0" />
-          </label>
-          <label class="field">
-            <span>{{ 'gwf.onError' | t }}</span>
-            <select
-              [ngModel]="node.onError || (node.continueOnFail ? 'continue' : 'stop')"
-              (ngModelChange)="setOnError(node, $event)"
-            >
-              <option value="stop">{{ 'gwf.onErrorStop' | t }}</option>
-              <option value="continue">{{ 'gwf.onErrorContinue' | t }}</option>
-              <option value="branch">{{ 'gwf.onErrorBranch' | t }}</option>
-            </select>
-          </label>
-        </details>
-      </ng-container>
-
-      <ng-template #runPanel>
-        <div class="side-head"><span>{{ 'gwf.runPanel' | t }}</span></div>
-
-        <div class="wf-id-row">
-          <span class="side-subhead">{{ 'gwf.workflowId' | t }}</span>
-          <code class="wf-id" [title]="wf.id">{{ wf.id }}</code>
-          <button class="icon-btn" (click)="copyWorkflowId()" [title]="'gwf.copyId' | t">⧉</button>
-        </div>
-
-        <div class="triggers">
-          <div class="side-subhead">{{ 'gwf.triggers' | t }}</div>
-          <div *ngFor="let tr of wf.triggers || []" class="trigger-row">
-            <span class="trigger-type">{{ tr.type }}</span>
-            <a *ngIf="tr.token" class="trigger-url" [href]="webhookUrl(tr.token)" target="_blank" rel="noopener">
-              {{ 'gwf.webhookUrl' | t }}
-            </a>
-            <button class="icon-btn danger" (click)="deleteTrigger(tr.id)">✕</button>
-          </div>
-          <div class="trigger-add">
-            <button class="btn small" (click)="addScheduleTrigger()">＋ {{ 'gwf.cat.trigger' | t }} · schedule</button>
-            <button class="btn small" (click)="addWebhookTrigger()">＋ webhook</button>
-          </div>
-        </div>
-
-        <label class="field">
-          <span>{{ 'gwf.runPayload' | t }}</span>
-          <textarea
-            rows="3"
-            [(ngModel)]="runPayloadText"
-            [placeholder]="'gwf.runPayloadHint' | t"
-          ></textarea>
-        </label>
-
-        <div class="run-status" *ngIf="runId()">
-          <div class="side-subhead">{{ 'gwf.lastRun' | t }}</div>
-          <ul>
-            <li *ngFor="let n of nodes" class="rs-item">
-              <div class="rs-row">
-                <span class="rs-dot" [attr.data-status]="nodeVisualStatus(n.id) || 'idle'"></span>
-                <span class="rs-name">{{ n.name || n.type }}</span>
-                <span class="rs-badge" [attr.data-status]="nodeVisualStatus(n.id)">
-                  {{ nodeVisualStatus(n.id) || '—' }}
-                </span>
-              </div>
-              <p class="rs-error" *ngIf="nodeError(n.id)">{{ nodeError(n.id) }}</p>
-              <pre class="rs-output" *ngIf="nodeOutputPreview(n.id)">{{ nodeOutputPreview(n.id) }}</pre>
-            </li>
-          </ul>
-        </div>
-
-        <p class="muted small">{{ 'gwf.runHint' | t }}</p>
-      </ng-template>
+        <ng-template #runPanel>
+          <app-run-panel
+            [wf]="wf"
+            [nodes]="nodes"
+            [runId]="runId()"
+            [nodeStatus]="nodeStatus()"
+            [nodeErrors]="nodeErrors()"
+            [nodeOutputs]="nodeOutputs()"
+            [payload]="runPayloadText"
+            (payloadChange)="runPayloadText = $event"
+            (reload)="reloadCurrent()"
+            (restored)="onVersionRestored($event)"
+          ></app-run-panel>
+        </ng-template>
       </ng-container>
     </aside>
+  </div>
+
+  <!-- ── connect-time mapping chooser ─────────────────────────── -->
+  <div class="map-overlay" *ngIf="mapDialog() as md" (click)="dismissMapping()">
+    <div class="map-dialog" (click)="$event.stopPropagation()">
+      <div class="side-head">
+        <span>{{ 'gwf.map.title' | t }}</span>
+        <button class="icon-btn" (click)="dismissMapping()">✕</button>
+      </div>
+      <div class="edge-route">
+        <span class="edge-node">{{ md.sourceName }}</span>
+        <span class="edge-handle" *ngIf="(md.edge.sourceHandle || 'main') !== 'main'">{{ md.edge.sourceHandle }}</span>
+        <span class="edge-arrow">→</span>
+        <span class="edge-node">{{ md.targetName }}</span>
+      </div>
+      <p class="muted small">{{ 'gwf.map.subtitle' | t }}</p>
+
+      <label class="field" *ngIf="md.targetParams.length > 1">
+        <span>{{ 'gwf.map.field' | t }}</span>
+        <select [ngModel]="md.selectedParam" (ngModelChange)="setMapParam($event)">
+          <option *ngFor="let p of md.targetParams" [value]="p.name">{{ p.label }}</option>
+        </select>
+      </label>
+
+      <div class="side-subhead">{{ 'gwf.map.value' | t }}</div>
+      <div class="map-candidates">
+        <button
+          *ngFor="let c of md.candidates"
+          class="edge-field map-candidate"
+          [class.selected]="md.selectedPath === c.path"
+          (click)="setMapPath(c.path)"
+        >
+          <code class="ef-path">{{ c.path }}</code>
+          <span class="map-type">{{ c.typeDesc }}</span>
+          <span class="ef-preview" *ngIf="c.preview">{{ c.preview }}</span>
+        </button>
+      </div>
+
+      <div class="map-actions">
+        <button class="btn" (click)="dismissMapping()">{{ 'gwf.map.skip' | t }}</button>
+        <button class="btn primary" (click)="applyMapping()">{{ 'gwf.map.apply' | t }}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── fase 5.3: "describe what you want" → generated draft workflow ── -->
+  <div class="examples-overlay" *ngIf="genOpen()" (click)="toggleGenerate()">
+    <div class="examples-modal gen-modal" (click)="$event.stopPropagation()" role="dialog" aria-modal="true">
+      <div class="examples-head">
+        <div>
+          <h2>🪄 {{ 'gwf.gen.title' | t }}</h2>
+          <p class="muted small">{{ 'gwf.gen.subtitle' | t }}</p>
+        </div>
+        <button class="icon-btn examples-close" (click)="toggleGenerate()">✕</button>
+      </div>
+      <textarea
+        class="gen-prompt"
+        rows="5"
+        [(ngModel)]="genPrompt"
+        [placeholder]="'gwf.gen.placeholder' | t"
+      ></textarea>
+      <div class="gen-options">
+        <label class="field gen-field">
+          <span>{{ 'gwf.gen.model' | t }}</span>
+          <app-model-picker
+            [inline]="true"
+            [value]="genModel"
+            [placeholder]="'gwf.gen.modelDefault' | t"
+            (valueChange)="genModel = $event"
+          ></app-model-picker>
+        </label>
+        <label class="field gen-field" *ngIf="failoverChainNames().length">
+          <span>{{ 'gwf.gen.chain' | t }}</span>
+          <select [(ngModel)]="genChain">
+            <option value="">{{ 'gwf.gen.chainNone' | t }}</option>
+            <option *ngFor="let c of failoverChainNames()" [value]="c">{{ c }}</option>
+          </select>
+        </label>
+      </div>
+      <!-- Live progress log streamed from the backend (fase 5.3). -->
+      <div class="gen-log" *ngIf="genLog().length">
+        <div class="gen-log-line" *ngFor="let line of genLog(); let last = last">
+          <span class="gen-log-dot" [class.busy]="last && genBusy()">{{ last && genBusy() ? '◌' : '✓' }}</span>
+          {{ line }}
+        </div>
+      </div>
+      <div class="gen-actions">
+        <button class="btn" (click)="toggleGenerate()">{{ 'gwf.map.skip' | t }}</button>
+        <button class="btn primary" [disabled]="!genPrompt.trim() || genBusy()" (click)="generateWorkflow()">
+          {{ (genBusy() ? 'gwf.gen.busy' : 'gwf.gen.go') | t }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── examples gallery: large centered modal (was a sidebar strip) ── -->
+  <div class="examples-overlay" *ngIf="examplesOpen()" (click)="toggleExamples()">
+    <div class="examples-modal" (click)="$event.stopPropagation()" role="dialog" aria-modal="true">
+      <div class="examples-head">
+        <div>
+          <h2>{{ 'gwf.ex.title' | t }}</h2>
+          <p class="muted small">{{ 'gwf.ex.subtitle' | t }}</p>
+        </div>
+        <button class="icon-btn examples-close" (click)="toggleExamples()">✕</button>
+      </div>
+      <div class="example-filter" *ngIf="exampleCategories().length > 1">
+        <button
+          class="chip filter-chip"
+          [class.selected]="!exampleCategory()"
+          (click)="exampleCategory.set('')"
+        >{{ 'gwf.ex.all' | t }}</button>
+        <button
+          class="chip filter-chip"
+          *ngFor="let cat of exampleCategories()"
+          [class.selected]="exampleCategory() === cat"
+          (click)="exampleCategory.set(cat)"
+        >{{ cat }}</button>
+      </div>
+      <div class="examples-grid">
+        <div class="example-card" *ngFor="let ex of filteredExamples()">
+          <div class="example-head">
+            <span class="example-title">{{ ex.title }}</span>
+            <span class="chip category-chip">{{ ex.category }}</span>
+            <button class="btn small primary" (click)="importExample(ex)">{{ 'gwf.ex.import' | t }}</button>
+          </div>
+          <app-graph-preview class="example-preview" [graph]="ex.graph"></app-graph-preview>
+          <div class="example-flow" [title]="exampleFlow(ex)">{{ exampleFlow(ex) }}</div>
+          <p class="example-desc">{{ ex.description }}</p>
+          <div class="example-meta">
+            {{ ex.graph.nodes.length }} {{ 'gwf.ex.nodes' | t }} ·
+            {{ ex.graph.edges.length }} {{ 'gwf.ex.connections' | t }}
+          </div>
+          <div class="example-chips">
+            <span class="chip" *ngFor="let nt of ex.node_types">{{ nt }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>

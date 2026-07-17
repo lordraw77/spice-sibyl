@@ -13,6 +13,15 @@ SpiceSibyl hat zwei ergänzende Automatisierungs-Engines:
 
 ![Editor für visuelle Workflows](screenshots/visual-workflow-editor.svg)
 
+
+![Visual editor — componentized canvas, palette and run panel](../screenshots/editor-overview.png)
+
+<p align="center">
+  <img src="../screenshots/run-panel-vars-secrets-versions.png" alt="Run panel: $vars editor, $secrets manager, version history" width="360" />
+</p>
+
+![Per-workflow shell — Editor | Runs | Schedules tabs with the run detail open](../screenshots/workflow-shell-runs.png)
+
 ## Die Leinwand
 
 Der Editor hat drei Bereiche:
@@ -45,15 +54,59 @@ um den Graphen zu starten — Knoten leuchten in Echtzeit grün/blau/rot/grau (o
 optionales **Payload**-Feld (JSON): sein Objekt wird zum `$trigger` des Laufs, sodass Graphen,
 die `={{ $trigger.<Feld> }}` lesen, auch ohne Webhook-Aufruf manuell getestet werden können.
 
+### Die Einzel-Workflow-Ansicht — `/graph-workflows/{id}`
+
+Jeder Workflow hat auch eine eigene Seite (öffnen über ⧉ in der Liste oder aus einer
+Ausführungs-/Zeitplanzeile): eine Tab-Leiste **Editor | Ausführungen | Zeitpläne**,
+beschränkt auf diesen Workflow. Der Ausführungen-Tab ist das vorgefilterte Register;
+der Zeitpläne-Tab listet und erstellt Trigger nur für ihn. Die globalen Seiten bleiben
+die workflow-übergreifenden Ansichten.
+
+Der Editor selbst ist komponentisiert (Roadmap Phase 1): SVG-Canvas, Palette, Toolbar,
+Knoten-/Kanten-Inspektor und Run-Panel sind eigenständige Angular-Komponenten unter
+`features/workflows/editor/` — siehe `docs/frontend-overview.md`.
+
+### Editor-DX — Testen, Pinnen, Navigieren (Phase 3)
+
+Einen Graphen zu bauen und zu debuggen erfordert keine vollständigen Läufe:
+
+- **Knoten testen** (⚡ im Inspector) führt **nur den ausgewählten Knoten** aus, mit den
+  aktuellen — auch ungespeicherten — Parametern, und zeigt Output, aktiven Handle und
+  Dauer inline (`POST /{id}/nodes/{node_id}/test`; nichts wird im Ausführungsregister
+  aufgezeichnet). Der Input kommt vom gepinnten/letzten Output des Upstream-Knotens oder
+  aus dem optionalen **Mock-Input**-JSON im Inspector.
+- **Gepinnte Outputs** (📌) frieren den Output eines Knotens ein — ein Klick auf den
+  letzten Output oder handeditiertes JSON. Knotentests, **Teilläufe** (*Ab diesem Knoten
+  ausführen*) und Ausdrucks-Vorschauen lösen `$node.<id>.output` aus dem Pin statt aus
+  der Historie auf: ideal, um stromabwärts eines echten Webhook-Payloads zu entwickeln,
+  ohne ihn erneut auszulösen. Pins werden mit dem Workflow gespeichert (und wandern mit
+  dem Export), zeigen ein 📌-Badge auf der Leinwand und werden von **Produktionsläufen
+  komplett ignoriert** (manual/schedule/webhook/event).
+- **Letzte Ausführung** im Inspector zeigt Status, Output und Fehler des ausgewählten
+  Knotens (Live-Lauf, Test oder Historie), ohne die Leinwand zu verlassen.
+- **Mehrfachauswahl**: Shift+Klick fügt Knoten hinzu/entfernt sie; Ziehen bewegt die
+  ganze Auswahl; `Strg+A` wählt alles; `Strg+C/V` kopiert & fügt die Auswahl **inklusive
+  ihrer internen Kanten** ein (IDs neu vergeben); `Entf`/`Backspace` löscht sie.
+- **Pan & Zoom**: leere Leinwand ziehen für Pan, Mausrad zoomt um den Cursor. Eine
+  **Minimap** (unten rechts) zeigt den ganzen Graphen plus Viewport — Klick/Ziehen
+  navigiert, Doppelklick passt ein. Die Toolbar ergänzt **Anordnen** (schichtweises
+  Auto-Layout, rückgängig machbar) und **⛶ Einpassen**.
+- Die **Template-Galerie** (✨) öffnet sich als **großes zentriertes Modal** über dem
+  Editor: ein mehrspaltiges Karten-Raster mit größerer Graph-Vorschau, Kategorie,
+  Fluss-Kette (Knotennamen mit →), Knoten-/Verbindungszahl und vollständiger
+  Beschreibung — vor dem Import nach Kategorie filterbar. Die **Workflow-Liste ist
+  einklappbar** (▾/▸ in der Kopfzeile, sitzungsübergreifend gemerkt), sodass die
+  Knoten-Palette den Platz der Seitenleiste bekommt.
+
 ## Knotentypen
 
 | Kategorie | Knoten |
 |-----------|--------|
 | **Trigger** | `manual`, `schedule`, `webhook`, `event` |
-| **Aktion** | `tool.<name>` — jedes Register-Tool (RSS, read_url, Wetter, kb_search, http_request, python_exec, MCP, benutzerdefiniert…) · `http.request` (generischer HTTP-Aufruf) · `subworkflow` (führt einen anderen Workflow inline aus) |
+| **Aktion** | `tool.<name>` — jedes Register-Tool (RSS, read_url, Wetter, kb_search, http_request, python_exec, MCP, benutzerdefiniert…) · `http.request` (generischer HTTP-Aufruf) · `subworkflow` (führt einen anderen Workflow inline aus) · `human.approval` (pausiert, bis ein Mensch genehmigt/ablehnt — Phase 4.4) |
 | **Logik** | `if` (wahr/falsch-Zweig), `switch` (Fall-Zweige), `merge` (Eingänge sammeln), `wait` (wartet N Sekunden oder bis zu einem Zeitpunkt) |
-| **Daten** | `set` (Objekt bauen), `filter` (passende Array-Elemente behalten), `code` (Python-Sandbox), `aggregate` (reduziert ein Array — sum/avg/min/max/count/concat über ein Feld), `batch` (teilt ein Array in Blöcke fester Größe) |
-| **KI** | `llm.completion` (ein Provider-Aufruf), `llm.agent` (die volle Agenten-Schleife aus Phase 18) |
+| **Daten** | `set` (Objekt bauen), `filter` (passende Array-Elemente behalten), `code` (Python-Sandbox), `aggregate` (reduziert ein Array — sum/avg/min/max/count/concat über ein Feld), `batch` (teilt ein Array in Blöcke fester Größe), `db.query` (parametrisiertes SQL — sqlite/postgres), `file.read` / `file.write` (Workspace-Speicher), `file.parse` (JSON/CSV/Zeilen unterwegs parsen) |
+| **KI** | `llm.completion` (ein Provider-Aufruf), `llm.agent` (die volle Agenten-Schleife aus Phase 18), `llm.classify` / `llm.extract` (garantiert strukturierte Ausgabe — Phase 4.1) |
 
 > **Failover-Ketten** — `llm.completion` und `llm.agent` bieten ein **Failover
 > chain**-Menü, gespeist aus den benannten Modelllisten unter Einstellungen → Modelle →
@@ -71,6 +124,16 @@ die `={{ $trigger.<Feld> }}` lesen, auch ohne Webhook-Aufruf manuell getestet we
 - **`subworkflow`** — führt einen anderen Workflow desselben Profils als Kind-Lauf aus und
   liefert `{ run_id, workflow_id, status, output }` (`output` = Ausgabe des Endknotens des
   Kindes). Das `payload` wird zum `$trigger` des Kindes. Verschachtelung: max. 5 Ebenen.
+- **Timeout (ms)** (Inspektor, Abschnitt Erweitert) — harte Zeitobergrenze für einen
+  *einzelnen* Ausführungsversuch (`0` deaktiviert es, max. 600 000). Ein abgelaufener
+  Versuch wird abgebrochen und schlägt wie jeder andere Fehler fehl, unterliegt also weiter
+  den Retries und der *Bei Fehler*-Politik — der idiomatische Schutz für einen hängenden
+  `http.request`, `llm.agent` oder MCP-Tool, das sonst den ganzen Lauf blockieren würde.
+- **Retries & Backoff-Strategie** (Inspektor, Abschnitt Erweitert — Phase 2.1) — führt den
+  Knoten bis zu N-mal erneut aus und wartet `backoff` Sekunden zwischen den Versuchen.
+  **Fest** wartet immer `backoff` Sekunden; **Exponentiell** wartet `backoff × 2^Versuch`
+  (max. 60 s pro Pause). Neue `http.request`- und `llm.*`-Knoten kommen mit sinnvollen
+  Voreinstellungen aus dem Katalog (z. B. HTTP: 2 Retries, 2 s exponentiell, 60 s Timeout).
 - **Bei Fehler** (Inspektor, Abschnitt Erweitert) — nach erschöpften Retries: **Lauf
   abbrechen** (Standard), **auf dem Hauptzweig fortfahren** mit `{ error }`, oder **in den
   Fehlerzweig leiten**: der Knoten erhält einen dedizierten **`error`-Ausgang** und
@@ -85,6 +148,50 @@ die `={{ $trigger.<Feld> }}` lesen, auch ohne Webhook-Aufruf manuell getestet we
 - **Ausführungs-Ansicht** — `/graph-workflows/runs`: das Register aller Läufe des Profils
   (Status, Trigger, Dauer, Ergebnisse pro Knoten, Live-SSE), getrennt vom Designer; der
   Editor hängt sich beim Öffnen eines Workflows wieder an dessen laufende Ausführung an.
+
+### Neue Knoten der Phase 4 — strukturierte KI, DB/Dateien, menschliche Freigabe
+
+- **`llm.classify` / `llm.extract`** (Phase 4.1) — KI-Knoten mit **garantierter
+  Ausgabeform**: `llm.classify` ordnet den Input einer der deklarierten `categories` zu
+  (Ausgabe `{ category, confidence }` — eine Kategorie außerhalb der Liste löst einen
+  Fehler aus, Retries greifen); `llm.extract` extrahiert Daten gemäß einem **JSON Schema**
+  aus dem Inspektor (`required`-Felder werden erzwungen, Ausgabe `{ data }`). Beide nutzen
+  Modell-Picker, Failover-Kette und Antwort-Cache wie `llm.completion`.
+- **`db.query`, `file.read`, `file.write`, `file.parse`** (Phase 4.2) — parametrisiertes
+  SQL (`{ rows, count, rowcount }`, max. 1000 Zeilen; sqlite-Datenbanken liegen im
+  Workspace-Speicher, Postgres per `dsn` aus `$secrets`) und Dateiknoten auf dem
+  **Workspace-Speicher** (`GRAPH_WORKFLOW_FILES_DIR`, max. 10 MB): `json → {data}`,
+  `csv → {rows, count}`, `lines → {lines, count}`, `text → {text, size}`. Jeder Pfad wird
+  *innerhalb* des Speichers aufgelöst — absolute Pfade und `..`-Traversal schlagen fehl.
+- **`human.approval`** (Phase 4.4) — der Lauf **pausiert** (Status `waiting`), erzeugt
+  eine Freigabe-Anfrage, benachrichtigt in-app (optional Telegram) und wartet auf die
+  Entscheidung aus der Ausführungs-Ansicht (**✓ Genehmigen / ✕ Ablehnen**, optionaler
+  Kommentar) oder per API (`GET /approvals`, `POST /approvals/{id}/decision`). Die
+  Entscheidung leitet den Graphen über den **`approved`**- bzw. **`rejected`**-Ausgang;
+  `timeout` (Standard 24 h, Obergrenze `GRAPH_WORKFLOW_APPROVAL_MAX_TIMEOUT` = 7 Tage) und
+  `onTimeout` (`reject` | `fail`) regeln den Ablauf. Das Warten überlebt Neustarts
+  (Checkpoints der Phase 2.4); das Abbrechen eines wartenden Laufs schließt die Anfrage
+  als `cancelled`.
+
+### Phase 5 — Metriken, Import/Sharing, generierte Workflows
+
+- **Metriken** (Phase 5.1) — `GET /v1/graph-workflows/stats` aggregiert pro Workflow:
+  Laufzahlen nach Ausgang, **Erfolgsquote**, **Ø Dauer** und die **LLM-Token-Summen**
+  aus dem `_usage`-Schlüssel der `llm.*`-Knoten. Die Ausführungs-Ansicht zeigt sie als
+  Dashboard-Leiste; das Lauf-Detail zeigt die Token des geöffneten Laufs.
+- **Export/Import & Sharing** (Phase 5.2) — der Export trägt jetzt ein `secrets`-Array
+  (nur die **Namen** der referenzierten `$secrets`); `POST /v1/graph-workflows/import`
+  validiert den Snapshot (Schema + Knotenlimit) und meldet nicht-blockierende Warnungen
+  (unbekannte Knotentypen, fehlende `$secrets`). Workflows lassen sich in einen
+  Workspace teilen (`POST /v1/workspaces/{ws}/workflows`) und von Mitgliedern als Kopie
+  ins eigene Profil importieren (`POST /{ws}/workflows/{wid}/import`).
+- **Generierte Workflows** (Phase 5.3) — der 🪄-Knopf öffnet den Dialog „Beschreibe, was
+  du willst“ mit **Modell-Picker** und optionaler **Failover-Kette**:
+  `POST /v1/graph-workflows/generate` erzeugt aus dem Knotenkatalog einen **validierten,
+  normalisierten Entwurf** (unbekannte Typen/kaputte Kanten entfernt, fehlender Trigger
+  ergänzt, Auto-Layout) und öffnet ihn im Editor. Die UI nutzt das Streaming-Pendant
+  `POST /generate/stream`: `log`-SSE-Events zeigen jeden Schritt als **Live-Protokoll**
+  (Katalog, Modellaufruf, Antwort, Validierung, Layout) statt eines bloßen Spinners.
 
 ## Ausdrücke
 
@@ -104,13 +211,30 @@ Jeder Parameter kann ein Literal **oder** ein Ausdruck sein, per Präfix untersc
   ```
 
   Kontext: `$node.<id>.output.<pfad>`, `$json` (primäre Eingabe des Knotens), `$trigger`,
-  `$env` (WF_-präfixierte Umgebungsvariablen), `$now`. Funktionen: `default`, `upper`, `lower`,
+  `$env` (WF_-präfixierte Umgebungsvariablen), `$vars` (Workflow-Variablen), `$secrets` (Profil-Secrets, nur für die Dauer eines Laufs entschlüsselt), `$now`. Funktionen: `default`, `upper`, `lower`,
   `trim`, `len`, `join`, `slice`, `first`, `last`, `get`, `keys`, `values`, `round`, …
 
 - `=py: …` — eine **Ausweichluke** in die `python_exec`-Sandbox für echte Logik. `ctx`, `input`,
   `node`, `trigger` sind verfügbar; der letzte Ausdruck (oder eine `result`-Variable) wird zum Wert.
 
 Alles, was nicht mit `=` beginnt, ist ein Literal.
+
+## Variablen & Secrets — `$vars` / `$secrets`
+
+Zwei Konfigurationsebenen halten Werte aus den Knoten-Parametern heraus (Roadmap Phase 1):
+
+- **Variablen (`$vars`)** — Schlüssel/Wert-Paare pro Workflow, editierbar im Abschnitt
+  *Variablen* des Run-Panels, lesbar in jedem Knoten als `{{ $vars.name }}`. Ein Wert,
+  der als JSON parst, behält seinen nativen Typ. Variablen wandern mit Export/Import und
+  über die API (`variables` bei `POST`/`PATCH`); Änderungen erhöhen die Graph-Version
+  **nicht**.
+- **Secrets (`$secrets`)** — profilweite Zugangsdaten für alle deine Workflows
+  (API-Tokens, Verbindungsstrings…), verwaltet im Abschnitt *Secrets* des Run-Panels.
+  Werte werden **mit Fernet verschlüsselt gespeichert** (abgeleitet aus
+  `VAULT_SECRET_KEY`) und **nie von der API zurückgegeben** — die Liste zeigt nur Namen.
+  Referenz: `{{ $secrets.NAME }}` (z. B. in einem `http.request`-Header). Die Engine
+  entschlüsselt sie nur für die Dauer eines Laufs; der persistierte Kontext enthält sie
+  nie, *Test expression* liefert `***`, und der Export lässt sie bewusst weg.
 
 ## Trigger
 
@@ -130,6 +254,13 @@ Aus dem Ausführungs-Panel:
   Ingest eines KB-Dokuments/einer URL — Payload `{doc_id, filename, profile_id}`) und
   `chat.message.created` (nach dem Speichern eines Chat-Austauschs — Payload
   `{conversation_id, profile_id}`).
+- **Error** (Phase 2.5) — feuert, wenn der Lauf eines *anderen* Workflows fehlschlägt.
+  `config.workflow_id` beschränkt ihn auf einen beobachteten Workflow (leer / `*` = alle).
+  Payload: `{workflow_id, workflow_name, run_id, error, failed_node}`; auf der
+  Zeichenfläche dient der Trigger-*Knoten* `error` als Einstiegspunkt. Schleifensicher:
+  ein Workflow reagiert nie auf eigene Fehlschläge, und von Error-Triggern gestartete
+  Läufe lösen keine weiteren Error-Trigger aus. Ideal für zentrales Alerting mit den
+  `notify.*`-Knoten.
 
 Sowohl **Schedule**- als auch **Event**-Trigger zählen aufeinanderfolgende Fehlschläge
 (`fail_count`/`last_error`): nach `GRAPH_WORKFLOW_TRIGGER_MAX_FAILURES` (Standard 5)
@@ -168,6 +299,21 @@ generiert/erneuert.
 
 - **Nebenläufigkeitsgrenze** — ein `GRAPH_WORKFLOW_MAX_CONCURRENT_NODES`-Semaphore
   (Standard 8) begrenzt, wie viele unabhängige Knoten innerhalb eines Laufs parallel laufen.
+- **Lauf-Warteschlange pro Workflow** (Phase 2.3) — **Max. gleichzeitige Läufe** im
+  Abschnitt **Ausführung** des Run-Panels (oder `max_concurrent_runs` per API, `0` =
+  unbegrenzt): Läufe über dem Limit entstehen im Status **`queued`** (Trigger-Payload wird
+  am Lauf geparkt) und starten FIFO, sobald ein Slot frei wird. Warteschlangen-Läufe
+  erscheinen in der Läufe-Ansicht und lassen sich abbrechen; `subworkflow`-Kindläufe
+  umgehen die Warteschlange (ein wartendes Kind würde den Eltern-Lauf blockieren).
+- **Checkpoint & Wiederaufnahme** (Phase 2.4) — der Laufkontext (Ausgabe **und aktive
+  Ausgangs-Handles** jedes Knotens) wird nach jeder Welle persistiert. Beim Start (Flag
+  `GRAPH_WORKFLOW_RESUME_ON_STARTUP`, Standard true) werden durch Crash/Neustart
+  hängengebliebene `running`/`pending`-Läufe vom Checkpoint fortgesetzt: fertige Knoten
+  laufen nicht erneut, nur der fehlende Teilgraph wird ausgeführt; verwaiste Knotenläufe
+  werden als Fehler („interrupted by restart") geschlossen.
+- **Error-Trigger** (Phase 2.5) — siehe Abschnitt Trigger: ein Workflow mit `error`-Trigger
+  startet, wenn ein anderer fehlschlägt, mit
+  `{workflow_id, workflow_name, run_id, error, failed_node}` als `$trigger`.
 - **Token-Nutzung** — die Ausgabe von `llm.completion`- und `llm.agent`-Knoten enthält
   einen `_usage`-Schlüssel (`{tokens_in, tokens_out, tokens_total}`, über die
   Agenten-Schritte summiert), wenn der Provider ihn meldet; sonst `null`. Kosten werden
@@ -184,6 +330,10 @@ generiert/erneuert.
   Anfrage mit `tools` erhält nie einen Cache-Schlüssel).
 
 ## Versionen & Ausführungen
+
+Das Run-Panel hat einen Abschnitt **Versionen**: jeder Snapshot mit Zeitstempel und
+Ein-Klick-**Wiederherstellen** — die Wiederherstellung sichert zuerst den aktuellen
+Graphen als neue Version, ein Rollback ist also immer umkehrbar.
 
 Jedes Speichern erzeugt eine unveränderliche Version; Sie können Versionen auflisten und
 zurückrollen. Jede Ausführung speichert den ausgeführten Graphen, den aufgelösten Kontext und
@@ -207,10 +357,20 @@ werden nur `name`, `description` und `graph`; reine Export-Felder (`kind`,
 keine Workflow-JSON-Datei wird clientseitig mit einer Fehlermeldung abgelehnt, statt an
 den Server gesendet zu werden.
 
+**Lauf wiederholen (Replay)**: jeder beendete Lauf (abgeschlossen, fehlgeschlagen oder
+abgebrochen) zeigt im Detailbereich der Läufe-Ansicht einen **↻ Wiederholen**-Button. Er
+startet den Workflow mit der *Trigger-Payload* dieses Laufs erneut gegen den **aktuellen**
+Graphen — nach dem Beheben eines Knotens reproduzierst du so die ursprüngliche Eingabe mit
+einem Klick und bestätigst den Fix (API: `POST /v1/graph-workflows/runs/{rid}/replay`).
+Teilläufe können nicht wiederholt werden und liefern `409`.
+
 ## API
 
 Alles, was die UI tut, ist unter `/v1/graph-workflows` (JWT-geschützt) verfügbar. Siehe den
 [Entwicklerleitfaden](../developer-guide.md) für die vollständige Endpoint-Referenz.
 
 Einstellungen: `GRAPH_WORKFLOW_SCHEDULER_ENABLED` (standardmäßig an) aktiviert die Poll-Schleife;
-`GRAPH_WORKFLOW_MAX_NODES` begrenzt die Graphgröße.
+`GRAPH_WORKFLOW_MAX_NODES` begrenzt die Graphgröße; `GRAPH_WORKFLOW_FILES_DIR` ist die
+Wurzel des Workspace-Speichers für `file.*` / sqlite-`db.query` (Phase 4.2);
+`GRAPH_WORKFLOW_APPROVAL_MAX_TIMEOUT` begrenzt die Wartezeit eines
+`human.approval`-Knotens (Phase 4.4, Standard 7 Tage).
