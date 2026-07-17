@@ -32,3 +32,4 @@ backend/app/data/runtime_overrides.json
 graphify-out/
 .claude/
 
+docs/roadmap-fix.md

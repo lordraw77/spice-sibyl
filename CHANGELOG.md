@@ -7,7 +7,53 @@ correspond to the project's git tags.
 
 ## [Unreleased]
 
-_No unreleased changes. The latest tagged release is [2.2.0]._
+_No unreleased changes. The latest tagged release is [3.0.0]._
+
+---
+
+## [3.0.0] — 2026-07-17
+
+### Added — Phase 30: Workflow runs & schedules pages, engine hardening
+- **Runs page** — cross-workflow `/graph-workflows/runs` view with status/workflow filtering, "run now" launcher, and a detailed run view (per-node status, input/output, timing)
+- **Schedules page** — cross-workflow `/graph-workflows/schedules` overview listing every `schedule`/`webhook`/`event` trigger across all workflows, with create, delete, and enable/disable toggling from one place
+- **Parallel branch execution** — independent ready nodes in a run wave execute concurrently via `asyncio.gather`, bounded by a `GRAPH_WORKFLOW_MAX_CONCURRENT_NODES` semaphore (default 8); `merge` nodes synchronize join points
+- **Run overlay on canvas** — the editor canvas colours nodes live by run status (SSE + poll) and can re-attach to runs started elsewhere
+- **Canvas editing** — copy/paste, duplicate, undo/redo on the graph canvas
+
+### Added — Phase 31–32 (roadmap fase 1): Editor refactor, workflow shell, variables & secrets
+- **Componentized editor** — `graph-workflow-page.component` split into six standalone components (`graph-canvas`, `node-palette`, `editor-toolbar`, `node-inspector`, `edge-inspector`, `run-panel`) under `frontend/src/app/features/workflows/editor/`; the page component is now a thin orchestrator
+- **Workflow shell** — `/graph-workflows/:id` route with **Editor | Runs | Schedules** tabs scoped to a single workflow, alongside the existing global Runs/Schedules pages
+- **`$vars` and `$secrets`** — per-workflow variables (`variables_json` column, `PATCH variables`, editable from the run panel) and Fernet-encrypted, profile-scoped secrets (`workflow_secrets` table, `GET/PUT/DELETE /secrets`), referenced as `$secrets.<name>`; never returned in cleartext, masked in previews, excluded from export
+- **Versioning UI** — a **Versions** section in the run panel lists immutable version snapshots with restore, on top of the existing backend snapshot-on-save/restore
+
+### Added — Phase 33 (roadmap fase 2): Engine reliability
+- **Backoff strategy** — `backoffStrategy` (fixed | exponential, capped at 60 s) alongside existing `retry`/`backoff`/`timeoutMs`, with inspector fields and catalog-driven defaults on drop (`http.request`: 2 exponential retries + 60 s timeout; `llm.*`: 1 retry + 120–300 s timeout)
+- **Concurrency queue** — `max_concurrent_runs` per workflow (0 = unlimited, **Execution** section in the run panel); runs beyond the limit start `queued` and are promoted FIFO by `_maybe_start_queued()` at run completion and on startup
+- **Checkpoint & resume** — per-wave checkpoints now include each node's active output handles; `resume_interrupted_runs()` (flag `GRAPH_WORKFLOW_RESUME_ON_STARTUP`) resumes `running`/`pending` runs from checkpoint on startup, re-executing only the missing subgraph and closing orphaned node runs as "interrupted by restart"
+- **Error trigger** — a new `error` trigger (+ catalog node) fires when another run fails, with `$trigger = {workflow_id, workflow_name, run_id, error, failed_node}`, workflow filter, and anti-loop guards; curated example `error-alert-hub`
+
+### Added — Phase 34 (roadmap fase 3): Editor developer experience
+- **Single-node test** — `POST /{id}/nodes/{node_id}/test` runs one node in isolation (current or unsaved params, optional mock input) with no run recorded; result shown inline in the inspector and projected onto the canvas
+- **Pinned output** — `pinnedOutput` on `GraphNode` (saved, versioned, exported) lets node tests and expression previews resolve `$node.<id>.output` from a frozen pin instead of run history; production runs ignore pins
+- **Inspector run history** — a **Last run** section on the selected node (status/output/error)
+- **Multi-selection** — shift-click / `Ctrl+A` selection, group drag, copy/paste of a selection with internal edges remapped, `Del`/`Backspace`
+- **Pan/zoom, minimap, auto-layout** — background-drag pan, cursor-anchored zoom, a clickable/draggable minimap with viewport (double-click to fit), longest-path auto-layout ("Reorder", undoable), and a "fit view" toolbar action
+- **Template gallery** — the examples panel now renders a mini-SVG preview of each example's graph with category filtering
+
+### Added — Phase 35 (roadmap fase 4): New node kinds
+- **`llm.classify` / `llm.extract`** — structured-output nodes: classify into a fixed category set (`{category, confidence}`, retryable on out-of-list results) and extract fields per a JSON Schema (`{data}`, tolerant of surrounding prose/code fences); share the model picker, failover chain, and cache from `llm.completion`
+- **`db.query`** — parameterized queries against SQLite (workspace storage) or Postgres (via `$secrets` DSN, optional `asyncpg`), output `{rows, count, rowcount}`, capped at 1000 rows
+- **`file.read` / `file.write` / `file.parse`** — auto/json/csv/lines formats, 10 MB cap, all paths sandboxed under `GRAPH_WORKFLOW_FILES_DIR` (traversal and absolute paths rejected)
+- **`human.approval`** — suspends the run in a new `waiting` status, creates a `workflow_approvals` row, notifies in-app (+ optional Telegram), and waits for a decision or timeout (`onTimeout: reject|fail`, capped by `GRAPH_WORKFLOW_APPROVAL_MAX_TIMEOUT`, default 7 days); `approved`/`rejected` output handles; survives restarts via the Phase 33 resume path; `GET /approvals` + `POST /approvals/{id}/decision`, approve/reject UI on the runs page. Curated examples `approval-gate-deploy`, `ticket-triage-classify`
+
+### Added — Phase 36 (roadmap fase 5): Platform features
+- **Stats** — `GET /v1/graph-workflows/stats`: per-workflow run outcomes, success rate, average duration, and summed LLM token usage; a dashboard strip on the Runs view plus a per-run token total
+- **Export/import & sharing** — export now includes referenced `$secrets` names (never values); `POST /import` validates schema/node limits and surfaces non-blocking warnings (unknown node types, broken edges, missing secrets); workflows can be shared into a workspace (`workspace_workflows` table, `GET/POST /{ws}/workflows`, `DELETE /{ws}/workflows/{wid}`, `POST /{ws}/workflows/{wid}/import`)
+- **LLM-generated workflows** — `POST /generate` (`{prompt, model?, failover_chain?}`) uses the node catalog as LLM context and returns a validated, auto-laid-out unsaved draft graph; `POST /generate/stream` streams SSE progress logs (catalog → call → response → validation → layout → done/error); editor dialog with model picker + failover chain
+- **Editor UX** — template gallery as a centered modal with richer cards; collapsible workflow list (persisted preference)
+
+### Changed
+- `app_version` default bumped from `2.2.0` to `3.0.0` (`backend/app/core/config.py`); `frontend/package.json` bumped to match
 
 ---
 
