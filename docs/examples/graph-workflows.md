@@ -34,6 +34,28 @@ missing the node reports an error rather than fabricating output.
 > **Secrets** panel as `{{ $secrets.NAME }}` — encrypted at rest, never exported, and
 > resolved only while a run executes.
 
+> **Tip — copilot (roadmap fase 13):** while editing any example's expression fields,
+> typing `$node.`/`$vars.`/`$secrets.` autocompletes against the actual upstream nodes,
+> declared variables and secret names of *that* workflow. If a run fails, the failed node
+> in the run panel gets an **Explain / repair** button — a plain-language cause plus an
+> optional corrected params diff you accept or discard. And any workflow can be pointed at
+> a Git repo (run panel → Versions → **Git sync**) so every saved version is committed
+> there as JSON, with **Pull now** importing external changes back as a draft version.
+
+> **Tip — remote execution (roadmap fase 14):** any node of a stateless-safe type
+> (`http.request`, `code`, `db.query`, `set`, `if`, `switch`, `merge`, `filter`,
+> `aggregate`, `batch`, `wait`, `queue.publish`) can carry a **runOn** label in its
+> Advanced settings, executing on the first online, allow-listed remote runner instead
+> of the backend — register one from **Graph workflows → Runners**, start the agent with
+> its issued token (`SIBYL_RUNNER_TOKEN=... python -m app.runner.agent`), and the node's
+> `$secrets` reach it already resolved, never the vault. A **Queue publish** node plus a
+> **Queue consume** trigger (`$trigger = {message, topic, headers}`) let two workflows
+> hand off work through a topic without a real broker (`GRAPH_WORKFLOW_QUEUE_DRIVER=db`
+> by default — a real AMQP/Kafka/MQTT adapter is a drop-in `QueueDriver`, not required to
+> use the feature). No curated example ships for these two — they need a second process
+> (a runner agent, or a producer/consumer pair) to be meaningful, unlike the single-click
+> imports above; see the developer guide's Phase 46 section for the request/response shapes.
+
 ---
 
 ## 1. RSS morning digest — `rss-morning-digest`
@@ -45,6 +67,16 @@ On a schedule, pulls the latest entries from an RSS/Atom feed
 builds a titled digest object. Shows a trigger → action → AI → data-mapping chain and
 an expression that pipes one node's output into the next
 (`={{ $node.rss.output.result }}`).
+
+## 1a. RSS → LLM → Slack — `rss-to-slack-alert` (Phase 47)
+
+`rss.read → llm.completion → connector.slack.postMessage`
+
+Attach an `rss.read` **trigger** (poll a feed, one run per new entry, deduped by guid);
+`$trigger` carries `{title, link, published, summary, guid}`. An LLM writes a one-line
+take, then the curated **Slack** connector posts it — no hand-built HTTP call, the bot
+token pulled from `$secrets` (`={{ $secrets.SLACK_TOKEN }}`). Shows the fase-15 connector
+library and the `rss.read` trigger in one "news → LLM → notify" flow.
 
 ## 2. Weather-aware greeting — `weather-greeting`
 
@@ -208,6 +240,139 @@ so retries apply), a `switch` on `={{ $node.triage.output.category }}` routes ea
 category to its queue, and every triaged ticket is appended to
 `tickets/triage-log.csv` in the workspace storage via `file.write` (format `csv`,
 `append: true`). Run with `{"text": "my invoice is wrong"}`.
+
+## 19. Knowledge-base RAG answer — `kb-search-rag`
+
+`manual → kb.search → llm.completion → set`
+
+Phase 38 (fase 6.5): retrieval-augmented answering with the **dedicated `kb.search`
+node** (not a generic agent). Searches the knowledge base for the question, then answers
+**strictly from the retrieved passages** (`={{ $node.kb.output.results }}`). Run with
+`{"question": "how do I configure SMTP?"}`. Needs a populated knowledge base.
+
+## 20. Cursor pagination (while loop) — `paginate-while`
+
+`manual → while (loop: http.request → set) → set` (+ `done`)
+
+Phase 38 (fase 6.3): a **condition-driven `while` loop** for pagination / async-API
+polling without subworkflow recursion. The `condition`
+(`={{ $index == 0 or default($item.has_more, false) }}`) is re-evaluated before each
+pass — `$item` is the previous body output — under a mandatory `maxIterations` cap; the
+body results are collected on the **`done`** handle as `{items, count, capped}`.
+
+## 21. Extract fields → SQL insert — `extract-to-db`
+
+`manual → db.query (create) → llm.extract → db.query (insert) → set`
+
+Phase 35 (fase 4.1 + 4.2): pull typed fields from free text with `llm.extract` (output
+**guaranteed to match a JSON Schema**), then persist them with a **parameterised
+`db.query` INSERT** into a sqlite database in workspace storage. Run with
+`{"text": "Invoice #42 for ACME, 1500 EUR, due 2026-08-01"}`.
+
+## 22. Write then read a CSV file — `file-read-report`
+
+`manual → set → file.write → file.read → set`
+
+Phase 35 (fase 4.2): self-contained file I/O in workspace storage — build a list of rows,
+write them as CSV with `file.write`, read them back with `file.read` (parsed to
+`{rows, count}`), then summarise. Every path is sandboxed inside
+`GRAPH_WORKFLOW_FILES_DIR`.
+
+## 23. Parse an HTTP JSON body in transit — `parse-http-json`
+
+`manual → http.request → file.parse → set`
+
+Phase 35 (fase 4.2): parse a **textual payload without touching disk** — fetch an
+endpoint with `http.request`, then hand its raw text to `file.parse` (format `json` →
+`{data}`). Same outputs as `file.read`, but for in-transit data like an API body or a
+tool result.
+
+## 24. Chatbot (chat trigger → reply) — `chatbot-reply`
+
+`chat → llm.completion → chat.reply`
+
+Phase 41 (fase 9.3): turn a workflow into a **chatbot**. A `chat` trigger feeds an LLM
+and a `chat.reply` node returns the answer. Call `POST /v1/graph-workflows/{id}/chat`
+with `{message, session_id?}`; the graph sees `$trigger {session_id, message, history}`
+and session state persists across turns.
+
+## 25. Run on another workflow's success — `success-pipeline`
+
+`success → set → notify.inapp`
+
+Phase 38 (fase 6.1): the mirror of the error trigger — a **`success` trigger** fires when
+another workflow's run completes successfully (empty `config.workflow_id` = watch every
+workflow), landing `$trigger {workflow_id, workflow_name, run_id, output}`. Chains
+"A then B" pipelines without a subworkflow node. Loop-guarded like the error trigger.
+
+## 26. Expense approval form — `expense-approval-form`
+
+`manual → human.input → notify.inapp (submitted) + notify.inapp (timeout)`
+
+Phase 42 (fase 10.1): the run **suspends** on the `human.input` node (status `waiting`,
+in-app notification) until someone fills the **JSON-Schema form** (`amount` + `category`)
+from Workflow → Runs or via `POST /approvals/{id}/submit`. The submitted data is
+**validated against the schema** before it is accepted; the run resumes on the
+**`submitted`** branch with `{data, status, comment, decided_by}` as output (`timeout`
+branch otherwise). Run with `{"requester": "jane"}`.
+
+## 27. Wait for payment confirmation — `payment-webhook-wait`
+
+`manual → wait.event → notify.inapp (main) + notify.inapp (timeout)`
+
+Phase 42 (fase 10.2): the run **suspends** on the `wait.event` node until an external
+system (e.g. a payment provider) POSTs to `/graph-workflows/events/{order_id}`; the
+delivered payload becomes the node's output on the **`main`** branch. Covers real async
+callbacks (payments, signatures, tickets) without polling. Run with
+`{"order_id": "ord-123"}`.
+
+## 28. Mocked HTTP integration (test-ready) — `http-mock-pin-demo`
+
+`manual → http.request (pinned) → set`
+
+Phase 43 (fase 11): the `http.request` node ships with a **pinned output**
+(fase 3.2), so it doubles as a ready-made playground for the new **Tests &
+dry-run** panel — no live endpoint required. Open the panel and:
+
+- **Save a test case** with `{"user_id": 42}` as the trigger payload and an
+  assertion like `{"node_id": "profile", "type": "json_path", "path": "name",
+  "expected": "Ada Lovelace"}`, then **Run tests** (fase 11.1) — it passes
+  without ever calling `api.example.com`, because the pin stands in for the
+  node.
+- **Run dry-run** (fase 11.2) — the report lists `call` under *mocked external
+  effects* (`source: pin`) and shows the full simulated path.
+- Open **Cost estimate** (fase 11.3) — 0 LLM nodes here, so it reports "no LLM
+  nodes in this graph"; swap in an `llm.completion` node and give it a
+  schedule trigger to see a projected tokens/month figure instead.
+
+Point `url` at a real endpoint and clear the pin when you are ready to go
+live — a pin never affects a normal **Run now**.
+
+---
+
+## 29. Idempotent order processing with rollback — `idempotent-order-saga`
+
+`webhook → state.increment → state.set (reserve) → http.request (charge) → set`,
+with a `compensate` edge from *reserve* to a *release* node.
+
+Phase 48 (fase 16): a webhook that processes each order **exactly once** and
+**rolls back** on failure — the three new engine capabilities working together:
+
+- **Idempotency (16.2)** — on the webhook trigger set a `dedupKey` of
+  `{{ $trigger.order_id }}` and a `dedupWindowSeconds` (e.g. `3600`). If the
+  sender retries the same order within the window, the hook returns the original
+  `run_id` with `deduped: true` instead of charging twice.
+- **Persistent state (16.1)** — `state.increment` on key `orders_processed`
+  keeps a running counter **across runs**; `state.set reserved:{{ $trigger.order_id }}`
+  records the reservation. Inspect or edit both from the run panel
+  (`GET /v1/graph-workflows/{id}/state`).
+- **Compensation / saga (16.3)** — the *reserve* node wires a `compensate` edge
+  to a *release* node. If *charge* (or anything after *reserve*) fails, the
+  engine walks back and runs *release*, seeded with *reserve*'s output, so the
+  stock is freed. The run still ends `failed`, but the side effect is undone.
+
+Add a **priority (16.4)** on the trigger config (`"priority": 10`) to let urgent
+orders jump ahead of a batch backfill in the per-workflow queue.
 
 ---
 

@@ -14,6 +14,24 @@ def _param(name: str, label: str, kind: str = "text", **extra) -> dict:
     return {"name": name, "label": label, "kind": kind, **extra}
 
 
+def _ab_params() -> list[dict]:
+    """Fase 18.2 — prompt A/B testing fields shared by the ``llm.*`` nodes. When
+    ``variants`` is a non-empty list, each run picks one variant (its params
+    overlay the node's) and the choice is recorded on the output for the per-node
+    metrics variant breakdown (GET /{id}/nodes/{node}/variants)."""
+    return [
+        _param(
+            "variants", "A/B variants (JSON array)", "json",
+            hint='e.g. [{"name":"concise","params":{"prompt":"..."}},{"name":"detailed","weight":2,"params":{"model":"..."}}]',
+        ),
+        _param(
+            "variantStrategy", "Variant strategy", "select",
+            options=["round-robin", "weighted"],
+            hint="round-robin alternates evenly across runs; weighted samples by each variant's weight",
+        ),
+    ]
+
+
 _STATIC_NODES: list[NodeTypeInfo] = [
     # ── triggers ──
     NodeTypeInfo(
@@ -43,6 +61,71 @@ _STATIC_NODES: list[NodeTypeInfo] = [
             "choose which workflow to watch, or watch them all). $trigger carries "
             "{workflow_id, workflow_name, run_id, error, failed_node} — ideal for "
             "centralised alerting via the notify nodes."
+        ),
+        params_schema=[_param("note", "Note", "text")],
+    ),
+    # ── triggers (Phase 38 — roadmap fase 6.1/6.2) ──
+    NodeTypeInfo(
+        type="success", category="trigger", label="On workflow success", inputs=0, outputs=["main"],
+        description=(
+            "Fires when another workflow's run completes successfully (attach a "
+            "'success' trigger to choose which workflow to watch, or watch them "
+            "all). $trigger carries {workflow_id, workflow_name, run_id, output} — "
+            "enables 'A then B' pipelines without subworkflows."
+        ),
+        params_schema=[_param("note", "Note", "text")],
+    ),
+    NodeTypeInfo(
+        type="file.watch", category="trigger", label="File watch", inputs=0, outputs=["main"],
+        description=(
+            "Fires when a file is created or modified in a subfolder of the "
+            "workspace storage (poll-based; attach a 'file.watch' trigger with "
+            "{path, pattern, events, interval}). $trigger = {path, event, size}."
+        ),
+        params_schema=[_param("note", "Note", "text")],
+    ),
+    NodeTypeInfo(
+        type="email.inbound", category="trigger", label="Inbound email", inputs=0, outputs=["main"],
+        description=(
+            "Fires on new IMAP messages (poll-based; attach an 'email.inbound' "
+            "trigger with {host, username, password_secret, from, subject}). "
+            "$trigger = {from, subject, body, attachments} — attachments are saved "
+            "to the workspace storage, readable with File Read."
+        ),
+        params_schema=[_param("note", "Note", "text")],
+    ),
+    # ── trigger (Phase 46 — roadmap fase 14.4) ──
+    NodeTypeInfo(
+        type="queue.consume", category="trigger", label="Queue consume", inputs=0, outputs=["main"],
+        description=(
+            "Fires once per message consumed off a message-queue topic "
+            "(poll-based, like File watch; attach a 'queue.consume' trigger "
+            "with {topic, batch_size}). Backed by the pluggable QueueDriver "
+            "(GRAPH_WORKFLOW_QUEUE_DRIVER=db|memory today; a real broker — "
+            "AMQP/Kafka/MQTT — plugs in as another driver). $trigger = "
+            "{message, topic, headers}."
+        ),
+        params_schema=[_param("note", "Note", "text")],
+    ),
+    # ── trigger (Phase 47 — roadmap fase 15.4) ──
+    NodeTypeInfo(
+        type="rss.read", category="trigger", label="RSS/Atom feed", inputs=0, outputs=["main"],
+        description=(
+            "Fires once per new entry of an RSS/Atom feed (poll-based, deduped by "
+            "guid; attach an 'rss.read' trigger with {url, interval}). "
+            "$trigger = {title, link, published, summary, guid}. The first poll "
+            "only seeds the seen-set so a backlog doesn't storm the engine."
+        ),
+        params_schema=[_param("note", "Note", "text")],
+    ),
+    # ── trigger (Phase 41 — roadmap fase 9.3) ──
+    NodeTypeInfo(
+        type="chat", category="trigger", label="Chat message", inputs=0, outputs=["main"],
+        description=(
+            "Turns the workflow into a chatbot: fires once per conversation "
+            "message received on POST /{id}/chat. $trigger = {session_id, "
+            "message, history} — session state persists across turns. End the "
+            "graph with a 'Chat reply' node to return the answer to the caller."
         ),
         params_schema=[_param("note", "Note", "text")],
     ),
@@ -80,6 +163,20 @@ _STATIC_NODES: list[NodeTypeInfo] = [
             "collects the results, then continues on 'done' (output {items, count})."
         ),
         params_schema=[_param("times", "Times", "number")],
+    ),
+    NodeTypeInfo(
+        type="while", category="logic", label="While", outputs=["loop", "done"],
+        description=(
+            "Runs the body wired to its 'loop' output while the condition stays "
+            "truthy, under a mandatory iteration cap. $item is the previous "
+            "iteration's body output (the node input on the first pass), $index "
+            "the iteration number. Continues on 'done' with {items, count, capped} "
+            "— covers async-API polling and pagination without subworkflow recursion."
+        ),
+        params_schema=[
+            _param("condition", "Condition (expression, re-evaluated per iteration)", "expression"),
+            _param("maxIterations", "Max iterations (default 100)", "number"),
+        ],
     ),
     NodeTypeInfo(
         type="wait", category="logic", label="Wait", outputs=["main"],
@@ -205,10 +302,28 @@ _STATIC_NODES: list[NodeTypeInfo] = [
             _param("body", "Body (JSON or raw text)", "json"),
             _param("timeout", "Timeout (seconds, max 120)", "number"),
             _param("allow_errors", "Allow non-2xx (true/false)", "text"),
+            _param(
+                "maxRequestsPerMinute", "Max requests/minute to this host", "number",
+                hint="Fase 6.6 — over the cap the call waits (never fails); combines with GRAPH_WORKFLOW_RATE_LIMITS",
+            ),
         ],
         # Fase 2.1 — sensible retry preset applied by the editor on drop:
         # transient HTTP failures retry twice with exponential backoff.
         defaults={"retry": 2, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 60000},
+    ),
+    NodeTypeInfo(
+        type="queue.publish", category="action", label="Queue publish", outputs=["main"],
+        description=(
+            "Publishes a message to a message-queue topic via the active "
+            "QueueDriver (GRAPH_WORKFLOW_QUEUE_DRIVER=db|memory), typically "
+            "consumed by another workflow's 'Queue consume' trigger. Output: "
+            "{topic, published}."
+        ),
+        params_schema=[
+            _param("topic", "Topic", "text"),
+            _param("message", "Message (expression, defaults to input)", "expression"),
+            _param("headers", "Headers (JSON object)", "json"),
+        ],
     ),
     NodeTypeInfo(
         type="subworkflow", category="action", label="Subworkflow", outputs=["main"],
@@ -237,6 +352,54 @@ _STATIC_NODES: list[NodeTypeInfo] = [
             _param("onTimeout", "On timeout", "select", options=["reject", "fail"]),
             _param("telegram", "Also notify via Telegram (true/false)", "text"),
         ],
+    ),
+    # ── action: advanced human-in-the-loop (Phase 42 — roadmap fase 10) ──
+    NodeTypeInfo(
+        type="human.input", category="action", label="Human input",
+        outputs=["submitted", "timeout"],
+        description=(
+            "Suspends the run (status 'waiting') until someone fills a form defined by "
+            "a JSON Schema, from Workflow → Runs (or POST /approvals/{id}/submit), then "
+            "resumes with the validated data as {data}. Sends an in-app notification "
+            "(and optionally Telegram). 'On timeout' routes to the 'timeout' branch, or "
+            "fails the node. Survives restarts."
+        ),
+        params_schema=[
+            _param("title", "Title", "text"),
+            _param("message", "Message (expression)", "expression"),
+            _param("schema", "Form JSON Schema", "json"),
+            _param("timeout", "Timeout (seconds, default 86400, max 7 days)", "number"),
+            _param("onTimeout", "On timeout", "select", options=["branch", "fail"]),
+            _param("telegram", "Also notify via Telegram (true/false)", "text"),
+        ],
+    ),
+    NodeTypeInfo(
+        type="wait.event", category="action", label="Wait for event",
+        outputs=["main", "timeout"],
+        description=(
+            "Suspends the run (status 'waiting') until an external system delivers an "
+            "event with a matching correlation id via POST /graph-workflows/events/"
+            "{correlationId} (authenticated). Resumes with the delivered payload as the "
+            "node output. Covers real async systems: payments, digital signatures, "
+            "tickets, third-party callbacks. 'On timeout' routes to the 'timeout' "
+            "branch, or fails the node. A waiting run does not occupy a concurrency slot."
+        ),
+        params_schema=[
+            _param("correlationId", "Correlation id (expression)", "expression"),
+            _param("timeout", "Timeout (seconds, default 86400, max 7 days)", "number"),
+            _param("onTimeout", "On timeout", "select", options=["branch", "fail"]),
+        ],
+    ),
+    # ── action: chatbot reply (Phase 41 — roadmap fase 9.3) ──
+    NodeTypeInfo(
+        type="chat.reply", category="action", label="Chat reply", outputs=["main"],
+        description=(
+            "Terminal node for a 'Chat' workflow: its resolved text becomes the "
+            "reply returned to the conversation (POST /{id}/chat). Also appends "
+            "to the session history. Defaults to this node's input when 'text' is "
+            "empty. Output: {reply}."
+        ),
+        params_schema=[_param("text", "Reply text (expression, defaults to input)", "expression")],
     ),
     # ── notify ──
     NodeTypeInfo(
@@ -291,6 +454,20 @@ _STATIC_NODES: list[NodeTypeInfo] = [
             _param("body", "Body (expression)", "expression"),
         ],
     ),
+    # ── ai: knowledge-base bridge (Phase 38 — roadmap fase 6.5) ──
+    NodeTypeInfo(
+        type="kb.search", category="ai", label="KB Search", outputs=["main"],
+        description=(
+            "Semantic search over the profile's knowledge base (workspace documents). "
+            "Output: {results: [{text, score, source, chunk_index}], count} — RAG "
+            "inside workflows without going through a generic LLM agent."
+        ),
+        params_schema=[
+            _param("query", "Query (expression, defaults to node input)", "expression"),
+            _param("top_k", "Top K (default 5, max 20)", "number"),
+            _param("document_ids", "Document filter (JSON array or comma-separated ids)", "json"),
+        ],
+    ),
     # ── ai ──
     NodeTypeInfo(
         type="llm.completion", category="ai", label="LLM Completion", outputs=["main"],
@@ -303,6 +480,7 @@ _STATIC_NODES: list[NodeTypeInfo] = [
                 "failover_chain", "Failover chain", "model-chain",
                 hint="On call failure, retries in order through this named chain (Settings → Models)",
             ),
+            *_ab_params(),
         ],
         defaults={"retry": 1, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 120000},
     ),
@@ -337,6 +515,7 @@ _STATIC_NODES: list[NodeTypeInfo] = [
                 "failover_chain", "Failover chain", "model-chain",
                 hint="On call failure, retries in order through this named chain (Settings → Models)",
             ),
+            *_ab_params(),
         ],
         defaults={"retry": 1, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 120000},
     ),
@@ -355,8 +534,220 @@ _STATIC_NODES: list[NodeTypeInfo] = [
                 "failover_chain", "Failover chain", "model-chain",
                 hint="On call failure, retries in order through this named chain (Settings → Models)",
             ),
+            *_ab_params(),
         ],
         defaults={"retry": 1, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 120000},
+    ),
+    # ── ai: quality gate (Phase 50 — roadmap fase 18.1) ──
+    NodeTypeInfo(
+        type="llm.judge", category="ai", label="LLM Judge", outputs=["pass", "fail"],
+        description=(
+            "Scores another node's output against a rubric on a 1..scaleMax scale and routes "
+            "to the pass / fail handle by a threshold (default 60% of the scale). Enables "
+            "generate → judge → regenerate loops and quality gates before publishing. "
+            "Output: {score, verdict, passed, rationale}."
+        ),
+        params_schema=[
+            _param("model", "Model", "model"),
+            _param("input", "Content to judge (expression, defaults to node input)", "expression"),
+            _param("criteria", "Criteria / rubric", "code"),
+            _param("reference", "Reference answer (expression, optional)", "expression"),
+            _param("scaleMax", "Score scale max (1..N)", "number"),
+            _param("threshold", "Pass threshold (score ≥)", "number"),
+            _param("instructions", "Extra instructions", "text"),
+            _param(
+                "failover_chain", "Failover chain", "model-chain",
+                hint="On call failure, retries in order through this named chain (Settings → Models)",
+            ),
+            *_ab_params(),
+        ],
+        defaults={"retry": 1, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 120000},
+    ),
+    # ── Phase 47 (roadmap fase 15) — connectors and multimodal nodes ──
+    # 15.1 curated connector library — prebuilt integrations over http.request
+    # with auth wired to $secrets. Adding a service is one registry entry in the
+    # engine; each op carries the http.request retry preset for transient errors.
+    NodeTypeInfo(
+        type="connector.slack.postMessage", category="connector", label="Slack: post message",
+        outputs=["main"],
+        description=(
+            "Posts a message to a Slack channel via chat.postMessage. Token from "
+            "$secrets (chat:write). Output: the http.request output + {operation}."
+        ),
+        params_schema=[
+            _param("token", "Bot token (={{ $secrets.SLACK_TOKEN }})", "expression"),
+            _param("channel", "Channel id / name", "expression"),
+            _param("text", "Message text", "expression"),
+            _param("thread_ts", "Reply in thread (ts, optional)", "expression"),
+        ],
+        defaults={"retry": 2, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 60000},
+    ),
+    NodeTypeInfo(
+        type="connector.discord.postMessage", category="connector", label="Discord: post message",
+        outputs=["main"],
+        description="Posts a message to a Discord channel via an incoming webhook URL.",
+        params_schema=[
+            _param("webhook_url", "Webhook URL (={{ $secrets.DISCORD_WEBHOOK }})", "expression"),
+            _param("text", "Message content", "expression"),
+            _param("username", "Override username (optional)", "expression"),
+        ],
+        defaults={"retry": 2, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 60000},
+    ),
+    NodeTypeInfo(
+        type="connector.github.createIssue", category="connector", label="GitHub: create issue",
+        outputs=["main"],
+        description="Opens an issue on a GitHub repo (owner/repo). Token from $secrets.",
+        params_schema=[
+            _param("token", "Token (={{ $secrets.GITHUB_TOKEN }})", "expression"),
+            _param("repo", "owner/repo", "expression"),
+            _param("title", "Title", "expression"),
+            _param("body", "Body", "expression"),
+            _param("labels", "Labels (JSON array)", "json"),
+        ],
+        defaults={"retry": 2, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 60000},
+    ),
+    NodeTypeInfo(
+        type="connector.gitlab.createIssue", category="connector", label="GitLab: create issue",
+        outputs=["main"],
+        description="Opens an issue on a GitLab project. PRIVATE-TOKEN from $secrets.",
+        params_schema=[
+            _param("token", "Token (={{ $secrets.GITLAB_TOKEN }})", "expression"),
+            _param("project", "Project (id or group/path)", "expression"),
+            _param("base_url", "Base URL (default https://gitlab.com)", "text"),
+            _param("title", "Title", "expression"),
+            _param("body", "Description", "expression"),
+            _param("labels", "Labels (comma-separated)", "expression"),
+        ],
+        defaults={"retry": 2, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 60000},
+    ),
+    NodeTypeInfo(
+        type="connector.jira.createIssue", category="connector", label="Jira: create issue",
+        outputs=["main"],
+        description="Creates a Jira issue (Cloud REST v3, Basic auth email:token from $secrets).",
+        params_schema=[
+            _param("base_url", "Base URL (https://your.atlassian.net)", "text"),
+            _param("email", "Account email (={{ $secrets.JIRA_EMAIL }})", "expression"),
+            _param("token", "API token (={{ $secrets.JIRA_TOKEN }})", "expression"),
+            _param("project_key", "Project key", "expression"),
+            _param("summary", "Summary", "expression"),
+            _param("issue_type", "Issue type (default Task)", "text"),
+            _param("description", "Description (ADF object)", "json"),
+        ],
+        defaults={"retry": 2, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 60000},
+    ),
+    NodeTypeInfo(
+        type="connector.sheets.append", category="connector", label="Google Sheets: append",
+        outputs=["main"],
+        description="Appends rows to a Google Sheet (values.append). OAuth token from $secrets.",
+        params_schema=[
+            _param("token", "OAuth token (={{ $secrets.GOOGLE_TOKEN }})", "expression"),
+            _param("spreadsheet_id", "Spreadsheet id", "expression"),
+            _param("range", "Range (default Sheet1!A1)", "text"),
+            _param("values", "Rows (JSON array of arrays)", "json"),
+        ],
+        defaults={"retry": 2, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 60000},
+    ),
+    NodeTypeInfo(
+        type="connector.sheets.read", category="connector", label="Google Sheets: read",
+        outputs=["main"],
+        description="Reads a range from a Google Sheet (values.get). Output json.values holds the rows.",
+        params_schema=[
+            _param("token", "OAuth token (={{ $secrets.GOOGLE_TOKEN }})", "expression"),
+            _param("spreadsheet_id", "Spreadsheet id", "expression"),
+            _param("range", "Range (default Sheet1!A1:Z1000)", "text"),
+        ],
+        defaults={"retry": 2, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 60000},
+    ),
+    # 15.2 ssh.exec
+    NodeTypeInfo(
+        type="ssh.exec", category="action", label="SSH exec", outputs=["main"],
+        description=(
+            "Runs a command on a remote host over SSH (key or password from "
+            "$secrets; host allow-list per GRAPH_WORKFLOW_SSH_ALLOWED_HOSTS). "
+            "Output: {stdout, stderr, exit_code}. Non-zero exit raises (so retry / "
+            "On error apply) unless 'Allow non-zero exit' is set."
+        ),
+        params_schema=[
+            _param("host", "Host", "expression"),
+            _param("port", "Port (default 22)", "number"),
+            _param("username", "Username", "expression"),
+            _param("password", "Password (={{ $secrets.SSH_PASSWORD }})", "expression"),
+            _param("private_key", "Private key (={{ $secrets.SSH_KEY }})", "expression"),
+            _param("command", "Command", "expression"),
+            _param("timeout", "Timeout (seconds)", "number"),
+            _param("allow_nonzero", "Allow non-zero exit (true/false)", "text"),
+        ],
+        defaults={"retry": 1, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 60000},
+    ),
+    # 15.3 browser (Playwright)
+    NodeTypeInfo(
+        type="browser", category="action", label="Browser", outputs=["main"],
+        description=(
+            "Headless-browser scraping/checks (Playwright): open a URL, optionally "
+            "wait for a selector, then extract text / an attribute / a screenshot "
+            "(saved to the workspace storage). Requires playwright in the image."
+        ),
+        params_schema=[
+            _param("url", "URL (expression)", "expression"),
+            _param("action", "Action", "select", options=["text", "attribute", "screenshot"]),
+            _param("selector", "CSS selector (optional)", "text"),
+            _param("attribute", "Attribute (for action=attribute)", "text"),
+            _param("screenshot_path", "Screenshot path (for action=screenshot)", "text"),
+            _param("timeout", "Timeout (seconds)", "number"),
+        ],
+        defaults={"retry": 1, "backoff": 2, "backoffStrategy": "exponential", "timeoutMs": 60000},
+    ),
+    # 15.5 doc.convert (multimodal)
+    NodeTypeInfo(
+        type="doc.convert", category="data", label="Doc → Markdown", outputs=["main"],
+        description=(
+            "Converts a PDF/DOCX/HTML/PPTX/… document from the workspace storage "
+            "to markdown via markitdown. Output: {markdown, chars, path}. Path "
+            "defaults to the node input (e.g. a file.watch $trigger.path)."
+        ),
+        params_schema=[
+            _param("path", "Path (expression, defaults to input)", "expression"),
+        ],
+    ),
+
+    # ── Phase 48 (roadmap fase 16.1) — persistent state across runs ──
+    NodeTypeInfo(
+        type="state.get", category="data", label="State: get", outputs=["main"],
+        description=(
+            "Reads a key from the workflow's persistent key/value store (survives "
+            "across runs). Output: {key, value, found}. `default` is returned when "
+            "the key is missing or expired."
+        ),
+        params_schema=[
+            _param("key", "Key", "expression"),
+            _param("default", "Default (when missing)", "expression"),
+        ],
+    ),
+    NodeTypeInfo(
+        type="state.set", category="data", label="State: set", outputs=["main"],
+        description=(
+            "Writes a key to the workflow's persistent store. `value` defaults to "
+            "the node input. `ttlSeconds` > 0 gives the key an expiry. Output: "
+            "{key, value}."
+        ),
+        params_schema=[
+            _param("key", "Key", "expression"),
+            _param("value", "Value (expression, defaults to input)", "expression"),
+            _param("ttlSeconds", "TTL seconds (0/empty = never)", "number"),
+        ],
+    ),
+    NodeTypeInfo(
+        type="state.increment", category="data", label="State: increment", outputs=["main"],
+        description=(
+            "Atomically adds `amount` (default 1) to a numeric key (0 when missing) "
+            "and returns the new value. Ideal for counters and rate windows. "
+            "Output: {key, value}."
+        ),
+        params_schema=[
+            _param("key", "Key", "expression"),
+            _param("amount", "Amount (default 1)", "number"),
+            _param("ttlSeconds", "TTL seconds (0/empty = never)", "number"),
+        ],
     ),
 ]
 
@@ -421,6 +812,37 @@ async def node_catalog(db=None, profile_id: str = "default") -> list[NodeTypeInf
                 if node:
                     catalog.append(node)
         except Exception:  # noqa: BLE001
+            pass
+
+        # Fase 6.4 — workflows that declare an input contract become typed,
+        # directly-callable nodes: the node params mirror the contract's
+        # properties and the engine routes workflow.<id> through the
+        # subworkflow executor (input/output validated against the contracts).
+        try:
+            from app.db import graph_workflow_repository as wf_repo
+
+            for wf in await wf_repo.list_callable_workflows(db, profile_id):
+                schema = wf.input_schema or {}
+                props = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+                required = set(schema.get("required") or [])
+                params_schema = [
+                    _param(
+                        pname,
+                        pname + (" *" if pname in required else ""),
+                        "expression",
+                        hint=str((pinfo or {}).get("description") or ""),
+                    )
+                    for pname, pinfo in props.items()
+                ]
+                catalog.append(NodeTypeInfo(
+                    type=f"workflow.{wf.id}",
+                    category="action",
+                    label=wf.name,
+                    description=(wf.description or f"Calls the '{wf.name}' workflow")
+                    + " (typed subworkflow — input/output validated against its contracts).",
+                    params_schema=params_schema,
+                ))
+        except Exception:  # noqa: BLE001 — a repo hiccup must not blank the palette
             pass
 
     return catalog

@@ -27,6 +27,9 @@
           <option value="webhook">{{ 'gws.kind.webhook' | t }}</option>
           <option value="event">{{ 'gws.kind.event' | t }}</option>
           <option value="error">{{ 'gws.kind.error' | t }}</option>
+          <option value="success">{{ 'gws.kind.success' | t }}</option>
+          <option value="file.watch">{{ 'gws.kind.fileWatch' | t }}</option>
+          <option value="email.inbound">{{ 'gws.kind.emailInbound' | t }}</option>
         </select>
       </label>
     </div>
@@ -83,6 +86,17 @@
           <input [(ngModel)]="formCron" name="cron" placeholder="*/15 * * * *" required />
         </label>
       </div>
+      <!-- Fase 6.1 — extra cron expressions, one per line (mixed timetables). -->
+      <label class="field" *ngIf="formPattern === 'cron'">
+        <span>{{ 'gws.cronExtra' | t }}</span>
+        <textarea
+          [(ngModel)]="formExtraCrons"
+          name="extraCrons"
+          rows="2"
+          placeholder="0 10 * * 6&#10;0 18 * * 0"
+        ></textarea>
+        <span class="hint">{{ 'gws.cronExtraHint' | t }}</span>
+      </label>
     </ng-container>
 
     <!-- ── event: event name ── -->
@@ -103,6 +117,60 @@
       </select>
       <span class="hint">{{ 'gws.errorHint' | t }}</span>
     </label>
+
+    <!-- ── success: watched workflow (fase 6.1) ── -->
+    <label class="field" *ngIf="formKind === 'success'">
+      <span>{{ 'gws.successWatched' | t }}</span>
+      <select [(ngModel)]="formSuccessWorkflowId" name="successWorkflow">
+        <option value="">{{ 'gws.errorAnyWorkflow' | t }}</option>
+        <option *ngFor="let w of workflows()" [value]="w.id">{{ w.name }}</option>
+      </select>
+      <span class="hint">{{ 'gws.successHint' | t }}</span>
+    </label>
+
+    <!-- ── file.watch: workspace subfolder + glob (fase 6.2) ── -->
+    <ng-container *ngIf="formKind === 'file.watch'">
+      <div class="form-row">
+        <label class="field">
+          <span>{{ 'gws.watchPath' | t }}</span>
+          <input [(ngModel)]="formWatchPath" name="watchPath" placeholder="inbox" />
+        </label>
+        <label class="field">
+          <span>{{ 'gws.watchPattern' | t }}</span>
+          <input [(ngModel)]="formWatchPattern" name="watchPattern" placeholder="**/*" />
+        </label>
+      </div>
+      <span class="hint">{{ 'gws.watchHint' | t }}</span>
+    </ng-container>
+
+    <!-- ── email.inbound: IMAP poll (fase 6.2) ── -->
+    <ng-container *ngIf="formKind === 'email.inbound'">
+      <div class="form-row">
+        <label class="field">
+          <span>{{ 'gws.imapHost' | t }}</span>
+          <input [(ngModel)]="formImapHost" name="imapHost" placeholder="imap.example.com" required />
+        </label>
+        <label class="field">
+          <span>{{ 'gws.imapUsername' | t }}</span>
+          <input [(ngModel)]="formImapUsername" name="imapUsername" placeholder="bot@example.com" required />
+        </label>
+        <label class="field">
+          <span>{{ 'gws.imapPasswordSecret' | t }}</span>
+          <input [(ngModel)]="formImapPasswordSecret" name="imapPasswordSecret" placeholder="IMAP_PASSWORD" required />
+        </label>
+      </div>
+      <div class="form-row">
+        <label class="field">
+          <span>{{ 'gws.imapFrom' | t }}</span>
+          <input [(ngModel)]="formImapFrom" name="imapFrom" placeholder="alerts@" />
+        </label>
+        <label class="field">
+          <span>{{ 'gws.imapSubject' | t }}</span>
+          <input [(ngModel)]="formImapSubject" name="imapSubject" placeholder="invoice" />
+        </label>
+      </div>
+      <span class="hint">{{ 'gws.imapHint' | t }}</span>
+    </ng-container>
 
     <div class="form-actions">
       <button type="button" class="btn" (click)="toggleForm()">{{ 'gws.cancel' | t }}</button>

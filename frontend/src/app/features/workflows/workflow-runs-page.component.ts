@@ -37,9 +37,15 @@ export class WorkflowRunsPageComponent implements OnInit, OnDestroy {
   readonly workflows = signal<GraphWorkflow[]>([]);
   readonly loading = signal(false);
   readonly selectedRun = signal<GraphRun | null>(null);
-  /** Fase 4.4 — pending human-approval requests of the opened run. */
+  /** Fase 4.4 / 10 — pending human-in-the-loop requests of the opened run
+   *  (approval | input | event). */
   readonly pendingApprovals = signal<WorkflowApproval[]>([]);
   approvalComment = '';
+  /** Fase 10.1 — human.input form values, keyed by request id then field name. */
+  inputFormData: Record<string, Record<string, string>> = {};
+  /** Fase 10.2 — manual "deliver event" payload text, keyed by request id (testing aid;
+   *  the real delivery is normally an external system calling POST /events/{id}). */
+  eventPayloadText: Record<string, string> = {};
   /** Fase 5.1 — per-workflow metrics behind the dashboard strip. */
   readonly stats = signal<WorkflowStats[]>([]);
 
@@ -204,6 +210,67 @@ export class WorkflowRunsPageComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** Fase 10.1 — form fields declared by a human.input request's JSON Schema. */
+  inputFields(approval: WorkflowApproval): { name: string; type: string; required: boolean; options?: string[] }[] {
+    const schema = approval.form_schema;
+    const props = (schema?.['properties'] as Record<string, Record<string, unknown>>) || {};
+    const required = new Set((schema?.['required'] as string[]) || []);
+    return Object.entries(props).map(([name, def]) => ({
+      name,
+      type: (def['type'] as string) || 'string',
+      required: required.has(name),
+      options: (def['enum'] as string[]) || undefined,
+    }));
+  }
+
+  submitInput(approval: WorkflowApproval): void {
+    const raw = this.inputFormData[approval.id] || {};
+    const data: Record<string, unknown> = {};
+    for (const field of this.inputFields(approval)) {
+      const value = raw[field.name];
+      if (value === undefined || value === '') continue;
+      data[field.name] = field.type === 'number' || field.type === 'integer' ? Number(value) : value;
+    }
+    this.api.submitHumanInput(approval.id, data, this.approvalComment.trim() || undefined).subscribe({
+      next: () => {
+        this.approvalComment = '';
+        delete this.inputFormData[approval.id];
+        this.notify.add('success', 'Workflow', this.i18n.translate('gwr.inputSaved'));
+        this.pendingApprovals.set(this.pendingApprovals().filter((a) => a.id !== approval.id));
+        const open = this.selectedRun();
+        if (open) setTimeout(() => this.openRun(open), 2500);
+        this.refresh(true);
+      },
+      error: () => this.notify.add('error', 'Workflow', this.i18n.translate('gwr.inputFailed')),
+    });
+  }
+
+  /** Fase 10.2 — manual event delivery from the UI (testing aid; in production an
+   *  external system calls POST /graph-workflows/events/{correlation_id} directly). */
+  deliverEvent(approval: WorkflowApproval): void {
+    let payload: Record<string, unknown> = {};
+    const text = (this.eventPayloadText[approval.id] || '').trim();
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        this.notify.add('error', 'Workflow', this.i18n.translate('gwf.runPayloadInvalid'));
+        return;
+      }
+    }
+    this.api.deliverEvent(approval.correlation_id || '', payload).subscribe({
+      next: () => {
+        delete this.eventPayloadText[approval.id];
+        this.notify.add('success', 'Workflow', this.i18n.translate('gwr.eventDelivered'));
+        this.pendingApprovals.set(this.pendingApprovals().filter((a) => a.id !== approval.id));
+        const open = this.selectedRun();
+        if (open) setTimeout(() => this.openRun(open), 2500);
+        this.refresh(true);
+      },
+      error: () => this.notify.add('error', 'Workflow', this.i18n.translate('gwr.eventDeliverFailed')),
+    });
+  }
+
   /** A finished, non-partial run can be replayed with its original trigger. */
   isReplayable(run: GraphRun): boolean {
     return (
@@ -225,6 +292,27 @@ export class WorkflowRunsPageComponent implements OnInit, OnDestroy {
         } as GraphRun);
       },
       error: () => this.notify.add('error', 'Workflow', this.i18n.translate('gwr.replayFailed')),
+    });
+  }
+
+  /** Fase 7.1 — only failed runs can be retried from their failed node. */
+  isRetryable(run: GraphRun): boolean {
+    return run.status === 'failed';
+  }
+
+  retryRun(run: GraphRun, ev?: Event): void {
+    ev?.stopPropagation();
+    this.api.retryRun(run.id).subscribe({
+      next: ({ run_id }) => {
+        this.notify.add('success', 'Workflow', this.i18n.translate('gwr.retried'));
+        this.refresh(true);
+        this.openRun({
+          id: run_id,
+          workflow_id: run.workflow_id,
+          workflow_name: run.workflow_name,
+        } as GraphRun);
+      },
+      error: () => this.notify.add('error', 'Workflow', this.i18n.translate('gwr.retryFailed')),
     });
   }
 

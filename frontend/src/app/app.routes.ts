@@ -96,6 +96,16 @@ export const routes: Routes = [
       ),
   },
   {
+    // Phase 46 (roadmap fase 14.1) — remote runners: register/list/revoke.
+    path: 'graph-workflows/runners',
+    canActivate: [authGuard, featureGuard],
+    data: { feature: 'graph_workflows' },
+    loadComponent: () =>
+      import('./features/workflows/workflow-runners-page.component').then(
+        (m) => m.WorkflowRunnersPageComponent
+      ),
+  },
+  {
     path: 'graph-workflows',
     canActivate: [authGuard, featureGuard],
     data: { feature: 'graph_workflows' },
@@ -133,6 +143,14 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/workflows/workflow-schedules-page.component').then(
             (m) => m.WorkflowSchedulesPageComponent
+          ),
+      },
+      {
+        // Phase 39 (roadmap fase 7.4/7.3): per-node health metrics + audit trail.
+        path: 'health',
+        loadComponent: () =>
+          import('./features/workflows/workflow-health-page.component').then(
+            (m) => m.WorkflowHealthPageComponent
           ),
       },
     ],

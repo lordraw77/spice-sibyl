@@ -33,7 +33,27 @@
       "Bash(python3 -c \"import ast; ast.parse\\(open\\('/opt/spice-sibyl/backend/app/services/image_service.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
       "Bash(docker image *)",
       "Bash(curl -s \"https://hub.docker.com/v2/repositories/certbot/certbot/tags/?page_size=10&ordering=last_updated\")",
-      "Bash(docker run *)"
+      "Bash(docker run *)",
+      "Bash(break)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8000/health)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8000/api/v1/health)",
+      "Bash(timeout 20 bash -c 'until curl -sf http://localhost:4200 >/dev/null; do sleep 1; done')",
+      "Bash(npx --no-install playwright --version)",
+      "Bash(node -e ' *)",
+      "Bash(APP_EMAIL=\"alessandro.pioli@gmail.com\" APP_PASSWORD=\"280977\" node /tmp/claude-0/-opt-spice-sibyl/82a01a45-dbdb-4bea-bab3-412b90079c70/scratchpad/drive.js)",
+      "Bash(APP_EMAIL=\"alessandro.pioli@gmail.com\" APP_PASSWORD=\"280977\" node drive.tmp.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:4200/ --max-time 3)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:4200/ --max-time 5)",
+      "Bash(APP_EMAIL=\"alessandro.pioli@gmail.com\" APP_PASSWORD=\"280977\" node inspect.tmp.js)",
+      "Bash(grep -n '_safe_workspace_path\\\\b\\\\|def _safe_workspace_path\\\\|markitdown\\\\|MarkItDown\\\\|_TRIGGER_TYPES\\\\|_REMOTE_CAPABLE_TYPES\\\\|graph_workflow_files_dir\\\\|FILES_DIR\\\\|def _resolve_secret\\\\|$secrets\\\\|_secrets' backend/app/services/workflow_graph_service.py)",
+      "Bash(python3 -c \"import importlib.util as u; print\\('paramiko', bool\\(u.find_spec\\('paramiko'\\)\\)\\); print\\('playwright', bool\\(u.find_spec\\('playwright'\\)\\)\\); print\\('markitdown', bool\\(u.find_spec\\('markitdown'\\)\\)\\); print\\('feedparser', bool\\(u.find_spec\\('feedparser'\\)\\)\\); print\\('httpx', bool\\(u.find_spec\\('httpx'\\)\\)\\)\")",
+      "Bash(python3 -m py_compile backend/app/services/workflow_graph_service.py backend/app/data/node_catalog.py backend/app/db/graph_workflow_repository.py backend/app/schemas/graph_workflows.py backend/app/api/v1/endpoints/graph_workflows.py backend/app/core/config.py)",
+      "Bash(python3 -m py_compile backend/app/examples/graph_workflow_examples.py)",
+      "Bash(grep -iA20 \"assert\\\\|Error\\\\|def test_examples\\\\|node_types\\\\|E  \")",
+      "Bash(python -m py_compile app/services/workflow_graph_service.py app/db/graph_workflow_repository.py app/db/database.py app/schemas/graph_workflows.py app/data/node_catalog.py app/core/config.py app/api/v1/endpoints/graph_workflows.py)",
+      "Bash(awk '/## Phase 17/,/## Phase 18/' docs/roadmap-workflows.md)",
+      "Bash(grep -n '@router.get\\(\"/\", \\\\|@router.get\\(\"\"\\)\\\\|@router.post\\(\"\", \\\\|@router.patch\\(\"/{workflow_id}\"\\\\|@router.get\\(\"/{workflow_id}\"\\\\|@router.get\\(\"/runs/{run_id}\"\\\\|_load_owned\\\\|_owned_workflow\\\\|_get_owned\\\\|async def list_workflows\\\\|async def create_workflow\\\\|async def get_workflow\\\\|async def update_workflow\\\\|async def get_run\\\\b\\\\|def _ensure_owner\\\\|status_code=404' backend/app/api/v1/endpoints/graph_workflows.py)",
+      "Bash(grep -rn '\"fields\"\\\\|\\\\$trigger\\\\|{{' backend/app/examples/graph_workflow_examples.py)"
     ],
     "additionalDirectories": [
       "/opt/multi-mcp"
@@ -55,7 +75,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "HIT=$(python3 -c \"import json,sys;d=json.load(sys.stdin);t=d.get('tool_input',d);exts=('.py','.js','.ts','.tsx','.jsx','.astro','.vue','.svelte','.go','.rs','.java','.rb','.c','.h','.cpp','.hpp','.cc','.cs','.kt','.swift','.php','.scala','.lua','.sh','.md','.rst','.txt','.mdx');vals=[str(t.get('file_path') or ''),str(t.get('pattern') or ''),str(t.get('path') or '')];j=' '.join(vals).lower().replace(chr(92),'/');tails=[('.'+x.rsplit('.',1)[-1]) for v in vals if v for x in [v.lower().replace(chr(92),'/').rsplit('/',1)[-1]] if '.' in x];sys.stdout.write('1' if 'graphify-out/' not in j and any(tl in exts for tl in tails) else '')\" 2>/dev/null || true); if [ \"$HIT\" = 1 ] && [ -f graphify-out/graph.json ]; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"MANDATORY: graphify-out/graph.json exists. You MUST run graphify before reading source files. Use: `graphify query \\\"<question>\\\"` (scoped subgraph), `graphify explain \\\"<concept>\\\"`, or `graphify path \\\"<A>\\\" \\\"<B>\\\"`. Only read raw files after graphify has oriented you, or to modify/debug specific lines. This rule applies to subagents too \u2014 include it in every subagent prompt involving code exploration.\"}}'; fi || true"
+            "command": "HIT=$(python3 -c \"import json,sys;d=json.load(sys.stdin);t=d.get('tool_input',d);exts=('.py','.js','.ts','.tsx','.jsx','.astro','.vue','.svelte','.go','.rs','.java','.rb','.c','.h','.cpp','.hpp','.cc','.cs','.kt','.swift','.php','.scala','.lua','.sh','.md','.rst','.txt','.mdx');vals=[str(t.get('file_path') or ''),str(t.get('pattern') or ''),str(t.get('path') or '')];j=' '.join(vals).lower().replace(chr(92),'/');tails=[('.'+x.rsplit('.',1)[-1]) for v in vals if v for x in [v.lower().replace(chr(92),'/').rsplit('/',1)[-1]] if '.' in x];sys.stdout.write('1' if 'graphify-out/' not in j and any(tl in exts for tl in tails) else '')\" 2>/dev/null || true); if [ \"$HIT\" = 1 ] && [ -f graphify-out/graph.json ]; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"MANDATORY: graphify-out/graph.json exists. You MUST run graphify before reading source files. Use: `graphify query \\\"<question>\\\"` (scoped subgraph), `graphify explain \\\"<concept>\\\"`, or `graphify path \\\"<A>\\\" \\\"<B>\\\"`. Only read raw files after graphify has oriented you, or to modify/debug specific lines. This rule applies to subagents too — include it in every subagent prompt involving code exploration.\"}}'; fi || true"
           }
         ]
       }

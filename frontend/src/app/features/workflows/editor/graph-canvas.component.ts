@@ -2,7 +2,7 @@ import { Component, ElementRef, EventEmitter, Input, Output, ViewChild } from '@
 import { CommonModule } from '@angular/common';
 
 import { TranslatePipe } from '../../../core/i18n/translate.pipe';
-import { GraphEdge, GraphNode, NodeTypeInfo } from '../../../core/services/graph-workflow.service';
+import { GraphEdge, GraphNode, GraphNote, NodeTypeInfo } from '../../../core/services/graph-workflow.service';
 
 export interface HandlePoint {
   x: number;
@@ -66,6 +66,49 @@ const MINIMAP_H = 120;
       </defs>
 
       <g [attr.transform]="'translate(' + view.x + ',' + view.y + ') scale(' + view.k + ')'">
+        <!-- fase 8.2 — frames (behind everything) then sticky notes -->
+        <g class="gwf-frames">
+          <g
+            *ngFor="let f of framesList()"
+            [attr.transform]="'translate(' + (f.position?.x || 0) + ',' + (f.position?.y || 0) + ')'"
+          >
+            <rect
+              [attr.width]="f.size?.width || 320"
+              [attr.height]="f.size?.height || 220"
+              rx="12"
+              class="gwf-frame"
+              [style.stroke]="f.color || null"
+              (mousedown)="startNoteDrag(f, $event)"
+              (dblclick)="noteEdit.emit(f.id); $event.stopPropagation()"
+            />
+            <text [attr.x]="12" [attr.y]="22" class="gwf-frame-label" [style.fill]="f.color || null">
+              {{ f.text || ('gwf.note.frame' | t) }}
+            </text>
+          </g>
+        </g>
+        <g class="gwf-notes">
+          <g
+            *ngFor="let nt of notesList()"
+            [attr.transform]="'translate(' + (nt.position?.x || 0) + ',' + (nt.position?.y || 0) + ')'"
+          >
+            <rect
+              [attr.width]="nt.size?.width || 180"
+              [attr.height]="nt.size?.height || 90"
+              rx="8"
+              class="gwf-note"
+              [style.fill]="nt.color || null"
+              (mousedown)="startNoteDrag(nt, $event)"
+              (dblclick)="noteEdit.emit(nt.id); $event.stopPropagation()"
+            />
+            <text
+              *ngFor="let line of noteLines(nt); let i = index"
+              [attr.x]="10"
+              [attr.y]="20 + i * 15"
+              class="gwf-note-text"
+            >{{ line }}</text>
+          </g>
+        </g>
+
         <!-- edges -->
         <g class="edges">
           <path
@@ -85,7 +128,9 @@ const MINIMAP_H = 120;
           class="node"
           [attr.transform]="'translate(' + (n.position?.x || 0) + ',' + (n.position?.y || 0) + ')'"
           [class.selected]="selectedNodeId === n.id || selectedNodeIds.includes(n.id)"
+          [class.gwf-pending]="pendingNode === n.id"
           [attr.data-status]="nodeStatus[n.id] || ''"
+          [attr.data-diff]="diffStatus[n.id] || null"
         >
           <rect
             [attr.width]="NODE_W"
@@ -95,6 +140,18 @@ const MINIMAP_H = 120;
             [attr.data-cat]="n.type === 'comment' ? 'comment' : typeInfo(n.type)?.category"
             (mousedown)="startDrag(n, $event)"
             (click)="$event.stopPropagation()"
+          />
+
+          <!-- fase 8.3 — breakpoint dot (debug mode): click to toggle -->
+          <circle
+            *ngIf="debugMode && n.type !== 'comment'"
+            [attr.cx]="10"
+            [attr.cy]="10"
+            r="6"
+            class="gwf-breakpoint"
+            [class.on]="breakpoints.includes(n.id)"
+            (mousedown)="$event.stopPropagation()"
+            (click)="breakpointToggled.emit(n.id); $event.stopPropagation()"
           />
           <ng-container *ngIf="n.type !== 'comment'; else commentText">
             <text [attr.x]="12" [attr.y]="24" class="node-title">{{ n.name || n.type }}</text>
@@ -193,6 +250,16 @@ export class GraphCanvasComponent {
   @Input() selectedNodeIds: string[] = [];
   @Input() selectedEdgeId: string | null = null;
   @Input() nodeStatus: Record<string, string> = {};
+  /** Fase 8.2 — sticky notes and frames rendered on the canvas. */
+  @Input() notes: GraphNote[] = [];
+  /** Fase 8.1 — per-node diff status ('added' | 'removed' | 'changed') for the
+   *  version-compare overlay; empty in normal editing. */
+  @Input() diffStatus: Record<string, string> = {};
+  /** Fase 8.3 — step-debug affordances: breakpoint dots become clickable when
+   *  `debugMode` is on; `pendingNode` is the node the paused run stops before. */
+  @Input() debugMode = false;
+  @Input() breakpoints: string[] = [];
+  @Input() pendingNode: string | null = null;
 
   @Output() nodeSelected = new EventEmitter<NodeSelectEvent>();
   @Output() edgeSelected = new EventEmitter<GraphEdge>();
@@ -204,6 +271,10 @@ export class GraphCanvasComponent {
   @Output() changed = new EventEmitter<void>();
   /** A connect gesture finished on a target node. */
   @Output() connectRequested = new EventEmitter<ConnectRequest>();
+  /** Fase 8.3 — a breakpoint dot was clicked (toggle the node's breakpoint). */
+  @Output() breakpointToggled = new EventEmitter<string>();
+  /** Fase 8.2 — a note/frame was double-clicked (edit its text). */
+  @Output() noteEdit = new EventEmitter<string>();
 
   @ViewChild('canvas') canvasRef?: ElementRef<SVGSVGElement>;
 
@@ -245,6 +316,42 @@ export class GraphCanvasComponent {
   commentPreview(node: GraphNode): string {
     const text = String((node.params ?? {})['text'] ?? '');
     return text.length > 26 ? text.slice(0, 26) + '…' : text;
+  }
+
+  // ── notes / frames (fase 8.2) ─────────────────────────────────────────────
+
+  framesList(): GraphNote[] {
+    return this.notes.filter((n) => n.kind === 'frame');
+  }
+
+  notesList(): GraphNote[] {
+    return this.notes.filter((n) => n.kind !== 'frame');
+  }
+
+  /** Wrap a note's markdown-ish text into short lines for the SVG label. */
+  noteLines(note: GraphNote): string[] {
+    const width = note.size?.width || 180;
+    const perLine = Math.max(8, Math.floor(width / 7));
+    const out: string[] = [];
+    for (const raw of String(note.text || '').split('\n')) {
+      let line = raw;
+      while (line.length > perLine) {
+        out.push(line.slice(0, perLine));
+        line = line.slice(perLine);
+      }
+      out.push(line);
+      if (out.length >= 6) break;
+    }
+    return out.slice(0, 6);
+  }
+
+  private noteDrag: { note: GraphNote; ox: number; oy: number } | null = null;
+
+  startNoteDrag(note: GraphNote, ev: MouseEvent): void {
+    ev.stopPropagation();
+    const p = this.toLocal(ev);
+    this.moveStarted.emit();
+    this.noteDrag = { note, ox: p.x - (note.position?.x ?? 0), oy: p.y - (note.position?.y ?? 0) };
   }
 
   // ── geometry ──────────────────────────────────────────────────────────────
@@ -459,6 +566,14 @@ export class GraphCanvasComponent {
     }
     const p = this.toLocal(ev);
     this.cursor = p;
+    if (this.noteDrag) {
+      this.noteDrag.note.position = {
+        x: Math.round(p.x - this.noteDrag.ox),
+        y: Math.round(p.y - this.noteDrag.oy),
+      };
+      this.changed.emit();
+      return;
+    }
     if (this.dragIds.length) {
       if (this.pendingDragSnapshot) {
         this.moveStarted.emit();
@@ -478,6 +593,7 @@ export class GraphCanvasComponent {
   onCanvasUp(): void {
     this.dragIds = [];
     this.dragOffsets.clear();
+    this.noteDrag = null;
     this.panning = false;
   }
 

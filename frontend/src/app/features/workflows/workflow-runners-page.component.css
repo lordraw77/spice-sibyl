@@ -1,0 +1,152 @@
+.btn {
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  text-decoration: none;
+  display: inline-block;
+}
+.btn.small {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn.danger {
+  color: #f87171;
+  border-color: #f87171;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.runners-page {
+  padding: 1rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  height: 100%;
+}
+
+.runners-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.runners-head h1 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+.runners-head .subtitle {
+  margin: 0.15rem 0 0;
+  color: var(--text-secondary, #9ca3af);
+  font-size: 0.85rem;
+}
+.head-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.token-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg-input);
+}
+.token-banner p {
+  margin: 0.15rem 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #9ca3af);
+}
+.token-value {
+  display: block;
+  margin-top: 0.3rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--bg-primary, #111);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+
+.new-runner-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  flex: 1 1 200px;
+}
+.field input,
+.field select {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+.hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #9ca3af);
+}
+.form-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.runners-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.runners-table th,
+.runners-table td {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.row-actions {
+  text-align: right;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #9ca3af;
+  margin-right: 0.35rem;
+}
+.status-dot.online {
+  background: #34d399;
+}
+
+.empty-state {
+  color: var(--text-secondary, #9ca3af);
+  font-size: 0.9rem;
+  padding: 1rem 0;
+}

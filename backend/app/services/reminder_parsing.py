@@ -260,4 +260,19 @@ def compute_next_fire(recurrence: str, after_ts: int, tz) -> int | None:
             return None
         return int(nxt.timestamp())
 
+    if recurrence.startswith("crons:"):
+        # Fase 6.1 — multiple cron expressions on one trigger: '|'-separated,
+        # each with its fields comma-joined (same encoding as 'cron:'). The
+        # next fire is the earliest across the expressions.
+        candidates: list[int] = []
+        for part in recurrence[len("crons:"):].split("|"):
+            expr = part.replace(",", " ").strip()
+            if not expr:
+                continue
+            try:
+                candidates.append(int(croniter(expr, fired_at).get_next(datetime).timestamp()))
+            except (ValueError, KeyError):
+                continue
+        return min(candidates) if candidates else None
+
     return None

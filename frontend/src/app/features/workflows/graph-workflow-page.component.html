@@ -31,11 +31,15 @@
     [canRedo]="canRedo()"
     [canCopy]="!!selectedNode()"
     [canPaste]="hasClipboard()"
+    [debugMode]="debugMode()"
     (undo)="undo()"
     (redo)="redo()"
     (copy)="copySelectedNode()"
     (paste)="pasteNode()"
     (addComment)="addComment()"
+    (addNote)="addNote()"
+    (addFrame)="addFrame()"
+    (toggleDebug)="toggleDebugMode()"
     (layout)="autoLayout()"
     (fit)="fitView()"
   ></app-editor-toolbar>
@@ -96,18 +100,54 @@
       <app-graph-canvas
         [nodes]="nodes"
         [edges]="edges"
+        [notes]="notes"
         [nodeTypes]="nodeTypes()"
         [selectedNodeId]="selectedNodeId()"
         [selectedNodeIds]="selectedNodeIds()"
         [selectedEdgeId]="selectedEdgeId()"
         [nodeStatus]="nodeStatus()"
+        [diffStatus]="diffStatus()"
+        [debugMode]="debugMode()"
+        [breakpoints]="breakpoints()"
+        [pendingNode]="pendingNode()"
         (nodeSelected)="onNodeSelected($event)"
         (edgeSelected)="onEdgeSelected($event)"
         (cleared)="onCanvasCleared()"
         (moveStarted)="pushUndoSnapshot()"
         (changed)="onNodeMoved()"
         (connectRequested)="onConnectRequested($event)"
+        (breakpointToggled)="toggleBreakpoint($event)"
+        (noteEdit)="editNote($event)"
       ></app-graph-canvas>
+
+      <!-- fase 8.1 — version-diff overlay legend + summary -->
+      <div class="gwf-diff-bar" *ngIf="versionDiff() as d">
+        <span class="diff-title">{{ 'gwf.diff.title' | t }} v{{ d.from_version }} → v{{ d.to_version }}</span>
+        <span class="diff-chip added">+{{ d.added_nodes.length }} {{ 'gwf.diff.added' | t }}</span>
+        <span class="diff-chip changed">~{{ d.changed_nodes.length }} {{ 'gwf.diff.changed' | t }}</span>
+        <span class="diff-chip removed">−{{ d.removed_nodes.length }} {{ 'gwf.diff.removed' | t }}</span>
+        <span class="diff-removed" *ngIf="d.removed_nodes.length">
+          {{ 'gwf.diff.removedNodes' | t }}: {{ d.removed_nodes.join(', ') }}
+        </span>
+        <button class="btn ghost small" (click)="clearDiff()">{{ 'gwf.diff.clear' | t }}</button>
+      </div>
+
+      <!-- fase 8.3 — step-debug control bar -->
+      <div class="gwf-debug-bar" *ngIf="debugMode()">
+        <span class="debug-title">🐞 {{ 'gwf.debug.title' | t }}</span>
+        <span class="debug-status" [attr.data-status]="debugStatus()">{{ debugStatus() || 'gwf.debug.idle' | t }}</span>
+        <span class="debug-pending" *ngIf="pendingNode() as p">→ {{ p }}</span>
+        <ng-container *ngIf="!debugRunActive()">
+          <button class="btn small" (click)="startDebugRun()">{{ 'gwf.debug.start' | t }}</button>
+          <span class="muted small">{{ 'gwf.debug.hint' | t }}</span>
+        </ng-container>
+        <ng-container *ngIf="debugRunActive()">
+          <button class="btn small" (click)="debugStep()">⏭ {{ 'gwf.debug.step' | t }}</button>
+          <button class="btn small" (click)="debugContinue()">▶ {{ 'gwf.debug.continue' | t }}</button>
+          <button class="btn small danger" (click)="debugStop()">⏹ {{ 'gwf.debug.stop' | t }}</button>
+        </ng-container>
+        <button class="btn ghost small" (click)="exitDebug()">✕ {{ 'gwf.debug.exit' | t }}</button>
+      </div>
     </main>
 
     <ng-template #noWf>
@@ -143,6 +183,7 @@
           [lastOutput]="nodeOutputs()[node.id]"
           [lastStatus]="nodeStatus()[node.id] ?? null"
           [lastError]="nodeErrors()[node.id] ?? null"
+          [exprContext]="exprContextFor(node)"
           (changed)="dirty.set(true)"
           (remove)="deleteSelectedNode()"
           (runFromNode)="runFromSelectedNode()"
@@ -159,9 +200,13 @@
             [nodeErrors]="nodeErrors()"
             [nodeOutputs]="nodeOutputs()"
             [payload]="runPayloadText"
+            [environment]="runEnvironment"
             (payloadChange)="runPayloadText = $event"
+            (environmentChange)="runEnvironment = $event"
             (reload)="reloadCurrent()"
             (restored)="onVersionRestored($event)"
+            (diffRequested)="showVersionDiff($event.from, $event.to)"
+            (explainAccepted)="applyExplainPatch($event)"
           ></app-run-panel>
         </ng-template>
       </ng-container>
@@ -275,17 +320,26 @@
         <button
           class="chip filter-chip"
           [class.selected]="!exampleCategory()"
-          (click)="exampleCategory.set('')"
+          (click)="setExampleCategory('')"
         >{{ 'gwf.ex.all' | t }}</button>
         <button
           class="chip filter-chip"
           *ngFor="let cat of exampleCategories()"
           [class.selected]="exampleCategory() === cat"
-          (click)="exampleCategory.set(cat)"
+          (click)="setExampleCategory(cat)"
         >{{ cat }}</button>
+        <select
+          class="example-module-select"
+          [ngModel]="exampleModule()"
+          (ngModelChange)="setExampleModule($event)"
+          [attr.aria-label]="'gwf.ex.moduleFilter' | t"
+        >
+          <option value="">{{ 'gwf.ex.moduleAll' | t }}</option>
+          <option *ngFor="let mod of exampleModules()" [value]="mod">{{ mod }}</option>
+        </select>
       </div>
       <div class="examples-grid">
-        <div class="example-card" *ngFor="let ex of filteredExamples()">
+        <div class="example-card" *ngFor="let ex of pagedExamples()">
           <div class="example-head">
             <span class="example-title">{{ ex.title }}</span>
             <span class="chip category-chip">{{ ex.category }}</span>
@@ -302,6 +356,12 @@
             <span class="chip" *ngFor="let nt of ex.node_types">{{ nt }}</span>
           </div>
         </div>
+        <p class="muted small example-empty" *ngIf="!pagedExamples().length">{{ 'gwf.ex.empty' | t }}</p>
+      </div>
+      <div class="examples-pagination" *ngIf="exampleTotalPages() > 1">
+        <button class="btn small" (click)="prevExamplePage()" [disabled]="examplePage() === 0">‹ {{ 'gwf.ex.prev' | t }}</button>
+        <span class="muted small">{{ 'gwf.ex.page' | t }} {{ examplePage() + 1 }} / {{ exampleTotalPages() }}</span>
+        <button class="btn small" (click)="nextExamplePage()" [disabled]="examplePage() >= exampleTotalPages() - 1">{{ 'gwf.ex.next' | t }} ›</button>
       </div>
     </div>
   </div>

@@ -81,7 +81,10 @@
           >
             <td class="wf-name">{{ workflowName(r) }}</td>
             <td><span class="status-chip" [attr.data-status]="r.status">{{ r.status }}</span></td>
-            <td>{{ r.trigger_type }}</td>
+            <td>
+              {{ r.trigger_type }}
+              <span class="env-chip" *ngIf="r.environment" [title]="'gwr.environment' | t">{{ r.environment }}</span>
+            </td>
             <td>{{ when(r) }}</td>
             <td>{{ duration(r) }}</td>
             <td class="row-actions">
@@ -92,6 +95,14 @@
                 [title]="'gwr.stop' | t"
               >
                 ■ {{ 'gwr.stop' | t }}
+              </button>
+              <button
+                *ngIf="isRetryable(r)"
+                class="btn small"
+                (click)="retryRun(r, $event)"
+                [title]="'gwr.retryHint' | t"
+              >
+                ↺ {{ 'gwr.retry' | t }}
               </button>
             </td>
           </tr>
@@ -120,6 +131,14 @@
           >
             ↻ {{ 'gwr.replay' | t }}
           </button>
+          <button
+            *ngIf="isRetryable(run)"
+            class="btn small"
+            (click)="retryRun(run)"
+            [title]="'gwr.retryHint' | t"
+          >
+            ↺ {{ 'gwr.retry' | t }}
+          </button>
           <a class="btn small" [routerLink]="['/graph-workflows', run.workflow_id]">
             {{ 'gwr.openDesigner' | t }}
           </a>
@@ -129,31 +148,89 @@
       <div class="detail-meta">
         <span>
           {{ when(run) }} · {{ run.trigger_type }} · {{ duration(run) }}
+          <ng-container *ngIf="run.environment"> · <span class="env-chip">{{ run.environment }}</span></ng-container>
           <ng-container *ngIf="runTokens(run) as tok"> · {{ tok }} {{ 'gwr.statTokens' | t }}</ng-container>
         </span>
         <code class="run-id" [title]="run.id">{{ run.id }}</code>
       </div>
+      <!-- Fase 7.1 — retry/replay lineage back to the origin run. -->
+      <p class="origin-run" *ngIf="run.origin_run_id">
+        {{ 'gwr.derivedFrom' | t }} <code>{{ run.origin_run_id }}</code>
+      </p>
       <p class="run-error" *ngIf="run.error">{{ run.error }}</p>
 
-      <!-- Fase 4.4 — pending human-approval requests: decide inline. -->
+      <!-- Fase 4.4 / 10 — pending human-in-the-loop requests: decide/fill/deliver inline. -->
       <div class="approvals" *ngIf="pendingApprovals().length">
         <div class="side-subhead">{{ 'gwr.approvals' | t }}</div>
         <div class="approval-item" *ngFor="let ap of pendingApprovals()">
           <strong>{{ ap.title }}</strong>
           <p class="approval-msg" *ngIf="ap.message">{{ ap.message }}</p>
-          <input
-            class="approval-comment"
-            [(ngModel)]="approvalComment"
-            [placeholder]="'gwr.approvalCommentPh' | t"
-          />
-          <div class="approval-actions">
-            <button class="btn small primary" (click)="decide(ap, true)">
-              ✓ {{ 'gwr.approve' | t }}
-            </button>
-            <button class="btn small danger" (click)="decide(ap, false)">
-              ✕ {{ 'gwr.reject' | t }}
-            </button>
-          </div>
+
+          <!-- human.approval (fase 4.4): approve/reject. -->
+          <ng-container *ngIf="ap.kind === 'approval'">
+            <input
+              class="approval-comment"
+              [(ngModel)]="approvalComment"
+              [placeholder]="'gwr.approvalCommentPh' | t"
+            />
+            <div class="approval-actions">
+              <button class="btn small primary" (click)="decide(ap, true)">
+                ✓ {{ 'gwr.approve' | t }}
+              </button>
+              <button class="btn small danger" (click)="decide(ap, false)">
+                ✕ {{ 'gwr.reject' | t }}
+              </button>
+            </div>
+          </ng-container>
+
+          <!-- human.input (fase 10.1): render the JSON-Schema form. -->
+          <ng-container *ngIf="ap.kind === 'input'">
+            <div class="input-form">
+              <label class="input-field" *ngFor="let f of inputFields(ap)">
+                <span>{{ f.name }}<span *ngIf="f.required">&nbsp;*</span></span>
+                <select
+                  *ngIf="f.options"
+                  [(ngModel)]="(inputFormData[ap.id] = inputFormData[ap.id] || {})[f.name]"
+                >
+                  <option value=""></option>
+                  <option *ngFor="let opt of f.options" [value]="opt">{{ opt }}</option>
+                </select>
+                <input
+                  *ngIf="!f.options"
+                  [type]="f.type === 'number' || f.type === 'integer' ? 'number' : 'text'"
+                  [(ngModel)]="(inputFormData[ap.id] = inputFormData[ap.id] || {})[f.name]"
+                />
+              </label>
+            </div>
+            <input
+              class="approval-comment"
+              [(ngModel)]="approvalComment"
+              [placeholder]="'gwr.approvalCommentPh' | t"
+            />
+            <div class="approval-actions">
+              <button class="btn small primary" (click)="submitInput(ap)">
+                {{ 'gwr.submitInput' | t }}
+              </button>
+            </div>
+          </ng-container>
+
+          <!-- wait.event (fase 10.2): normally delivered by an external system via
+               POST /graph-workflows/events/{correlation_id}; the JSON box below is a
+               manual testing aid. -->
+          <ng-container *ngIf="ap.kind === 'event'">
+            <p class="approval-msg">{{ 'gwr.eventWaiting' | t }} <code>{{ ap.correlation_id }}</code></p>
+            <textarea
+              class="approval-comment"
+              rows="2"
+              [(ngModel)]="eventPayloadText[ap.id]"
+              [placeholder]="'gwr.eventPayloadPh' | t"
+            ></textarea>
+            <div class="approval-actions">
+              <button class="btn small primary" (click)="deliverEvent(ap)">
+                {{ 'gwr.deliverEvent' | t }}
+              </button>
+            </div>
+          </ng-container>
         </div>
       </div>
 

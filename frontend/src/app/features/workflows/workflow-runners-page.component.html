@@ -1,0 +1,82 @@
+<div class="runners-page">
+  <header class="runners-head">
+    <div>
+      <h1>{{ 'gwrn.title' | t }}</h1>
+      <p class="subtitle">{{ 'gwrn.subtitle' | t }}</p>
+    </div>
+    <div class="head-actions">
+      <button class="btn" (click)="refresh()">⟳ {{ 'gwr.refresh' | t }}</button>
+      <button class="btn primary" (click)="toggleForm()">＋ {{ 'gwrn.new' | t }}</button>
+    </div>
+  </header>
+
+  <div class="token-banner" *ngIf="issuedToken() as issued">
+    <div>
+      <strong>{{ 'gwrn.tokenIssued' | t }}</strong>
+      <p>{{ 'gwrn.tokenIssuedHint' | t }}</p>
+      <code class="token-value">{{ issued.token }}</code>
+    </div>
+    <button class="btn small" (click)="dismissToken()">{{ 'gwrn.dismiss' | t }}</button>
+  </div>
+
+  <form class="new-runner-form" *ngIf="formOpen()" (ngSubmit)="submit()">
+    <div class="form-row">
+      <label class="field">
+        <span>{{ 'gwrn.name' | t }}</span>
+        <input type="text" [(ngModel)]="formName" name="name" required placeholder="gpu-box-1" />
+      </label>
+      <label class="field">
+        <span>{{ 'gwrn.labels' | t }}</span>
+        <input type="text" [(ngModel)]="formLabels" name="labels" placeholder="gpu, internal-network" />
+      </label>
+      <label class="field">
+        <span>{{ 'gwrn.allowedNodeTypes' | t }}</span>
+        <input
+          type="text"
+          [(ngModel)]="formAllowedNodeTypes"
+          name="allowed"
+          placeholder="http.request, code"
+        />
+      </label>
+    </div>
+    <p class="hint">{{ 'gwrn.formHint' | t }}</p>
+    <div class="form-actions">
+      <button type="submit" class="btn primary" [disabled]="saving()">{{ 'gwrn.register' | t }}</button>
+      <button type="button" class="btn" (click)="toggleForm()">{{ 'gws.cancel' | t }}</button>
+    </div>
+  </form>
+
+  <table class="runners-table" *ngIf="runners().length; else empty">
+    <thead>
+      <tr>
+        <th>{{ 'gwrn.status' | t }}</th>
+        <th>{{ 'gwrn.name' | t }}</th>
+        <th>{{ 'gwrn.labels' | t }}</th>
+        <th>{{ 'gwrn.allowedNodeTypes' | t }}</th>
+        <th>{{ 'gwrn.version' | t }}</th>
+        <th>{{ 'gwrn.lastHeartbeat' | t }}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let row of runners()">
+        <td>
+          <span class="status-dot" [class.online]="row.status === 'online'"></span>
+          {{ row.status === 'online' ? ('gwrn.online' | t) : ('gwrn.offline' | t) }}
+        </td>
+        <td>{{ row.name }}</td>
+        <td>{{ row.labels.join(', ') || '—' }}</td>
+        <td>{{ row.allowed_node_types.join(', ') || ('gwrn.anyType' | t) }}</td>
+        <td>{{ row.version || '—' }}</td>
+        <td>{{ lastHeartbeat(row) }}</td>
+        <td class="row-actions">
+          <button class="btn small danger" (click)="revoke(row)">{{ 'gwrn.revoke' | t }}</button>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <ng-template #empty>
+    <p class="empty-state" *ngIf="!loading()">{{ 'gwrn.empty' | t }}</p>
+  </ng-template>
+</div>

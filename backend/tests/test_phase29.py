@@ -588,15 +588,19 @@ def test_examples_catalog_is_valid_and_importable(client, auth_headers, captured
     resp = client.get("/api/v1/graph-workflows/examples", headers=auth_headers)
     assert resp.status_code == 200, resp.text
     examples = resp.json()
-    assert len(examples) == 18
+    assert len(examples) == 32
     ids = {e["id"] for e in examples}
     assert {
-        "rss-morning-digest", "weather-greeting", "webhook-kb-answer",
+        "rss-morning-digest", "rss-to-slack-alert", "weather-greeting", "webhook-kb-answer",
         "page-keyword-watch", "api-error-fallback", "subworkflow-composer",
         "switch-routing", "fanout-merge", "orders-filter-total", "batch-loop",
         "poll-wait-repeat", "python-transform", "event-inapp-alert",
         "notify-broadcast", "agent-research-brief", "error-alert-hub",
         "approval-gate-deploy", "ticket-triage-classify",
+        "kb-search-rag", "paginate-while", "extract-to-db", "file-read-report",
+        "parse-http-json", "chatbot-reply", "success-pipeline",
+        "expense-approval-form", "payment-webhook-wait", "http-mock-pin-demo",
+        "idempotent-order-saga", "nightly-report-blackout", "llm-quality-gate",
     } == ids
 
     # CI guard: every node type used by an example must exist in the palette catalog

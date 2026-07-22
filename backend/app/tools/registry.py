@@ -303,12 +303,15 @@ _PROFILE_AWARE = frozenset({"kb_search", "search_conversations", "create_reminde
 async def execute_tool(name: str, arguments: dict, profile_id: str = "default") -> str:
     # Phase 18: namespaced MCP tools (mcp__server__tool) route to the MCP manager;
     # namespaced custom tools (custom__tool) route to the per-profile HTTP registry.
-    from app.services import custom_tool_service, mcp_service
+    from app.services import custom_tool_service, mcp_service, workflow_tool_service
 
     if mcp_service.is_mcp_tool(name):
         return await mcp_service.call_tool(name, arguments)
     if custom_tool_service.is_custom_tool(name):
         return await custom_tool_service.call_tool(name, arguments, profile_id)
+    # Phase 41 (fase 9.1): a namespaced workflow__<id> tool runs that workflow.
+    if workflow_tool_service.is_workflow_tool(name):
+        return await workflow_tool_service.call_tool(name, arguments, profile_id)
 
     handler = _HANDLERS.get(name)
     if not handler:

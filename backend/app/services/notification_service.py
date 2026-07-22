@@ -82,12 +82,16 @@ def _chunk_text(text: str, limit: int = 4000) -> list[str]:
 
 
 async def notify_telegram(
-    db: aiosqlite.Connection, profile_id: str, event_type: str, text: str, parse_mode: str | None = None
+    db: aiosqlite.Connection, profile_id: str, event_type: str, text: str,
+    parse_mode: str | None = None,
+    buttons: list[list[tuple[str, str]]] | None = None,
 ) -> None:
     """Push a Telegram message to the profile's linked chat, if opted in.
 
     ``parse_mode`` is one of Telegram's own literals (``Markdown``, ``MarkdownV2``,
-    ``HTML``) or ``None`` for plain text (unchanged default)."""
+    ``HTML``) or ``None`` for plain text (unchanged default). ``buttons`` (Phase 39
+    — workflow approvals) is an inline keyboard as rows of ``(label,
+    callback_data)`` pairs, attached to the last chunk of the message."""
     link = await telegram_link_repository.get_by_profile_id(db, profile_id)
     if not link:
         return
@@ -109,9 +113,22 @@ async def notify_telegram(
         logger.debug("notify_telegram: bot not running, dropping event=%s profile=%s", event_type, profile_id)
         return
 
+    reply_markup = None
+    if buttons:
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton(label, callback_data=data) for label, data in row]
+            for row in buttons
+        ])
+
     try:
-        for chunk in _chunk_text(text):
-            await bot.send_message(chat_id=chat_id, text=chunk, parse_mode=parse_mode)
+        chunks = _chunk_text(text)
+        for i, chunk in enumerate(chunks):
+            kwargs = {}
+            if reply_markup is not None and i == len(chunks) - 1:
+                kwargs["reply_markup"] = reply_markup
+            await bot.send_message(chat_id=chat_id, text=chunk, parse_mode=parse_mode, **kwargs)
     except Exception:
         logger.exception("notify_telegram: send failed event=%s chat_id=%s", event_type, chat_id)
 

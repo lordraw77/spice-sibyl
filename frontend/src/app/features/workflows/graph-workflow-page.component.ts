@@ -9,12 +9,14 @@ import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import {
   GraphEdge,
   GraphNode,
+  GraphNote,
   GraphWorkflow,
   GraphWorkflowExample,
   GraphWorkflowService,
   NodeOutputHistory,
   NodeTypeInfo,
   RunEvent,
+  VersionDiff,
   WorkflowGenerateEvent,
 } from '../../core/services/graph-workflow.service';
 import { ModelPickerComponent } from '../shared/model-picker/model-picker.component';
@@ -23,6 +25,7 @@ import { EdgeInspectorComponent } from './editor/edge-inspector.component';
 import { EditorToolbarComponent } from './editor/editor-toolbar.component';
 import { GraphPreviewComponent } from './editor/graph-preview.component';
 import { NodeInspectorComponent } from './editor/node-inspector.component';
+import { ExpressionContext } from './editor/expression-autocomplete';
 import { NodePaletteComponent } from './editor/node-palette.component';
 import { RunPanelComponent } from './editor/run-panel.component';
 
@@ -92,9 +95,27 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   readonly exampleCategories = computed(() =>
     [...new Set(this.examples().map((e) => e.category))].sort(),
   );
+  /** Module/node-type filter ('' = all), e.g. "telegram.send" or "llm.agent". */
+  readonly exampleModule = signal('');
+  readonly exampleModules = computed(() =>
+    [...new Set(this.examples().flatMap((e) => e.node_types))].sort(),
+  );
   readonly filteredExamples = computed(() => {
     const cat = this.exampleCategory();
-    return cat ? this.examples().filter((e) => e.category === cat) : this.examples();
+    const mod = this.exampleModule();
+    return this.examples().filter(
+      (e) => (!cat || e.category === cat) && (!mod || e.node_types.includes(mod)),
+    );
+  });
+  /** Gallery pagination — at most 4 examples per page. */
+  readonly examplePageSize = 4;
+  readonly examplePage = signal(0);
+  readonly exampleTotalPages = computed(() =>
+    Math.max(1, Math.ceil(this.filteredExamples().length / this.examplePageSize)),
+  );
+  readonly pagedExamples = computed(() => {
+    const start = this.examplePage() * this.examplePageSize;
+    return this.filteredExamples().slice(start, start + this.examplePageSize);
   });
   /** Collapsible workflow list (leaves more room for the node palette). */
   readonly listCollapsed = signal(localStorage.getItem('gwf.listCollapsed') === '1');
@@ -118,6 +139,18 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   // reference with app-graph-canvas which mutates node positions in place.
   nodes: GraphNode[] = [];
   edges: GraphEdge[] = [];
+  /** Fase 8.2 — canvas notes/frames (shared by reference with the canvas). */
+  notes: GraphNote[] = [];
+
+  // ── fase 8.3: step-debug state ────────────────────────────────────────────
+  readonly debugMode = signal(false);
+  readonly breakpoints = signal<string[]>([]);
+  readonly pendingNode = signal<string | null>(null);
+  readonly debugStatus = signal<string | null>(null); // the paused run's status
+
+  // ── fase 8.1: version diff overlay ────────────────────────────────────────
+  readonly diffStatus = signal<Record<string, string>>({});
+  readonly versionDiff = signal<VersionDiff | null>(null);
 
   private stopStream: (() => void) | null = null;
   private runPoll: ReturnType<typeof setInterval> | null = null;
@@ -142,6 +175,67 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
     return id ? this.edges.find((e) => e.id === id) ?? null : null;
   });
 
+  /** Fase 13.1 — names of $secrets, fetched once for expression autocomplete
+   *  (never their values). */
+  readonly secretNames = signal<string[]>([]);
+
+  /** Fase 13.1 — expression autocomplete context for `node`: upstream node ids
+   *  + best-effort output fields (BFS back over edges), declared $vars names,
+   *  known $secrets names, and whether `node` sits inside a for/repeat body. */
+  exprContextFor(node: GraphNode): ExpressionContext {
+    const upstreamIds = new Set<string>();
+    const queue = [node.id];
+    while (queue.length) {
+      const cur = queue.shift()!;
+      for (const e of this.edges) {
+        if (e.target === cur && !upstreamIds.has(e.source)) {
+          upstreamIds.add(e.source);
+          queue.push(e.source);
+        }
+      }
+    }
+    const upstreamNodes = [...upstreamIds]
+      .map((id) => this.nodes.find((n) => n.id === id))
+      .filter((n): n is GraphNode => !!n && n.type !== 'comment')
+      .map((n) => {
+        const out = this.nodeOutputs()[n.id];
+        const fields =
+          out && typeof out === 'object' && !Array.isArray(out) ? Object.keys(out as Record<string, unknown>) : [];
+        return { id: n.id, label: n.name || n.type, fields };
+      });
+
+    // Forward-reachable from any loop node's 'loop' handle → inside its body.
+    const inLoopIds = new Set<string>();
+    for (const e of this.edges) {
+      const src = this.nodes.find((n) => n.id === e.source);
+      if (!src || (src.type !== 'for' && src.type !== 'repeat') || e.sourceHandle !== 'loop') continue;
+      const q = [e.target];
+      while (q.length) {
+        const cur = q.shift()!;
+        if (inLoopIds.has(cur)) continue;
+        inLoopIds.add(cur);
+        for (const e2 of this.edges) if (e2.source === cur) q.push(e2.target);
+      }
+    }
+
+    return {
+      upstreamNodes,
+      variableNames: Object.keys(this.current()?.variables ?? {}),
+      secretNames: this.secretNames(),
+      inLoop: inLoopIds.has(node.id),
+    };
+  }
+
+  /** Fase 13.2 — the user accepted a proposed repair from "explain / repair":
+   *  merge it into the failed node's params (never overwriting silently —
+   *  the diff was already reviewed) and mark the workflow dirty. */
+  applyExplainPatch(event: { nodeId: string; params: Record<string, unknown> }): void {
+    const node = this.nodes.find((n) => n.id === event.nodeId);
+    if (!node) return;
+    node.params = { ...(node.params ?? {}), ...event.params };
+    this.dirty.set(true);
+  }
+
   ngOnInit(): void {
     this.api.list().subscribe({
       next: (list) => {
@@ -161,6 +255,10 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
     this.api.examples().subscribe({ next: (ex) => this.examples.set(ex), error: () => {} });
     this.api.failoverChains().subscribe({
       next: (res) => this.failoverChainNames.set(Object.keys(res.chains || {})),
+      error: () => {},
+    });
+    this.api.listSecrets().subscribe({
+      next: (secrets) => this.secretNames.set(secrets.map((s) => s.name)),
       error: () => {},
     });
   }
@@ -223,6 +321,29 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
 
   toggleExamples(): void {
     this.examplesOpen.update((v) => !v);
+    if (this.examplesOpen()) {
+      this.exampleCategory.set('');
+      this.exampleModule.set('');
+      this.examplePage.set(0);
+    }
+  }
+
+  setExampleCategory(cat: string): void {
+    this.exampleCategory.set(cat);
+    this.examplePage.set(0);
+  }
+
+  setExampleModule(mod: string): void {
+    this.exampleModule.set(mod);
+    this.examplePage.set(0);
+  }
+
+  prevExamplePage(): void {
+    this.examplePage.update((p) => Math.max(0, p - 1));
+  }
+
+  nextExamplePage(): void {
+    this.examplePage.update((p) => Math.min(this.exampleTotalPages() - 1, p + 1));
   }
 
   /** Collapse/expand the workflow list; the preference sticks across sessions. */
@@ -381,6 +502,9 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
     this.current.set(wf);
     this.nodes = wf.graph.nodes.map((n) => ({ ...n, position: n.position ?? { x: 60, y: 60 } }));
     this.edges = [...wf.graph.edges];
+    this.notes = (wf.graph.notes ?? []).map((n) => ({ ...n }));
+    this.clearDiff();
+    this.exitDebug();
     this.selectedNodeId.set(null);
     this.selectedNodeIds.set([]);
     this.selectedEdgeId.set(null);
@@ -477,7 +601,7 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   save(): void {
     const wf = this.current();
     if (!wf) return;
-    this.api.update(wf.id, { graph: { nodes: this.nodes, edges: this.edges } }).subscribe({
+    this.api.update(wf.id, { graph: { nodes: this.nodes, edges: this.edges, notes: this.notes } }).subscribe({
       next: (updated) => {
         this.current.set(updated);
         this.workflows.update((l) => l.map((w) => (w.id === updated.id ? updated : w)));
@@ -529,6 +653,197 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   onVersionRestored(updated: GraphWorkflow): void {
     this.workflows.update((l) => l.map((w) => (w.id === updated.id ? updated : w)));
     this.select(updated);
+  }
+
+  // ── fase 8.2: notes and frames ────────────────────────────────────────────
+
+  private newNoteId(prefix: string): string {
+    return `${prefix}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4)}`;
+  }
+
+  addNote(): void {
+    if (!this.current()) return;
+    this.pushUndoSnapshot();
+    this.notes = [
+      ...this.notes,
+      {
+        id: this.newNoteId('note'),
+        kind: 'note',
+        text: this.i18n.translate('gwf.note.placeholder'),
+        color: '',
+        position: { x: 80, y: 80 },
+        size: { width: 180, height: 90 },
+      },
+    ];
+    this.dirty.set(true);
+  }
+
+  addFrame(): void {
+    if (!this.current()) return;
+    this.pushUndoSnapshot();
+    this.notes = [
+      ...this.notes,
+      {
+        id: this.newNoteId('frame'),
+        kind: 'frame',
+        text: this.i18n.translate('gwf.note.frame'),
+        color: '',
+        position: { x: 40, y: 40 },
+        size: { width: 360, height: 260 },
+      },
+    ];
+    this.dirty.set(true);
+  }
+
+  /** Double-click on a note/frame → edit its text (empty text removes it). */
+  editNote(id: string): void {
+    const note = this.notes.find((n) => n.id === id);
+    if (!note) return;
+    const next = window.prompt(this.i18n.translate('gwf.note.editPrompt'), note.text ?? '');
+    if (next === null) return;
+    this.pushUndoSnapshot();
+    if (next.trim() === '') {
+      this.notes = this.notes.filter((n) => n.id !== id);
+    } else {
+      this.notes = this.notes.map((n) => (n.id === id ? { ...n, text: next } : n));
+    }
+    this.dirty.set(true);
+  }
+
+  // ── fase 8.1: version diff overlay ────────────────────────────────────────
+
+  showVersionDiff(from: number, to: number): void {
+    const wf = this.current();
+    if (!wf) return;
+    this.api.diffVersions(wf.id, from, to).subscribe({
+      next: (diff) => {
+        this.versionDiff.set(diff);
+        const status: Record<string, string> = {};
+        for (const id of diff.added_nodes) status[id] = 'added';
+        for (const id of diff.changed_nodes.map((c) => c.id)) status[id] = 'changed';
+        // Removed nodes aren't on the current canvas; they show in the panel list.
+        this.diffStatus.set(status);
+        this.notify.add('info', 'Workflow', this.i18n.translate('gwf.diff.applied'));
+      },
+      error: () => this.notify.add('error', 'Workflow', this.i18n.translate('gwf.diff.error')),
+    });
+  }
+
+  clearDiff(): void {
+    this.diffStatus.set({});
+    this.versionDiff.set(null);
+  }
+
+  // ── fase 8.3: step debugging ──────────────────────────────────────────────
+
+  toggleDebugMode(): void {
+    if (this.debugMode()) {
+      this.exitDebug();
+    } else {
+      this.debugMode.set(true);
+    }
+  }
+
+  toggleBreakpoint(nodeId: string): void {
+    this.breakpoints.update((bps) =>
+      bps.includes(nodeId) ? bps.filter((b) => b !== nodeId) : [...bps, nodeId],
+    );
+  }
+
+  exitDebug(): void {
+    if (this.runPoll) {
+      clearInterval(this.runPoll);
+      this.runPoll = null;
+    }
+    this.debugMode.set(false);
+    this.breakpoints.set([]);
+    this.pendingNode.set(null);
+    this.debugStatus.set(null);
+    this.debugRunId = null;
+  }
+
+  private debugRunId: string | null = null;
+
+  /** A debug run is under way and can still be stepped (paused, not yet done). */
+  debugRunActive(): boolean {
+    const s = this.debugStatus();
+    return !!this.debugRunId && (s === 'paused' || s === 'running' || s === 'pending');
+  }
+
+  /** Launch a step-debug run: it is created paused; the first step/continue
+   *  advances it. Requires a saved graph (the run snapshots the workflow). */
+  startDebugRun(): void {
+    const wf = this.current();
+    if (!wf) return;
+    let payload: Record<string, unknown> = {};
+    try {
+      payload = this.runPayloadText.trim() ? JSON.parse(this.runPayloadText) : {};
+    } catch {
+      this.notify.add('error', 'Workflow', this.i18n.translate('gwf.runPayloadInvalid'));
+      return;
+    }
+    this.debugMode.set(true);
+    this.nodeStatus.set({});
+    this.api
+      .run(wf.id, payload, null, this.runEnvironment || null, { breakpoints: this.breakpoints() })
+      .subscribe({
+        next: (res) => {
+          this.debugRunId = res.run_id;
+          this.runId.set(res.run_id);
+          this.debugStatus.set('paused');
+          this.pendingNode.set(null);
+        },
+        error: () => this.notify.add('error', 'Workflow', this.i18n.translate('gwf.debug.startError')),
+      });
+  }
+
+  debugStep(): void {
+    this.sendDebug('step');
+  }
+
+  debugContinue(): void {
+    this.sendDebug('continue');
+  }
+
+  debugStop(): void {
+    const rid = this.debugRunId;
+    if (!rid) return;
+    this.api.debugRun(rid, 'stop').subscribe({
+      next: () => {
+        this.debugStatus.set('cancelled');
+        this.pendingNode.set(null);
+      },
+      error: () => {},
+    });
+  }
+
+  private sendDebug(command: 'step' | 'continue'): void {
+    const rid = this.debugRunId;
+    if (!rid) return;
+    // Keep the run's breakpoints in sync with the canvas before advancing.
+    this.api.debugRun(rid, command, { breakpoints: this.breakpoints() }).subscribe({
+      next: () => this.pollDebug(rid, 40),
+      error: () => this.notify.add('error', 'Workflow', this.i18n.translate('gwf.debug.stepError')),
+    });
+  }
+
+  /** Poll the paused/running debug run until it settles (paused again or done),
+   *  projecting node statuses + the pending node onto the canvas. */
+  private pollDebug(runId: string, attempts: number): void {
+    this.api.getRun(runId).subscribe({
+      next: (run) => {
+        const statuses: Record<string, string> = {};
+        for (const nr of run.node_runs ?? []) statuses[nr.node_id] = nr.status;
+        this.nodeStatus.update((s) => ({ ...s, ...statuses }));
+        this.debugStatus.set(run.status);
+        this.pendingNode.set(run.debug?.pending_node ?? null);
+        const settled = run.status !== 'running' && run.status !== 'pending';
+        if (!settled && attempts > 0) {
+          setTimeout(() => this.pollDebug(runId, attempts - 1), 300);
+        }
+      },
+      error: () => {},
+    });
   }
 
   reloadCurrent(): void {
@@ -1042,6 +1357,8 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
 
   /** Optional JSON payload for Run now — becomes $trigger in the run. */
   runPayloadText = '';
+  /** Fase 7.2 — environment the next run executes in ('' = default). */
+  runEnvironment = '';
 
   runNow(): void {
     this.launchRun(null);
@@ -1078,7 +1395,7 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
       // of the canvas still shows the data the run was seeded from.
       if (!startNodeId) this.nodeOutputs.set({});
       this.nodeErrors.set({});
-      this.api.run(wf.id, payload, startNodeId).subscribe({
+      this.api.run(wf.id, payload, startNodeId, this.runEnvironment || null).subscribe({
         next: ({ run_id }) => {
           this.runId.set(run_id);
           this.streamRun(run_id);
@@ -1088,7 +1405,7 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
       });
     };
     if (this.dirty()) {
-      this.api.update(wf.id, { graph: { nodes: this.nodes, edges: this.edges } }).subscribe({
+      this.api.update(wf.id, { graph: { nodes: this.nodes, edges: this.edges, notes: this.notes } }).subscribe({
         next: (updated) => {
           this.current.set(updated);
           this.dirty.set(false);

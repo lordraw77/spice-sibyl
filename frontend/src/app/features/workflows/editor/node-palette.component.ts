@@ -76,7 +76,7 @@ export class NodePaletteComponent {
   @Input() nodeTypes: NodeTypeInfo[] = [];
   @Output() add = new EventEmitter<NodeTypeInfo>();
 
-  readonly categories = ['trigger', 'action', 'mcp', 'logic', 'data', 'notify', 'ai'] as const;
+  readonly categories = ['trigger', 'action', 'connector', 'mcp', 'logic', 'data', 'notify', 'ai'] as const;
   readonly open = signal(true);
   readonly search = signal('');
 

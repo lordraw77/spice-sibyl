@@ -449,6 +449,15 @@ CREATE TABLE IF NOT EXISTS workflows (
     -- Phase 33 (roadmap fase 2.3): runs beyond this many simultaneously active
     -- go to status 'queued' and start when a slot frees. 0 = unlimited.
     max_concurrent_runs INTEGER NOT NULL DEFAULT 0,
+    -- Phase 39 (roadmap fase 7.2): named environments — {name: {vars, secrets,
+    -- version}}. `vars` overlay the workflow $vars, `secrets` remap $secrets
+    -- aliases to real secret names, `version` pins the graph version runs in
+    -- that environment execute ("promote to prod").
+    environments_json TEXT NOT NULL DEFAULT '{}',
+    -- Phase 41 (roadmap fase 9.1): when 1 (and the workflow is active with an
+    -- input contract) it is published as a callable tool — to llm.agent, other
+    -- workflows' tool.* nodes, the product chat and the MCP server.
+    expose_as_tool INTEGER NOT NULL DEFAULT 0,
     active         INTEGER NOT NULL DEFAULT 0,
     version        INTEGER NOT NULL DEFAULT 1,
     created_at     INTEGER NOT NULL,
@@ -456,6 +465,23 @@ CREATE TABLE IF NOT EXISTS workflows (
 );
 
 CREATE INDEX IF NOT EXISTS idx_workflows_profile ON workflows(profile_id, updated_at DESC);
+
+-- Phase 41 (roadmap fase 9.3): conversation state for `chat`-triggered
+-- workflows. One row per (workflow, session_id); `history_json` holds the
+-- rolling [{role, content}] turns fed to the workflow as $trigger.history.
+CREATE TABLE IF NOT EXISTS workflow_chat_sessions (
+    id            TEXT    PRIMARY KEY,
+    session_id    TEXT    NOT NULL,
+    workflow_id   TEXT    NOT NULL,
+    profile_id    TEXT    NOT NULL DEFAULT 'default',
+    history_json  TEXT    NOT NULL DEFAULT '[]',
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL,
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_chat_sessions_key ON workflow_chat_sessions(workflow_id, session_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_chat_sessions_updated ON workflow_chat_sessions(updated_at);
 
 -- Phase 32 (roadmap fase 1): profile-scoped workflow secrets, Fernet-encrypted
 -- at rest (VAULT_SECRET_KEY). Exposed to expressions as $secrets.<name>; the
@@ -489,10 +515,13 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
     id           TEXT    PRIMARY KEY,
     workflow_id  TEXT    NOT NULL,
     profile_id   TEXT    NOT NULL DEFAULT 'default',
-    status       TEXT    NOT NULL DEFAULT 'pending',  -- pending|running|completed|failed|cancelled
+    status       TEXT    NOT NULL DEFAULT 'pending',  -- queued|pending|running|waiting|paused|completed|failed|cancelled
     trigger_type TEXT    NOT NULL DEFAULT 'manual',    -- manual|schedule|webhook|event
     graph_json   TEXT    NOT NULL,                     -- snapshot of the graph executed
     context_json TEXT,                                 -- JSON: {node_id: output, $trigger: ...}
+    environment  TEXT,                                 -- Phase 39 (fase 7.2): environment the run executed in
+    origin_run_id TEXT,                                -- Phase 39 (fase 7.1): run this one was retried/replayed from
+    debug_json   TEXT,                                 -- Phase 40 (fase 8.3): step-debug state {breakpoints, pending_node, input}
     error        TEXT,
     created_at   INTEGER NOT NULL,
     updated_at   INTEGER NOT NULL,
@@ -550,7 +579,7 @@ CREATE TABLE IF NOT EXISTS workflow_approvals (
     profile_id  TEXT    NOT NULL DEFAULT 'default',
     title       TEXT    NOT NULL DEFAULT '',
     message     TEXT    NOT NULL DEFAULT '',
-    status      TEXT    NOT NULL DEFAULT 'pending',    -- pending|approved|rejected|expired|cancelled
+    status      TEXT    NOT NULL DEFAULT 'pending',    -- pending|approved|rejected|expired|cancelled|submitted|delivered
     timeout_at  INTEGER,                               -- unix ts after which the request expires
     comment     TEXT,                                  -- optional note left by the decider
     decided_by  TEXT,                                  -- user id that took the decision
@@ -561,6 +590,36 @@ CREATE TABLE IF NOT EXISTS workflow_approvals (
 
 CREATE INDEX IF NOT EXISTS idx_workflow_approvals_run ON workflow_approvals(run_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_workflow_approvals_pending ON workflow_approvals(profile_id, status, created_at DESC);
+
+-- Phase 43 (roadmap fase 11.1): saved regression test cases for a workflow —
+-- a fixture $trigger payload plus assertions on chosen nodes' outputs. Run on
+-- demand ("Run tests" in the editor toolbar); external nodes can be mocked
+-- with their pinned output (fase 3.2) for deterministic results.
+CREATE TABLE IF NOT EXISTS workflow_test_cases (
+    id               TEXT    PRIMARY KEY,
+    workflow_id      TEXT    NOT NULL,
+    name             TEXT    NOT NULL,
+    trigger_payload_json TEXT NOT NULL DEFAULT '{}',
+    assertions_json  TEXT    NOT NULL DEFAULT '[]',
+    created_at       INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL,
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_test_cases_wf ON workflow_test_cases(workflow_id, created_at);
+
+-- Phase 44 (roadmap fase 12.1): profile-wide ("workspace") LLM token and run
+-- budget for the calendar month, on top of the per-workflow caps carried by
+-- the workflows table itself. Usage is derived on the fly from workflow_runs /
+-- workflow_node_runs (fase 5.1 stats) rather than duplicated here; only the
+-- caps and the last period a soft-warning was already sent are persisted.
+CREATE TABLE IF NOT EXISTS profile_budgets (
+    profile_id           TEXT    PRIMARY KEY,
+    token_budget_month   INTEGER,
+    run_budget_month     INTEGER,
+    warned_period        TEXT,
+    updated_at           INTEGER NOT NULL
+);
 
 -- Phase 19: per-profile persistent memory. One row per remembered fact;
 -- auto-extracted after each exchange (MEMORY_EXTRACTION_MODEL) or added
@@ -634,6 +693,10 @@ CREATE TABLE IF NOT EXISTS workspace_workflows (
     workflow_id  TEXT    NOT NULL,
     shared_by    TEXT    NOT NULL,
     shared_at    INTEGER NOT NULL,
+    -- Phase 39 (roadmap fase 7.3): what members may do with the shared workflow —
+    -- viewer (inspect/import), editor (also launch runs), approver (also decide
+    -- its human.approval requests). The owner keeps implicit admin rights.
+    role         TEXT    NOT NULL DEFAULT 'viewer',
     PRIMARY KEY (workspace_id, workflow_id),
     FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
     FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
@@ -689,6 +752,118 @@ CREATE TABLE IF NOT EXISTS notification_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_notification_events_user ON notification_events(user_id, created_at);
+
+-- Phase 46 (roadmap fase 14.1): remote runner registrations. An outbound-only
+-- agent process registers once (issued a raw token, stored here only as its
+-- hash) and heartbeats periodically; `status` flips to 'offline' by the caller
+-- comparing `last_heartbeat_at` against GRAPH_WORKFLOW_RUNNER_HEARTBEAT_TIMEOUT
+-- rather than a background sweep, so it is always accurate on read.
+-- `allowed_node_types_json` empty = no restriction beyond the label match.
+CREATE TABLE IF NOT EXISTS workflow_runners (
+    id                       TEXT    PRIMARY KEY,
+    profile_id               TEXT    NOT NULL DEFAULT 'default',
+    name                     TEXT    NOT NULL,
+    token_hash               TEXT    NOT NULL,
+    labels_json              TEXT    NOT NULL DEFAULT '[]',
+    allowed_node_types_json  TEXT    NOT NULL DEFAULT '[]',
+    version                  TEXT,
+    last_heartbeat_at        INTEGER,
+    revoked                  INTEGER NOT NULL DEFAULT 0,
+    created_at               INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_runners_token ON workflow_runners(token_hash);
+CREATE INDEX IF NOT EXISTS idx_workflow_runners_profile ON workflow_runners(profile_id);
+
+-- Phase 46 (roadmap fase 14.1): one single-node execution job dispatched to a
+-- runner. `payload_json` is the fase 3.1 test_node() contract — {node_type,
+-- params (already expression-resolved, so any $secrets are inlined values,
+-- never the vault), input} — the runner posts back {ok, output, handles,
+-- logs} into `result_json`/`error`.
+CREATE TABLE IF NOT EXISTS workflow_runner_jobs (
+    id           TEXT    PRIMARY KEY,
+    runner_id    TEXT    NOT NULL,
+    run_id       TEXT,
+    node_id      TEXT    NOT NULL,
+    node_type    TEXT    NOT NULL,
+    payload_json TEXT    NOT NULL,
+    status       TEXT    NOT NULL DEFAULT 'queued',  -- queued|claimed|done|failed|timeout
+    result_json  TEXT,
+    error        TEXT,
+    created_at   INTEGER NOT NULL,
+    claimed_at   INTEGER,
+    finished_at  INTEGER,
+    FOREIGN KEY (runner_id) REFERENCES workflow_runners(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_runner_jobs_runner ON workflow_runner_jobs(runner_id, status, created_at);
+
+-- Phase 46 (roadmap fase 14.4): the `db` QueueDriver's backing store for
+-- `queue.publish` / `queue.consume` — a persisted, at-least-once message
+-- queue with no external broker. A real broker adapter (AMQP/Kafka/MQTT)
+-- implements the same QueueDriver interface without touching this table.
+CREATE TABLE IF NOT EXISTS workflow_queue_messages (
+    id           TEXT    PRIMARY KEY,
+    topic        TEXT    NOT NULL,
+    payload_json TEXT    NOT NULL,
+    headers_json TEXT    NOT NULL DEFAULT '{}',
+    status       TEXT    NOT NULL DEFAULT 'pending',  -- pending|consumed
+    created_at   INTEGER NOT NULL,
+    consumed_at  INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_queue_messages_topic ON workflow_queue_messages(topic, status, created_at);
+
+-- Phase 48 (roadmap fase 16.1): per-workflow persistent key/value state that
+-- survives across runs (counters, cursors, "last processed id"). Values are
+-- JSON; `expires_at` is an optional absolute-epoch TTL after which a key reads
+-- as absent (lazy expiry + a periodic purge). Deliberately separate from the
+-- workflow definition so it is never carried in an export.
+CREATE TABLE IF NOT EXISTS workflow_state (
+    workflow_id TEXT    NOT NULL,
+    key         TEXT    NOT NULL,
+    value_json  TEXT    NOT NULL,
+    expires_at  INTEGER,                                -- NULL = never expires
+    updated_at  INTEGER NOT NULL,
+    PRIMARY KEY (workflow_id, key),
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_state_expiry ON workflow_state(expires_at);
+
+-- Phase 48 (roadmap fase 16.2): trigger idempotency. A webhook/event trigger
+-- with a `dedupKey` expression records the resolved key here on first delivery;
+-- a repeat delivery of the same key within `dedupWindowSeconds` returns the
+-- original run_id instead of starting a second run. Keys expire (TTL) so the
+-- table stays bounded.
+CREATE TABLE IF NOT EXISTS workflow_trigger_dedup (
+    trigger_id  TEXT    NOT NULL,
+    dedup_key   TEXT    NOT NULL,
+    run_id      TEXT    NOT NULL,
+    expires_at  INTEGER NOT NULL,
+    created_at  INTEGER NOT NULL,
+    PRIMARY KEY (trigger_id, dedup_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_trigger_dedup_expiry ON workflow_trigger_dedup(expires_at);
+
+-- Phase 49 (roadmap fase 17.5): notification digest buffer. Each terminal run
+-- of a workflow whose notify settings enable digest mode drops one row here
+-- instead of an immediate message; the scheduler flushes due buffers per
+-- (workflow, channel) into a single aggregated notification on the configured
+-- interval. `error`/`waiting` events bypass this table and go out immediately.
+CREATE TABLE IF NOT EXISTS workflow_notification_digest (
+    id          TEXT    PRIMARY KEY,
+    workflow_id TEXT    NOT NULL,
+    profile_id  TEXT    NOT NULL DEFAULT 'default',
+    channel     TEXT    NOT NULL DEFAULT 'inapp',        -- inapp|telegram (delivery target)
+    outcome     TEXT    NOT NULL,                         -- completed|failed|cancelled
+    run_id      TEXT    NOT NULL,
+    created_at  INTEGER NOT NULL,
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_notif_digest_wf ON workflow_notification_digest(workflow_id, channel, created_at);
 """
 
 _MIGRATIONS = [
@@ -756,6 +931,84 @@ _MIGRATIONS = [
     "ALTER TABLE workflows ADD COLUMN variables_json TEXT NOT NULL DEFAULT '{}'",
     # Phase 33 (roadmap fase 2.3): per-workflow run concurrency limit (0 = unlimited)
     "ALTER TABLE workflows ADD COLUMN max_concurrent_runs INTEGER NOT NULL DEFAULT 0",
+    # Phase 38 (roadmap fase 6.4): optional JSON Schema contracts on the workflow —
+    # input validated when a subworkflow node calls it, output on return.
+    "ALTER TABLE workflows ADD COLUMN input_schema_json TEXT",
+    "ALTER TABLE workflows ADD COLUMN output_schema_json TEXT",
+    # Phase 39 (roadmap fase 7.2): named environments (vars/secrets bindings +
+    # pinned version) on the workflow; runs record which environment they used.
+    "ALTER TABLE workflows ADD COLUMN environments_json TEXT NOT NULL DEFAULT '{}'",
+    "ALTER TABLE workflow_runs ADD COLUMN environment TEXT",
+    # Phase 39 (roadmap fase 7.1): retry/replay lineage — the run this one derives from.
+    "ALTER TABLE workflow_runs ADD COLUMN origin_run_id TEXT",
+    # Phase 39 (roadmap fase 7.3): per-share role on workflows shared into a workspace.
+    "ALTER TABLE workspace_workflows ADD COLUMN role TEXT NOT NULL DEFAULT 'viewer'",
+    # Phase 40 (roadmap fase 8.3): step-debug state on a run — {breakpoints:[...],
+    # pending_node, input}. A run with debug state advances via POST /runs/{id}/debug.
+    "ALTER TABLE workflow_runs ADD COLUMN debug_json TEXT",
+    # Phase 41 (roadmap fase 9.1): tool-exposure flag on a workflow.
+    "ALTER TABLE workflows ADD COLUMN expose_as_tool INTEGER NOT NULL DEFAULT 0",
+    # Phase 42 (roadmap fase 10): human.input / wait.event generalise the Phase 35
+    # approval row into a "waiting request" (kind: approval|input|event). schema_json
+    # is the JSON Schema of a human.input form; data_json is the submitted form data
+    # or the delivered wait.event payload; correlation_id is the wait.event key POST
+    # /graph-workflows/events/{correlation_id} looks up.
+    "ALTER TABLE workflow_approvals ADD COLUMN kind TEXT NOT NULL DEFAULT 'approval'",
+    "ALTER TABLE workflow_approvals ADD COLUMN schema_json TEXT",
+    "ALTER TABLE workflow_approvals ADD COLUMN data_json TEXT",
+    "ALTER TABLE workflow_approvals ADD COLUMN correlation_id TEXT",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_approvals_correlation ON workflow_approvals(correlation_id)",
+    # Phase 44 (roadmap fase 12.1): per-workflow LLM token / run caps for the
+    # calendar month (NULL = unlimited) and the last period a soft-warning was
+    # already sent (avoids re-notifying on every run once past the threshold).
+    "ALTER TABLE workflows ADD COLUMN token_budget_month INTEGER",
+    "ALTER TABLE workflows ADD COLUMN run_budget_month INTEGER",
+    "ALTER TABLE workflows ADD COLUMN budget_warned_period TEXT",
+    # Phase 44 (roadmap fase 12.2): per-workflow run/node-run retention override
+    # in days (NULL = use the global GRAPH_WORKFLOW_RUNS_RETENTION_DAYS default).
+    "ALTER TABLE workflows ADD COLUMN runs_retention_days INTEGER",
+    # Phase 45 (roadmap fase 13.3): Git sync of definitions — every saved version
+    # is committed as JSON to a configured repo ("workflow-as-code"); NULL
+    # git_repo_url = sync disabled. git_token_secret names a $secrets entry
+    # (never stored here); git_subpath is the path of the file inside the repo.
+    "ALTER TABLE workflows ADD COLUMN git_repo_url TEXT",
+    "ALTER TABLE workflows ADD COLUMN git_branch TEXT NOT NULL DEFAULT 'main'",
+    "ALTER TABLE workflows ADD COLUMN git_token_secret TEXT",
+    "ALTER TABLE workflows ADD COLUMN git_subpath TEXT",
+    "ALTER TABLE workflows ADD COLUMN git_last_synced_at INTEGER",
+    # Phase 46 (roadmap fase 14.3): per-run lease — the process instance id
+    # currently executing this run and when that lease expires. Renewed on
+    # every checkpoint while a run is active; a run whose lease has expired
+    # (crash) is taken over by whichever instance next runs the startup resume
+    # sweep, reusing the fase 2.4 checkpoint/resume mechanism. NULL/expired =
+    # free to (re)claim — a no-op distinction in a single-process deployment.
+    "ALTER TABLE workflow_runs ADD COLUMN lease_owner TEXT",
+    "ALTER TABLE workflow_runs ADD COLUMN lease_expires_at INTEGER",
+    # Phase 48 (roadmap fase 16.4): run priority. The per-workflow queue (fase
+    # 2.3) and the scale-out dispatcher serve higher priority first, FIFO within
+    # the same priority. 0 = normal; set from the trigger config or the launch API.
+    "ALTER TABLE workflow_runs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
+    # Phase 49 (roadmap fase 17) — scheduling, SLA and scale UX.
+    # 17.1 — workflow-level blackout windows / holiday calendar: {windows: [{start,
+    # end, days, tz}], skip_dates: ["YYYY-MM-DD"], on_conflict: skip|defer}. A
+    # schedule due inside a window is skipped or deferred rather than run.
+    "ALTER TABLE workflows ADD COLUMN blackout_json TEXT NOT NULL DEFAULT '{}'",
+    # 17.2 — SLA monitor config: {max_duration_s, missed_grace_s, channels:[inapp,
+    # telegram]}. A run exceeding max_duration_s, or a schedule overdue past
+    # missed_grace_s, raises a one-time alert on the configured channels.
+    "ALTER TABLE workflows ADD COLUMN sla_json TEXT NOT NULL DEFAULT '{}'",
+    # 17.5 — per-workflow notification settings: {digest: {enabled, interval_s,
+    # channel}}. When digest is on, terminal-run notifications are buffered and
+    # sent as one periodic summary instead of one message per run.
+    "ALTER TABLE workflows ADD COLUMN notify_json TEXT NOT NULL DEFAULT '{}'",
+    # 17.3 — folders/tags/archive for the workflow navigator.
+    "ALTER TABLE workflows ADD COLUMN folder TEXT",
+    "ALTER TABLE workflows ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE workflows ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
+    # 17.2 — dedup: a run raises its duration-SLA alert at most once.
+    "ALTER TABLE workflow_runs ADD COLUMN sla_alerted INTEGER NOT NULL DEFAULT 0",
+    # 17.2 — dedup: a schedule's missed-beat alert fires at most once per miss.
+    "ALTER TABLE workflow_triggers ADD COLUMN last_sla_alert_at INTEGER",
 ]
 
 

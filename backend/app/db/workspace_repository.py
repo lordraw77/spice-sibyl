@@ -293,13 +293,23 @@ async def list_shared_documents(
 # --- Shared graph workflows (Phase 36 — roadmap fase 5.2) -------------------
 
 
+SHARE_ROLES = ("viewer", "editor", "approver")
+
+
 async def share_workflow(
-    db: aiosqlite.Connection, workspace_id: str, workflow_id: str, shared_by: str
+    db: aiosqlite.Connection, workspace_id: str, workflow_id: str, shared_by: str,
+    role: str = "viewer",
 ) -> None:
+    """Share (or re-share) a workflow into a workspace. ``role`` (fase 7.3) is
+    what members may do with it: viewer | editor | approver — re-sharing an
+    existing row updates the role in place."""
+    if role not in SHARE_ROLES:
+        role = "viewer"
     await db.execute(
-        "INSERT OR IGNORE INTO workspace_workflows "
-        "(workspace_id, workflow_id, shared_by, shared_at) VALUES (?, ?, ?, ?)",
-        (workspace_id, workflow_id, shared_by, int(time.time())),
+        "INSERT INTO workspace_workflows "
+        "(workspace_id, workflow_id, shared_by, shared_at, role) VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(workspace_id, workflow_id) DO UPDATE SET role = excluded.role",
+        (workspace_id, workflow_id, shared_by, int(time.time()), role),
     )
     await db.commit()
 
@@ -320,7 +330,7 @@ async def list_shared_workflows(db: aiosqlite.Connection, workspace_id: str) -> 
     (`SharedWorkflowOut`) lives with the graph-workflow schemas."""
     async with db.execute(
         """
-        SELECT ww.workflow_id, ww.shared_by, ww.shared_at,
+        SELECT ww.workflow_id, ww.shared_by, ww.shared_at, ww.role,
                w.name, w.description, w.version, w.updated_at, w.graph_json
         FROM workspace_workflows ww
         JOIN workflows w ON w.id = ww.workflow_id
@@ -341,8 +351,31 @@ async def list_shared_workflows(db: aiosqlite.Connection, workspace_id: str) -> 
             "description": r["description"], "version": r["version"],
             "node_count": node_count, "shared_by": r["shared_by"],
             "shared_at": r["shared_at"], "updated_at": r["updated_at"],
+            "role": r["role"] or "viewer",
         })
     return out
+
+
+async def get_workflow_share_role(
+    db: aiosqlite.Connection, workflow_id: str, user_id: str
+) -> str | None:
+    """The strongest share role the user holds on a workflow across every
+    workspace they are a member of (fase 7.3): approver > editor > viewer,
+    None when the workflow isn't shared with them at all."""
+    async with db.execute(
+        """
+        SELECT ww.role FROM workspace_workflows ww
+        JOIN workspace_members wm ON wm.workspace_id = ww.workspace_id
+        WHERE ww.workflow_id = ? AND wm.user_id = ?
+        """,
+        (workflow_id, user_id),
+    ) as cursor:
+        rows = await cursor.fetchall()
+    roles = {r["role"] or "viewer" for r in rows}
+    for role in ("approver", "editor", "viewer"):
+        if role in roles:
+            return role
+    return None
 
 
 async def is_workflow_shared(

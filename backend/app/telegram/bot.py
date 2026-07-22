@@ -2039,6 +2039,56 @@ async def _cb_reminder_delete(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.message.reply_text(t(loc, "remind_deleted"))
 
 
+# ── Workflow approvals (Phase 39 — roadmap fase 7.5) ─────────────────────────
+
+async def _cb_workflow_approval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Inline Approve/Reject on a human.approval notification. The decision is
+    equivalent to POST /approvals/{id}/decision: the chat must be linked to the
+    profile that owns the request, first writer wins on races, and the suspended
+    run resumes down the matching branch within the engine's poll interval."""
+    from app.db import graph_workflow_repository as gw_repo
+    from app.db import telegram_link_repository as tl_repo
+
+    query = update.callback_query
+    data = str(query.data or "")
+    try:
+        _prefix, verdict, approval_id = data.split(":", 2)
+    except ValueError:
+        await query.answer()
+        return
+    chat_id = query.message.chat_id
+
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+        link = await tl_repo.get_by_telegram_id(db, chat_id)
+        approval = await gw_repo.get_approval(db, approval_id)
+        if approval is None or link is None or link["profile_id"] != approval.profile_id:
+            await query.answer("Richiesta non trovata / not authorized", show_alert=True)
+            return
+        if approval.status != "pending":
+            await query.answer(f"Già decisa: {approval.status}", show_alert=True)
+            await query.edit_message_reply_markup(reply_markup=None)
+            return
+        status = "approved" if verdict == "a" else "rejected"
+        decided = await gw_repo.decide_approval(
+            db, approval_id, status=status,
+            decided_by=f"telegram:{update.effective_user.id if update.effective_user else chat_id}",
+            comment="via Telegram",
+        )
+        if not decided:  # raced the timeout poll or the web UI — first writer wins
+            await query.answer("Già decisa nel frattempo", show_alert=True)
+            await query.edit_message_reply_markup(reply_markup=None)
+            return
+
+    await query.answer("✅ Approvato" if status == "approved" else "❌ Rifiutato")
+    try:
+        await query.edit_message_text(
+            f"{query.message.text}\n\n{'✅ Approvato' if status == 'approved' else '❌ Rifiutato'} via Telegram"
+        )
+    except Exception:  # noqa: BLE001 — message edits are cosmetic, the decision is stored
+        await query.edit_message_reply_markup(reply_markup=None)
+
+
 # ── Language (/lang) ──────────────────────────────────────────────────────────
 
 async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2235,6 +2285,7 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(_cb_reminder_snooze, pattern=r"^remind_snooze:"))
     app.add_handler(CallbackQueryHandler(_cb_reminder_repeat, pattern=r"^remind_repeat:"))
     app.add_handler(CallbackQueryHandler(_cb_reminder_delete, pattern=r"^remind_delete:"))
+    app.add_handler(CallbackQueryHandler(_cb_workflow_approval, pattern=r"^wfap:[ar]:"))
     # Inline query handler
     app.add_handler(InlineQueryHandler(handle_inline_query))
     # Message handlers

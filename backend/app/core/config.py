@@ -12,7 +12,7 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Fallback release version when APP_VERSION isn't stamped into the build.
-_DEFAULT_VERSION = '3.0.0'
+_DEFAULT_VERSION = '3.6.0'
 
 
 class Settings(BaseSettings):
@@ -138,6 +138,116 @@ class Settings(BaseSettings):
     # A human.approval node waits at most this many seconds even when the node
     # asks for a longer timeout (default cap: 7 days).
     graph_workflow_approval_max_timeout: int = 604800
+
+    # --- Phase 38: engine extension (roadmap fase 6) ---
+    # Hard cap on `while` node iterations; the node's own maxIterations
+    # (default 100) can never exceed this (GRAPH_WORKFLOW_WHILE_MAX_ITERATIONS).
+    graph_workflow_while_max_iterations: int = 1000
+    # Global per-host rate limits for http.request / notify.webhook nodes:
+    # "host=rpm" pairs separated by commas (e.g. "api.github.com=30,slack.com=50")
+    # or a JSON object {"host": rpm}. Requests over the threshold wait, they
+    # don't fail; the wait shows up as `rate_limited_s` in the node output.
+    graph_workflow_rate_limits: str = ""
+    # Poll interval (seconds) for file.watch / email.inbound triggers. Each
+    # trigger may set a slower per-trigger `interval` in its config; this value
+    # is the floor.
+    graph_workflow_watch_poll_seconds: int = 60
+
+    # --- Phase 40: advanced editor (roadmap fase 8) ---
+    # Step-debug session timeout (seconds): a run left ``paused`` in the debugger
+    # longer than this is auto-cancelled by the scheduler sweep, so a forgotten
+    # debug session doesn't stay suspended forever (GRAPH_WORKFLOW_DEBUG_MAX_PAUSE).
+    graph_workflow_debug_max_pause: int = 3600
+
+    # --- Phase 41: workflows as ecosystem tools (roadmap fase 9) ---
+    # An active workflow with an input contract and `expose_as_tool` becomes an
+    # invocable tool (for llm.agent, other workflows' tool.* nodes, the product
+    # chat and the MCP server). This caps the depth of a tool→workflow→tool chain
+    # so a workflow that calls itself (directly or transitively) cannot recurse
+    # forever (GRAPH_WORKFLOW_TOOL_MAX_DEPTH).
+    graph_workflow_tool_max_depth: int = 3
+    # `chat` trigger (fase 9.3): a conversation session is retained this many
+    # seconds after its last message; idle sessions are purged by the scheduler
+    # sweep. 0 disables expiry (GRAPH_WORKFLOW_CHAT_SESSION_TTL).
+    graph_workflow_chat_session_ttl: int = 86400
+    # Most conversation turns kept in a chat session's history (older turns are
+    # trimmed before the workflow sees `$trigger.history`).
+    graph_workflow_chat_history_max_turns: int = 20
+    # OpenAPI import (fase 9.4): the most operations turned into http.request
+    # nodes from a single spec, so a huge API can't blow up the palette/graph.
+    graph_workflow_openapi_max_operations: int = 100
+
+    # --- Phase 44: data and budget governance (roadmap fase 12) ---
+    # Fraction of a token/run budget (workflow or profile-wide) that triggers a
+    # one-time in-app soft warning for the current period (GRAPH_WORKFLOW_BUDGET_WARN_PCT).
+    graph_workflow_budget_warn_pct: float = 0.8
+    # Global default run/node-run retention in days (0 = keep forever). A
+    # workflow's own `runs_retention_days` overrides this; the scheduler sweep
+    # purges terminal (completed/failed/cancelled) runs past the cutoff.
+    graph_workflow_runs_retention_days: int = 0
+
+    # --- Phase 45: copilot and workflow-as-code (roadmap fase 13) ---
+    # Local working copy root for the fase 13.3 Git sync of workflow
+    # definitions — one clone per workflow at <dir>/<workflow_id>. Created on
+    # first push/pull; the token in git_token_secret is injected into the
+    # remote URL only for the duration of each git subprocess call.
+    graph_workflow_git_workdir: str = "data/git_sync"
+    graph_workflow_git_timeout_seconds: int = 30
+
+    # --- Phase 46: remote execution and scalability (roadmap fase 14) ---
+    # 14.1 — remote runners. A runner is considered offline once its last
+    # heartbeat is older than this many seconds; the Runners page and the
+    # dispatcher both use it. Job dispatch to a runner waits up to
+    # `graph_workflow_runner_job_timeout` seconds for a result before applying
+    # the node's `runOnFallback` (fail | local).
+    graph_workflow_runner_heartbeat_timeout: int = 90
+    graph_workflow_runner_job_timeout: int = 120
+    graph_workflow_runner_poll_interval: float = 1.0
+    # 14.2 — the `code` node always runs through the Phase 18 sandboxed
+    # subprocess (CPU/memory/time-limited, no network); these mirror the
+    # existing code-interpreter limits so a remote runner enforces the same
+    # bounds. See CODE_INTERPRETER_* for the actual values used.
+    # 14.3 — engine scale-out. A run is "leased" to the process instance that
+    # is executing it (owner id + expiry on the run row); a heartbeat renews it
+    # while the run is active and a stale lease (past its expiry, e.g. after a
+    # crash) is taken over on the next startup/resume sweep. Generic — a no-op
+    # in a single-process deployment; true multi-replica coordination needs a
+    # shared DB with row-level locking (Postgres), not yet required by SQLite.
+    graph_workflow_lease_ttl_seconds: int = 45
+    # 14.4 — message queue triggers. `memory` = per-process asyncio queue (lost
+    # on restart, zero setup — good for tests/dev); `db` = persisted in the
+    # `workflow_queue_messages` table (survives restarts, still no external
+    # broker). A real broker (RabbitMQ/Kafka/MQTT) plugs in as another
+    # `QueueDriver` implementation — see workflow_graph_service.QueueDriver.
+    graph_workflow_queue_driver: str = "db"
+    graph_workflow_queue_poll_seconds: int = 5
+
+    # --- Phase 47 (roadmap fase 15) — connectors and multimodal nodes ---
+    # `ssh.exec` node: comma-separated host allow-list (empty = allow any host);
+    # a per-command wall-clock timeout guards against hung sessions.
+    graph_workflow_ssh_allowed_hosts: str = ""
+    graph_workflow_ssh_timeout_seconds: int = 30
+    # `browser` node (Playwright): per-action wall-clock timeout. Requires the
+    # `playwright` package + a browser in the backend image; the node raises a
+    # clear error when it is absent instead of silently degrading.
+    graph_workflow_browser_timeout_seconds: int = 30
+    # `rss.read` trigger: max new entries fired per poll (newest first), so a
+    # feed that publishes a burst never storms the engine.
+    graph_workflow_rss_max_entries: int = 20
+
+    # --- Phase 48 (roadmap fase 16) — state and execution semantics ---
+    # `state.set`/`state.increment` nodes: default TTL (seconds) applied to a key
+    # when the node leaves `ttlSeconds` unset. 0 = keys never expire by default.
+    graph_workflow_state_default_ttl_seconds: int = 0
+    # Trigger idempotency (webhook/event): default dedup window (seconds) used
+    # when a trigger sets a `dedupKey` but no `dedupWindowSeconds`. Deliveries of
+    # the same key inside this window return the original run instead of a new one.
+    graph_workflow_dedup_default_window_seconds: int = 3600
+
+    # --- Phase 50 (roadmap fase 18) — LLM quality ---
+    # `llm.judge`: score scale used when the node leaves `scaleMax` unset (1..N,
+    # higher is better). The pass/fail threshold defaults to 60% of this scale.
+    graph_workflow_judge_default_scale_max: int = 5
 
     # --- SMTP (notify.email workflow node) — leave host empty to disable ---
     smtp_host: str | None = None

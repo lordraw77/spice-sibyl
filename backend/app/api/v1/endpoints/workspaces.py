@@ -24,6 +24,7 @@ Routes (under /v1/workspaces):
   POST   /{ws}/workflows                — share one of my graph workflows (editor+)
   DELETE /{ws}/workflows/{wid}          — unshare (editor+)
   POST   /{ws}/workflows/{wid}/import   — copy a shared workflow into my profile (member)
+  POST   /{ws}/workflows/{wid}/run      — launch a shared workflow (share role editor+, fase 7.3)
 
 Access model: every route requires membership; mutations require a minimum role
 (see role_at_least). Sharing a resource additionally requires the caller to own
@@ -340,9 +341,10 @@ async def share_workflow(
 ):
     await _require_membership(db, workspace_id, user, minimum="editor")
     await _assert_owns_workflow(db, body.workflow_id, user)
-    await repo.share_workflow(db, workspace_id, body.workflow_id, user.id)
+    await repo.share_workflow(db, workspace_id, body.workflow_id, user.id, role=body.role)
     await audit_repository.record(
-        db, user.id, "workspace.workflow.share", resource=body.workflow_id, ip=_client_ip(request)
+        db, user.id, "workspace.workflow.share", resource=body.workflow_id,
+        detail=body.role, ip=_client_ip(request)
     )
     return await repo.list_shared_workflows(db, workspace_id)
 
@@ -382,8 +384,47 @@ async def import_shared_workflow(
     wf = await graph_workflow_repository.create_workflow(
         db, profile_id, f"{src.name} (shared)", src.description, src.graph,
         variables=src.variables, max_concurrent_runs=src.max_concurrent_runs,
+        environments=src.environments,
     )
     await audit_repository.record(
         db, user.id, "workspace.workflow.import", resource=workflow_id, ip=_client_ip(request)
     )
     return WorkflowImportOut(workflow=wf, warnings=warnings)
+
+
+@router.post("/{workspace_id}/workflows/{workflow_id}/run")
+async def run_shared_workflow(
+    workspace_id: str,
+    workflow_id: str,
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    user: UserOut = Depends(get_current_user),
+):
+    """Phase 39 (roadmap fase 7.3) — launch a run of a workflow shared into the
+    workspace. Requires the share to carry the ``editor`` or ``approver`` role;
+    the run executes under the OWNER's profile (their $secrets/$vars), exactly
+    like a manual run of theirs, and shows up in their run registry."""
+    from app.services import workflow_graph_service as engine
+
+    await _require_membership(db, workspace_id, user)
+    if not await repo.is_workflow_shared(db, workspace_id, workflow_id):
+        raise HTTPException(status_code=404, detail="Workflow not shared into this workspace")
+    role = await repo.get_workflow_share_role(db, workflow_id, user.id)
+    if role not in ("editor", "approver"):
+        raise HTTPException(status_code=403, detail="The share role does not allow launching runs")
+    wf = await graph_workflow_repository.get_workflow(db, workflow_id)
+    if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001 — an empty body is a valid "no payload"
+        body = {}
+    payload = body.get("payload") if isinstance(body, dict) else {}
+    run_id = await engine.run_workflow(
+        db, wf.id, wf.profile_id, trigger_type="manual",
+        trigger_payload=payload if isinstance(payload, dict) else {}, graph=wf.graph,
+    )
+    await audit_repository.record(
+        db, user.id, "workspace.workflow.run", resource=workflow_id, ip=_client_ip(request)
+    )
+    return {"run_id": run_id}

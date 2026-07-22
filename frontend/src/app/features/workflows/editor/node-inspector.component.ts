@@ -11,6 +11,7 @@ import {
   GraphWorkflowService,
   NodeTypeInfo,
 } from '../../../core/services/graph-workflow.service';
+import { applySuggestion, ExpressionContext, getSuggestions, Suggestion } from './expression-autocomplete';
 
 /** Roadmap fase 1 (1.1) — the per-node inspector: name, typed params (driven by
  *  the palette's params_schema), the expression tester and the advanced
@@ -101,13 +102,22 @@ import {
           class="mono-field"
           [class.field-invalid]="p.kind === 'json' && fieldErrors[p.name]"
           [value]="paramValue(p.name, p.kind === 'json')"
-          (input)="setParam(p.name, $any($event.target).value, p.kind)"
-          (blur)="p.kind === 'json' ? onJsonBlur(p.name, $any($event.target).value) : null"
+          (input)="setParam(p.name, $any($event.target).value, p.kind); p.kind === 'expression' && onExprFieldInput('param:' + p.name, $event)"
+          (blur)="p.kind === 'json' ? onJsonBlur(p.name, $any($event.target).value) : closeSuggestions()"
+          (keydown)="p.kind === 'expression' ? onExprFieldKeydown($event, 'param:' + p.name) : null"
           [placeholder]="p.hint || ''"
         ></textarea>
         <div class="field-error" *ngIf="p.kind === 'json' && fieldErrors[p.name]">
           ⚠ {{ fieldErrors[p.name] }}
         </div>
+        <ul
+          class="expr-suggestions"
+          *ngIf="p.kind === 'expression' && activeExprField === 'param:' + p.name && suggestions.length"
+        >
+          <li *ngFor="let s of suggestions" (mousedown)="$event.preventDefault(); pickSuggestion('param:' + p.name, s)">
+            <strong>{{ s.label }}</strong><span *ngIf="s.detail"> · {{ s.detail }}</span>
+          </li>
+        </ul>
         <input
           *ngIf="p.kind === 'text' || p.kind === 'number'"
           [type]="p.kind === 'number' ? 'number' : 'text'"
@@ -192,7 +202,19 @@ import {
 
       <details class="advanced" *ngIf="node.type !== 'comment'">
         <summary>{{ 'gwf.exprTest' | t }}</summary>
-        <textarea [attr.rows]="big ? 5 : 2" [(ngModel)]="exprTestText" [placeholder]="'gwf.exprTestHint' | t"></textarea>
+        <textarea
+          [attr.rows]="big ? 5 : 2"
+          [(ngModel)]="exprTestText"
+          (input)="onExprFieldInput('exprTest', $event)"
+          (keydown)="onExprFieldKeydown($event, 'exprTest')"
+          (blur)="closeSuggestions()"
+          [placeholder]="'gwf.exprTestHint' | t"
+        ></textarea>
+        <ul class="expr-suggestions" *ngIf="activeExprField === 'exprTest' && suggestions.length">
+          <li *ngFor="let s of suggestions" (mousedown)="$event.preventDefault(); pickSuggestion('exprTest', s)">
+            <strong>{{ s.label }}</strong><span *ngIf="s.detail"> · {{ s.detail }}</span>
+          </li>
+        </ul>
         <button class="btn small" [disabled]="exprTesting()" (click)="testExpression()">
           {{ 'gwf.exprTestRun' | t }}
         </button>
@@ -253,6 +275,15 @@ import {
             <option value="branch">{{ 'gwf.onErrorBranch' | t }}</option>
           </select>
         </label>
+        <label class="field">
+          <span>{{ 'gwf.redact' | t }}</span>
+          <input
+            type="text"
+            [ngModel]="redactText"
+            (ngModelChange)="setRedact($event)"
+            [placeholder]="'gwf.redactHint' | t"
+          />
+        </label>
       </details>
     </ng-template>
   `,
@@ -271,6 +302,14 @@ export class NodeInspectorComponent {
   @Input() lastOutput: unknown = undefined;
   @Input() lastStatus: string | null = null;
   @Input() lastError: string | null = null;
+  /** Fase 13.1 — upstream nodes/vars/loop-membership for expression autocomplete;
+   *  computed by the page from the current graph (edges are its authority). */
+  @Input() exprContext: ExpressionContext = {
+    upstreamNodes: [],
+    variableNames: [],
+    secretNames: [],
+    inLoop: false,
+  };
 
   /** The node was mutated in place — the page marks the workflow dirty. */
   @Output() changed = new EventEmitter<void>();
@@ -352,6 +391,21 @@ export class NodeInspectorComponent {
   setOnError(value: string): void {
     this.node.onError = (value || 'stop') as GraphNode['onError'];
     this.onErrorChanged.emit();
+  }
+
+  /** Fase 12.2 — comma-separated dotted JSON paths masked in this node's
+   *  persisted/streamed/exported output (the live run context stays cleartext
+   *  for downstream expressions). */
+  get redactText(): string {
+    return (this.node.redact || []).join(', ');
+  }
+
+  setRedact(value: string): void {
+    this.node.redact = value
+      .split(',')
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    this.changed.emit();
   }
 
   /** Workflows selectable as a subworkflow target (everything but the open one). */
@@ -487,5 +541,50 @@ export class NodeInspectorComponent {
         this.exprTestResult.set({ ok: false, text: this.i18n.translate('gwf.exprTestFailed') });
       },
     });
+  }
+
+  // ── expression autocomplete (fase 13.1) ───────────────────────────────────
+
+  activeExprField: string | null = null;
+  suggestions: Suggestion[] = [];
+  private tokenStart = 0;
+  private cursorAtSuggest = 0;
+
+  onExprFieldInput(field: string, event: Event): void {
+    const el = event.target as HTMLTextAreaElement;
+    const cursor = el.selectionStart ?? el.value.length;
+    const result = getSuggestions(el.value, cursor, this.exprContext);
+    if (!result) {
+      this.closeSuggestions();
+      return;
+    }
+    this.activeExprField = field;
+    this.suggestions = result.items.slice(0, 12);
+    this.tokenStart = result.tokenStart;
+    this.cursorAtSuggest = cursor;
+  }
+
+  onExprFieldKeydown(event: KeyboardEvent, field: string): void {
+    if (event.key === 'Escape' && this.activeExprField === field) this.closeSuggestions();
+  }
+
+  /** Apply a picked suggestion to the field's current value and re-emit
+   *  changes exactly like the field's own (input) handler would. */
+  pickSuggestion(field: string, s: Suggestion): void {
+    if (field === 'exprTest') {
+      const { text } = applySuggestion(this.exprTestText, this.cursorAtSuggest, this.tokenStart, s.insert);
+      this.exprTestText = text;
+    } else {
+      const name = field.slice('param:'.length);
+      const current = this.paramValue(name);
+      const { text } = applySuggestion(current, this.cursorAtSuggest, this.tokenStart, s.insert);
+      this.setParam(name, text, 'expression');
+    }
+    this.closeSuggestions();
+  }
+
+  closeSuggestions(): void {
+    this.activeExprField = null;
+    this.suggestions = [];
   }
 }

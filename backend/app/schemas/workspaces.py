@@ -51,9 +51,13 @@ class ShareDocumentRequest(BaseModel):
 
 
 class ShareWorkflowRequest(BaseModel):
-    """Phase 36 (roadmap fase 5.2) — share one of my graph workflows into a workspace."""
+    """Phase 36 (roadmap fase 5.2) — share one of my graph workflows into a
+    workspace. ``role`` (Phase 39 — fase 7.3) is what members may do with it:
+    viewer (inspect/import), editor (also launch runs), approver (also decide
+    its human.approval requests). Re-sharing updates the role in place."""
 
     workflow_id: str
+    role: str = Field(default="viewer", pattern="^(viewer|editor|approver)$")
 
 
 class SharedConversationOut(BaseModel):

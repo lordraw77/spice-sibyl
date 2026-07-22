@@ -17,8 +17,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Docker CLI (client only) so MCP servers configured as `docker run …` can be
 # launched as sibling containers via the host daemon socket (mounted at runtime
 # in docker-compose.yml). Static binary keeps the image small; no daemon.
+# `git` is the roadmap fase 13.3 Git-sync-of-definitions engine's only runtime
+# dependency (plain subprocess calls — no Python git library).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates xz-utils \
+    && apt-get install -y --no-install-recommends curl ca-certificates xz-utils git \
     && curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.3.1.tgz \
        | tar -xz -C /usr/local/bin --strip-components=1 docker/docker
 

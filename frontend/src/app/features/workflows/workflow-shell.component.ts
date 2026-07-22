@@ -86,6 +86,9 @@ import { GraphWorkflow, GraphWorkflowService } from '../../core/services/graph-w
           <a [routerLink]="['/graph-workflows', id, 'schedules']" routerLinkActive="active">
             {{ 'gwf.tab.schedules' | t }}
           </a>
+          <a [routerLink]="['/graph-workflows', id, 'health']" routerLinkActive="active">
+            {{ 'gwf.tab.health' | t }}
+          </a>
         </nav>
       </div>
       <div class="wf-shell-body">

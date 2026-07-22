@@ -9,7 +9,14 @@ import { NotificationService } from '../../core/services/notification.service';
 import { GraphWorkflow, GraphWorkflowService, WorkflowSchedule } from '../../core/services/graph-workflow.service';
 
 type SchedulePattern = 'daily' | 'weekly' | 'cron' | 'once';
-type TriggerKind = 'schedule' | 'webhook' | 'event' | 'error';
+type TriggerKind =
+  | 'schedule'
+  | 'webhook'
+  | 'event'
+  | 'error'
+  | 'success'
+  | 'file.watch'
+  | 'email.inbound';
 
 const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
 
@@ -63,6 +70,19 @@ export class WorkflowSchedulesPageComponent implements OnInit {
   formEventName = 'document.ingested';
   /** Fase 2.5 — the workflow watched by an `error` trigger ('' = any). */
   formErrorWorkflowId = '';
+  /** Fase 6.1 — the workflow watched by a `success` trigger ('' = any). */
+  formSuccessWorkflowId = '';
+  /** Fase 6.1 — extra cron expressions (one per line) for mixed timetables. */
+  formExtraCrons = '';
+  /** Fase 6.2 — file.watch config. */
+  formWatchPath = '';
+  formWatchPattern = '**/*';
+  /** Fase 6.2 — email.inbound config (password read from $secrets by name). */
+  formImapHost = '';
+  formImapUsername = '';
+  formImapPasswordSecret = '';
+  formImapFrom = '';
+  formImapSubject = '';
 
   ngOnInit(): void {
     const shellId = this.route.parent?.snapshot.paramMap.get('id');
@@ -193,13 +213,33 @@ export class WorkflowSchedulesPageComponent implements OnInit {
         config['date'] = this.formDate;
       }
       if (this.formPattern === 'cron') {
-        config['cron'] = this.formCron.trim();
+        // Fase 6.1 — the primary expression plus optional extra lines become a
+        // `crons` list (mixed timetables on a single trigger).
+        const crons = [this.formCron, ...this.formExtraCrons.split('\n')]
+          .map((c) => c.trim())
+          .filter(Boolean);
+        if (crons.length > 1) config['crons'] = crons;
+        else config['cron'] = crons[0] ?? '';
       }
     } else if (this.formKind === 'event') {
       config = { event: this.formEventName.trim() };
     } else if (this.formKind === 'error') {
       // Fase 2.5 — empty = react to any failed workflow.
       config = this.formErrorWorkflowId ? { workflow_id: this.formErrorWorkflowId } : {};
+    } else if (this.formKind === 'success') {
+      // Fase 6.1 — empty = react to any completed workflow.
+      config = this.formSuccessWorkflowId ? { workflow_id: this.formSuccessWorkflowId } : {};
+    } else if (this.formKind === 'file.watch') {
+      // Fase 6.2 — subfolder of the workspace storage + glob pattern.
+      config = { path: this.formWatchPath.trim(), pattern: this.formWatchPattern.trim() || '**/*' };
+    } else if (this.formKind === 'email.inbound') {
+      config = {
+        host: this.formImapHost.trim(),
+        username: this.formImapUsername.trim(),
+        password_secret: this.formImapPasswordSecret.trim(),
+      };
+      if (this.formImapFrom.trim()) config['from'] = this.formImapFrom.trim();
+      if (this.formImapSubject.trim()) config['subject'] = this.formImapSubject.trim();
     }
 
     this.saving.set(true);
