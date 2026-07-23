@@ -30,8 +30,9 @@ frontend/public/docs/
 backend/app/data/discovered_models.json
 backend/app/data/runtime_overrides.json
 graphify-out/
-.claude/
+.claude
 
 docs/roadmap-fix.md
 .codegraph/
 docs/roadmap-analisi.md
+.claude/settings.json
