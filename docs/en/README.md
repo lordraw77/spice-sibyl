@@ -13,6 +13,7 @@ A feature-by-feature guide to SpiceSibyl: what each feature does, how to use it,
 | 🔌 Providers | [Providers and models](providers-and-models.md) | Provider management, API key vault, model discovery, automatic fallback |
 | 🛠 Tools | [Tool calling](tool-calling.md) | Built-in tools, custom HTTP tools, sandboxed code interpreter |
 | 🤖 Agents | [MCP and agents](mcp-and-agents.md) | MCP server management, Multi-MCP orchestrator, persistent workflows |
+| 📘 How-to | [Workflow how-to](workflow-guide.md) | Step-by-step guide: create, wire, run, debug, schedule and share a workflow — with animated walkthroughs |
 | 🔀 Flows | [Visual workflows](visual-workflows.md) | n8n-style node-graph editor: typed nodes, expressions, schedule/webhook triggers, live runs |
 | 📚 RAG | [Knowledge base and RAG](knowledge-rag.md) | Document/URL ingestion, hybrid search, reranking, citations |
 | ⚖️ Compare | [Model comparison](model-comparison.md) | Same prompt across 2–4 models in parallel |

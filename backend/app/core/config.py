@@ -12,7 +12,7 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Fallback release version when APP_VERSION isn't stamped into the build.
-_DEFAULT_VERSION = '3.6.0'
+_DEFAULT_VERSION = '3.7.0'
 
 
 class Settings(BaseSettings):
@@ -248,6 +248,23 @@ class Settings(BaseSettings):
     # `llm.judge`: score scale used when the node leaves `scaleMax` unset (1..N,
     # higher is better). The pass/fail threshold defaults to 60% of this scale.
     graph_workflow_judge_default_scale_max: int = 5
+
+    # --- Phase 51 (roadmap fase 19) — Custom Node SDK ---
+    # Directory holding uploaded custom-node packages (one subdir per node type /
+    # version, storing the manifest and, for `python` nodes, the module).
+    graph_workflow_custom_nodes_dir: str = "data/custom_nodes"
+    # When true, a package must carry a valid `signature` (HMAC-SHA256 of the
+    # manifest+code with GRAPH_WORKFLOW_NODE_SIGNING_KEY) before it can be
+    # installed — a workspace hardening switch (roadmap 19.3). Off by default.
+    graph_workflow_require_signed_nodes: bool = False
+    # Shared secret used to verify (and, in the CLI, produce) package signatures
+    # when signing is required. Empty disables verification even if the flag is on.
+    graph_workflow_node_signing_key: str = ""
+
+    # --- Phase 52 (roadmap fase 20) — Telegram as a workflow channel ---
+    # Max size (MB) of an inbound Telegram file (document/photo/voice/video) a
+    # `telegram` trigger will fetch into the workspace storage; larger is dropped.
+    graph_workflow_telegram_max_file_mb: int = 20
 
     # --- SMTP (notify.email workflow node) — leave host empty to disable ---
     smtp_host: str | None = None

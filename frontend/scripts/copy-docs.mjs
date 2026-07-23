@@ -39,15 +39,15 @@ const LANGUAGES = {
 // share the English slug set (en/fr/de/es all use the English filenames).
 const ORDER_IT = [
   'README', 'autenticazione-e-profili', 'chat', 'provider-e-modelli', 'tool-calling',
-  'mcp-e-agenti', 'knowledge-rag', 'confronto-modelli', 'statistiche', 'telegram',
-  'memoria-e-personalizzazione', 'workspace-e-collaborazione', 'interfaccia',
-  'internazionalizzazione', 'operazioni',
+  'mcp-e-agenti', 'guida-workflow', 'visual-workflows', 'knowledge-rag', 'confronto-modelli',
+  'statistiche', 'telegram', 'memoria-e-personalizzazione', 'workspace-e-collaborazione',
+  'interfaccia', 'internazionalizzazione', 'operazioni',
 ];
 const ORDER_EN = [
   'README', 'authentication-and-profiles', 'chat', 'providers-and-models', 'tool-calling',
-  'mcp-and-agents', 'knowledge-rag', 'model-comparison', 'statistics', 'telegram',
-  'memory-and-personalization', 'workspaces-and-collaboration', 'interface',
-  'internationalization', 'operations',
+  'mcp-and-agents', 'workflow-guide', 'visual-workflows', 'knowledge-rag', 'model-comparison',
+  'statistics', 'telegram', 'memory-and-personalization', 'workspaces-and-collaboration',
+  'interface', 'internationalization', 'operations',
 ];
 const ORDER_BY_LANG = { it: ORDER_IT, en: ORDER_EN, fr: ORDER_EN, de: ORDER_EN, es: ORDER_EN };
 

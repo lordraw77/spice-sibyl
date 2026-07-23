@@ -5,7 +5,32 @@ correspond to the project's git tags.
 
 ---
 
-## [Unreleased]
+## [3.7.0] - 2026-07-23
+
+### Added — Phase 51 (roadmap fase 19): Custom Node SDK
+- **Node manifest & packaging** (19.1) — users extend the palette themselves. A custom node is a package with a `node.json` **manifest** (`type`, `name`, `category`, `params`/`outputs` JSON Schemas, `handles`, `secrets`, `permissions`, `kind`). `custom_node_service.validate_manifest` enforces `custom.<name>` namespacing so a custom type can never collide with a builtin (`http.request`, `llm.*`) or a `tool.*` node. Two tiers: **declarative** (no code — a parameterised `http.request` template with `{{param.x}}`/`{{input}}` placeholders, rendered by the pure `build_declarative_request` mapper, so retry/rate-limit/pins apply exactly like a curated connector) and **python** (a module defining `run(params, input, ctx)`)
+- **Upload, registry & lifecycle** (19.2) — new `custom_nodes` table (one row per profile+type+version; the highest version is current). CRUD at `GET/POST /v1/graph-workflows/custom-nodes`, `GET /custom-nodes/{type}`, `GET/POST /custom-nodes/{type}/versions`, `PATCH` (enable/disable) and `DELETE` (blocked with a **409 + dependent list** while any workflow references the type). Enabled custom nodes appear in the palette badged `custom: true`, their inspector fields generated from the manifest's `params` schema
+- **Security model** (19.3) — declarative nodes are safe by construction; **python nodes always run in the Phase 18 code sandbox** (isolated subprocess, CPU/memory/time caps, no network). `ctx` exposes only the manifest-declared secrets (`ctx.secrets`) and `ctx.log` — never the vault. Install/version/delete are audited (fase 7.3); optional package **signing** (HMAC-SHA256) gated by `GRAPH_WORKFLOW_REQUIRE_SIGNED_NODES` + `GRAPH_WORKFLOW_NODE_SIGNING_KEY`
+- **Developer experience** (19.4) — `sibyl-wf node init|test|pack|push`: scaffold a package, validate it locally against the manifest contract (rendering a declarative node's `http.request` from a fixture), sign/bundle it and upload it to the install endpoint
+- **Distribution** (19.5) — a workflow's `GET /{id}/export` now lists its `custom_nodes` dependencies `{type, version}` so an import can warn on / offer to install missing packages
+- 15 new backend tests (`tests/test_phase51.py`)
+
+### Added — Phase 52 (roadmap fase 20): Telegram as a first-class workflow channel
+- **`telegram` trigger + `/run` launcher** (20.1) — `telegram` is a new trigger type. The bot's `/run` command lists the sender's **active** workflows as an inline keyboard (or launches one by name/id), and a catch-all command handler routes a **bound command** (`/report`) to its workflow (registered last so builtin commands win). `run_telegram_workflow` runs the graph inline with `$trigger = {chat_id, thread_id, user, text, command, args, launched_via, file?}` and returns its terminal `chat.reply`/`telegram.*` output to the chat
+- **`telegram.send` and message nodes** (20.2) — `telegram.send` / `telegram.sendMedia` / `telegram.editMessage` / `telegram.deleteMessage` send to any chat (`chat_id` defaults to `$trigger.chat_id`). Off Telegram they no-op cleanly (`sent:false`); a send that raises surfaces so On error (2.x) applies
+- **Interactive inline keyboards** (20.3) — a `telegram.ask` node presents buttons and suspends the run reusing the `wait.event` correlation machinery; a tap delivers the chosen value and resumes down `main` (timeout → `timeout`), the callback clearing the client spinner and editing the prompt to show the decision
+- **Inbound media ingestion** (20.4) — `save_inbound_telegram_file` fetches an inbound document/photo into `GRAPH_WORKFLOW_FILES_DIR` (size-capped by `GRAPH_WORKFLOW_TELEGRAM_MAX_FILE_MB`) and exposes it on `$trigger.file` for `file.*`/`doc.convert`/`kb.search`
+- **Bot binding** (20.5) — new `telegram_command_bindings` table + `GET/POST/DELETE /v1/graph-workflows/telegram-bindings` (per-profile command collision rejected with 409); `register_workflow_bot_commands` publishes bound commands via `setMyCommands` on boot. A dedicated per-workflow bot token is the documented, deferred escape hatch
+- 13 new backend tests (`tests/test_phase52.py`)
+
+### Changed
+- New `custom_nodes` and `telegram_command_bindings` tables (idempotent `CREATE TABLE IF NOT EXISTS`); `NodeTypeInfo` gained a `custom: bool` badge; `_dispatch` routes `custom.*` and `telegram.*` node types; `_EXTERNAL_EFFECT_PREFIXES` gained `custom.`/`telegram.` so pins & dry-run intercept them
+- New settings: `GRAPH_WORKFLOW_CUSTOM_NODES_DIR`, `GRAPH_WORKFLOW_REQUIRE_SIGNED_NODES`, `GRAPH_WORKFLOW_NODE_SIGNING_KEY`, `GRAPH_WORKFLOW_TELEGRAM_MAX_FILE_MB`
+- Version bumped to **3.7.0**; docs + `.env.example` updated
+
+---
+
+## [3.6.0] - 2026-07-22
 
 ### Added — Phase 42 (roadmap fase 10): Advanced human-in-the-loop
 - **`human.input` node (form)** (10.1) — like `human.approval`, but the request carries a **form defined by JSON Schema** (`schema` param); the run suspends (`waiting`) until someone submits it via `POST /v1/graph-workflows/approvals/{id}/submit` (or the runs page, which renders the fields from the schema). Submitted `data` is validated against the schema (the existing dependency-free `_validate_json_schema`, fase 6.4) before it is accepted; the run resumes with `{data}` on the `submitted` branch. A timeout follows `onTimeout` (`branch` routes to the `timeout` branch, `fail` raises)

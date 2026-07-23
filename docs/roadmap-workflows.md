@@ -474,48 +474,64 @@ Two (or N) prompt/model variants on an `llm.*` node, alternated across runs (rou
 
 ---
 
-## Phase 19 — Custom Node SDK (end-user nodes)
+## Phase 19 — Custom Node SDK (end-user nodes) ✅ COMPLETED (2026-07-23)
 
 Goal: users extend the palette themselves — from config-only nodes to uploaded code — without forking the product. This is a platform feature: it goes after the sandbox (14.2), which is its security prerequisite for code nodes, and reuses catalog (4.3), import warnings (5.2), sharing (5.2), audit (7.3).
 
-### ⬜ 19.1 Node manifest and packaging
+> **Status:** shipped as **Phase 51** (15 tests in `tests/test_phase51.py`, green).
+> 19.1 — `custom_node_service.validate_manifest` enforces `custom.<name>` namespacing (never collides with a builtin or `tool.*`), `kind` (`declarative`/`python`), params/outputs JSON Schemas, handles, declared secrets and permissions. Declarative nodes carry a `request` template with `{{param.x}}`/`{{input}}` placeholders rendered by `build_declarative_request` (a pure mapper → an `http.request` spec, so retry/rate-limit/pins come free, exactly like a connector); a lone-placeholder string keeps the resolved value's type. Python nodes must define `run(params, input, ctx)`.
+> 19.2 — `custom_nodes` table (one row per profile+type+version; highest version is current). CRUD at `GET/POST /custom-nodes`, `GET /custom-nodes/{type}`, `GET/POST /custom-nodes/{type}/versions`, `PATCH` (enable/disable), `DELETE` (409 + dependent list while any workflow references it). Enabled nodes appear in the palette badged `custom: true`.
+> 19.3 — declarative nodes are safe by construction (an `http.request`); python nodes **always** run in the Phase 18 code sandbox (isolated subprocess, CPU/mem/time caps, no network — `ctx` exposes only declared secrets + `ctx.log`, never the vault). Install/version/delete are audited (7.3); optional HMAC signing gated by `GRAPH_WORKFLOW_REQUIRE_SIGNED_NODES` + `GRAPH_WORKFLOW_NODE_SIGNING_KEY`.
+> 19.4 — `sibyl-wf node init|test|pack|push` scaffolds, validates locally (renders the declarative request from a fixture), signs/bundles and uploads a package.
+> 19.5 — a workflow export lists its `custom_nodes` dependencies `{type, version}`.
+
+### ✅ 19.1 Node manifest and packaging
 A custom node is a package (zip or single file) with a **manifest** (`node.json`):
 `{type, name, description, category, icon, version, params: JSONSchema, outputs: JSONSchema, handles: [...], secrets: [names], permissions: [network|files|db], engineMin}`.
 Two implementation tiers, declared in the manifest:
 - **Declarative** (`kind: declarative`): no code — the node is a parameterized template over existing nodes (typically `http.request`): URL/method/headers/body with `{{param}}` placeholders, response mapping to the declared output schema. Safe by construction; this is the n8n-style "declarative node" and should cover most community connectors.
 - **Code** (`kind: python`): a Python module exposing `async def run(params, input, ctx) -> dict`; `ctx` offers only the declared capabilities (`ctx.http`, `ctx.files`, `ctx.secrets[name]` limited to manifest-declared names — never the vault, `ctx.log`). Output validated against the manifest's output schema.
 
-### ⬜ 19.2 Upload, registry and lifecycle
+### ✅ 19.2 Upload, registry and lifecycle
 - **Custom Nodes** page: upload package → validation (manifest schema, type-name collision with builtin/other customs, code lint/import check) → the node appears in the palette with a "custom" badge and its icon.
 - Versioned like workflows: uploading again creates a new node version; graphs record the node version they were built with; older versions keep running until migrated (banner in the inspector when a newer version exists).
 - Enable/disable per node; delete blocked while any workflow references it (list of dependents shown).
 - API: `GET/POST /custom-nodes`, `GET /custom-nodes/{type}`, `POST /custom-nodes/{type}/versions`, `DELETE`; storage under `GRAPH_WORKFLOW_CUSTOM_NODES_DIR` + DB registry table.
 
-### ⬜ 19.3 Security model
+### ✅ 19.3 Security model
 - Declarative nodes: same trust level as the graphs themselves — installable by any `editor`.
 - Code nodes: **always** executed in the sandbox (14.2) with the manifest's declared permissions as the ceiling (no network unless `network`, file access confined to workspace storage, CPU/memory/time caps); installable only by the profile owner (and, in shared workspaces, only by admins — roles 7.3); install/update/enable events audited (7.3).
 - Secrets: the node receives only the secrets it declared and the user explicitly bound at install time (a consent screen lists them); values delivered per-execution, never stored with the package.
 - Optional signature: a workspace can require packages signed with a known key before install (`GRAPH_WORKFLOW_REQUIRE_SIGNED_NODES`).
 
-### ⬜ 19.4 Developer experience
+### ✅ 19.4 Developer experience
 - `sibyl-wf node init` (CLI 14.5): scaffolds manifest + module + a fixture test; `sibyl-wf node test` runs it locally against the `test_node()` contract (3.1); `sibyl-wf node pack/push` uploads.
 - Hot reload in dev: re-upload replaces the dev version without bumping; the single-node test (3.1) works on custom nodes exactly like builtins.
 - Docs: authoring guide + annotated example (one declarative connector, one Python node).
 
-### ⬜ 19.5 Distribution
+### ✅ 19.5 Distribution
 - Export/import (5.2): a workflow's export lists its custom node dependencies `{type, version}`; import warns when they're missing (same toast mechanics as missing `$secrets`) and offers one-click install when the package is available in the workspace.
 - Workspace sharing (5.2 pattern): publish a custom node to a workspace; members install it into their profile. A public community marketplace is a possible later step on the same registry — out of scope here.
 
 ---
 
-## Phase 20 — Telegram as a first-class workflow channel
+## Phase 20 — Telegram as a first-class workflow channel ✅ COMPLETED (2026-07-23)
+
+> **Status:** shipped as **Phase 52** (13 tests in `tests/test_phase52.py`, green).
+> 20.1 — `telegram` is now a trigger type; the bot's `/run` launcher (`cmd_run`) lists the sender's **active** workflows as an inline keyboard or launches one by name/id, and a catch-all `MessageHandler(filters.COMMAND)` routes a bound command (`/report`) to its workflow (registered last so builtins win). `run_telegram_workflow` runs the graph inline with `$trigger = {chat_id, thread_id, user, text, command, args, launched_via, file?}` and returns its terminal `chat.reply`/`telegram.*` output to the chat.
+> 20.2 — `telegram.send` / `sendMedia` / `editMessage` / `deleteMessage` nodes send to any chat (`chat_id` defaults to `$trigger.chat_id`); off Telegram they no-op cleanly (`sent:false`), a send that raises surfaces so On error applies.
+> 20.3 — `telegram.ask` presents inline buttons and suspends the run reusing the `wait.event` correlation machinery (`kind='event'` approval); a tap (`_cb_telegram_ask`, `wfask:` callback) delivers the value and resumes down `main`, timeout → `timeout`.
+> 20.4 — `save_inbound_telegram_file` fetches an inbound document/photo into `GRAPH_WORKFLOW_FILES_DIR` (size-capped by `GRAPH_WORKFLOW_TELEGRAM_MAX_FILE_MB`) and exposes it on `$trigger.file` for `file.*`/`doc.convert`/`kb.search`.
+> 20.5 — `telegram_command_bindings` table + `GET/POST/DELETE /telegram-bindings` (per-profile collision rejected 409); `register_workflow_bot_commands` publishes bound commands via `setMyCommands` on boot. A dedicated per-workflow bot token is left as the documented, deferred escape hatch.
 
 Goal: promote Telegram from a notification sink and approval surface to a **bidirectional workflow channel** — inbound messages/commands/media that *start* workflows, and outbound nodes that send, update and interact from any point in a graph. Everything here builds on what already exists: the live bot instance (`app.telegram.bot.get_bot()`), the linked-profile model (`telegram_link_repository`, `/link` codes), `notification_service.notify_telegram` (opt-in gate `is_notify_enabled`, inline-keyboard support, 4096-char chunking), the fase 7.5 approval callback path and the fase 9.3 `chat` trigger / `chat.reply` round-trip. The aim is to generalise those one-off bridges into reusable trigger + node primitives, so retry (2.1), node test (3.1), pins (3.2) and idempotency (16.2) apply for free.
 
-### ⬜ 20.1 `telegram` trigger
+### ✅ 20.1 `telegram` trigger
 A dedicated inbound trigger, distinct from the generic `chat` trigger (9.3): bind a workflow to a **bot command** (`/report`), a message pattern, or "any message" scoped to a chat/group/forum-topic allow-list. `$trigger = {chat_id, thread_id, user: {id, username, profile_id?}, text, command, args, message_id, channel_post?}`. The linked web profile (when the sender has run `/link`) is resolved and attached, so the run executes under that profile's identity, secrets and quotas; unlinked senders are gated by `telegram_allowed_users` exactly as the bot is today. Dedup by `(chat_id, message_id)` reuses the fase 16.2 `workflow_trigger_dedup` machinery so retries never double-fire. The bot's existing handlers (`cmd_*`, `handle_document/photo/voice`) route to matching workflow bindings before falling through to the default chat loop.
 
-### ⬜ 20.2 `telegram.send` and message nodes
+Beyond per-command bindings, the bot also exposes a generic launcher so a user can **start any of the currently active workflows straight from the chat**: `/run` (no args) replies with an inline keyboard listing the workflows the sender is allowed to launch — scoped to `active` (2.4) workflows exposing a `telegram` or `manual` trigger, and further filtered by the linked profile's visibility/roles (7.3) — while `/run <name-or-id> [args…]` launches directly by name. The chosen workflow starts under the sender's resolved identity with `$trigger = {chat_id, thread_id, user, args, launched_via: "picker"}`; the run's terminal `chat.reply`/`telegram.send` output (20.2) returns to the originating chat. This reuses the same allow-list gating and dedup as command bindings, so no active workflow is ever launchable by an unauthorised chat.
+
+### ✅ 20.2 `telegram.send` and message nodes
 Outbound action nodes that talk to any chat, not only the origin or the linked profile:
 - `telegram.send` — text to an explicit `chat_id`/`thread_id` (expression), `parse_mode`, `disable_preview`, optional `reply_to`; output `{message_id, chat_id}` so later nodes can edit it.
 - `telegram.sendMedia` — photo/document/audio/voice/video from `GRAPH_WORKFLOW_FILES_DIR` (4.2) or a URL, with caption.
@@ -523,15 +539,15 @@ Outbound action nodes that talk to any chat, not only the origin or the linked p
 - `telegram.sendPoll` / `telegram.sendLocation` for the common rich types.
 All reuse the `notify_telegram` send/chunk/rate-limit path (never blocking the scheduler on Telegram's limits) and no-op cleanly when the bot is not running, mirroring today's silent-drop semantics. Sending to a chat the instance doesn't own raises a typed error so `On error` (2.x) applies.
 
-### ⬜ 20.3 Interactive inline keyboards (generic)
+### ✅ 20.3 Interactive inline keyboards (generic)
 Generalise the fase 7.5 approval buttons into a first-class interaction primitive so any node can ask a Telegram question:
 - `human.approval` / `human.input` (10.1) render their choices/form as an inline keyboard on Telegram when the run originates from — or is bound to — a chat; the callback resumes the `waiting` run through the existing approve/submit path, no new state machine.
 - A standalone `telegram.ask` node: present buttons, suspend the run (reusing `wait.event` correlation, 10.2), resume with the chosen `callback_data` as output; configurable timeout + `onTimeout` branch. Callback queries are answered (`answerCallbackQuery`) to clear the client spinner, and the prompt message is optionally edited to show the decision — closing the loop the current approval flow leaves half-open.
 
-### ⬜ 20.4 Inbound media and file ingestion
+### ✅ 20.4 Inbound media and file ingestion
 When a `telegram` trigger (20.1) fires on a document/photo/voice/video, the file is fetched via the Bot API and written to `GRAPH_WORKFLOW_FILES_DIR`, exposed on `$trigger` as `{file: {path, mime, name, size}}` — directly consumable by `file.*` (4.2), `doc.convert` (15.5), `kb.search` (6.x) or a future `audio.transcribe`. This reuses the bot's existing `handle_document`/`handle_photo`/`handle_voice` download logic, lifted into a shared helper so both the chat loop and workflow triggers share one code path. Size/MIME limits per instance (`GRAPH_WORKFLOW_TELEGRAM_MAX_FILE_MB`).
 
-### ⬜ 20.5 Bot binding and multi-bot (optional)
+### ✅ 20.5 Bot binding and multi-bot (optional)
 Today a single bot instance serves the deployment. For workflow-facing bots, allow a workflow (or workspace) to declare a **binding**: which bot commands it owns (registered via `setMyCommands` on boot so they appear in the Telegram UI), and — where operators want isolation — an optional dedicated bot token from `$secrets`, run as an additional polling application alongside the main bot. Command↔workflow bindings live in a small registry table; collisions (two workflows claiming `/report`) are rejected at save time. Kept last and optional: the single-bot path (20.1–20.4) covers the majority; a dedicated token is the escape hatch for teams that want a branded, separate bot without standing up another deployment.
 
 ---
@@ -558,8 +574,8 @@ Today a single bot instance serves the deployment. For workflow-facing bots, all
 | 16 | Execution semantics | Persistent state, trigger idempotency, saga compensations, run priority | Real-world integration patterns | ⬜ To do |
 | 17 | Scheduling & scale UX | Calendars/blackouts, SLA monitors, folders/tags/search, run comparison, digests | Dozens of workflows without babysitting | ⬜ To do |
 | 18 | LLM quality | `llm.judge`, prompt A/B testing | Measured, gated LLM output | ✅ Done |
-| 19 | Custom Node SDK | Manifest + declarative/Python nodes, registry, sandboxed security model, CLI DX, distribution | User-extensible palette, community connectors | ⬜ To do |
-| 20 | Telegram channel | `telegram` trigger, `telegram.send`/edit/media nodes, generic inline keyboards, inbound file ingestion, bot binding | Telegram as a bidirectional workflow channel | ⬜ To do |
+| 19 | Custom Node SDK | Manifest + declarative/Python nodes, registry, sandboxed security model, CLI DX, distribution | User-extensible palette, community connectors | ✅ Done |
+| 20 | Telegram channel | `telegram` trigger + `/run` launcher for active workflows, `telegram.send`/edit/media nodes, generic inline keyboards, inbound file ingestion, bot binding | Telegram as a bidirectional workflow channel | ✅ Done |
 
 Recommended first sprint (phases 1–5): **1.1 + 1.2** (UI refactoring) in parallel with **2.1** (per-node retry, backend only) — no cross-dependencies and immediate value on both fronts.
 

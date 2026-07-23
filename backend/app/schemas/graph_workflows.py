@@ -598,6 +598,8 @@ class NodeTypeInfo(BaseModel):
     # Node-level field defaults applied by the editor when the node is dropped
     # on the canvas (fase 2.1 — e.g. retry/backoff presets for http.request/llm.*).
     defaults: dict[str, Any] = Field(default_factory=dict)
+    # Fase 19 — True for a user-installed custom node (badged in the palette).
+    custom: bool = False
 
 
 class GraphWorkflowExport(BaseModel):
@@ -967,6 +969,57 @@ class RunnerJobResultIn(BaseModel):
     handles: list[str] = Field(default_factory=lambda: ["main"])
     error: str | None = None
     logs: list[str] = Field(default_factory=list)
+
+
+# ── Phase 51 (roadmap fase 19) — Custom Node SDK ─────────────────────────────
+
+class CustomNodeInstallIn(BaseModel):
+    """Body of POST /custom-nodes and POST /custom-nodes/{type}/versions — the
+    manifest (node.json) plus, for a ``python`` node, its module ``code`` and an
+    optional ``signature`` (required when the workspace mandates signed nodes)."""
+
+    manifest: dict[str, Any]
+    code: str | None = None
+    signature: str | None = None
+
+
+class CustomNodeOut(BaseModel):
+    """A custom node's current (or a specific) version. ``code`` is echoed only on
+    the single-node detail endpoint, never in the list."""
+
+    id: str
+    type: str
+    version: int
+    name: str
+    description: str = ""
+    category: str = "action"
+    icon: str = ""
+    kind: str = "declarative"  # declarative|python
+    manifest: dict[str, Any] = Field(default_factory=dict)
+    code: str | None = None
+    enabled: bool = True
+    created_at: int
+    updated_at: int
+
+
+class CustomNodeEnableIn(BaseModel):
+    enabled: bool
+
+
+# ── Phase 52 (roadmap fase 20.5) — Telegram command bindings ─────────────────
+
+class TelegramBindingIn(BaseModel):
+    command: str
+    workflow_id: str
+    description: str = ""
+
+
+class TelegramBindingOut(BaseModel):
+    id: str
+    command: str
+    workflow_id: str
+    description: str = ""
+    created_at: int
 
 
 GraphWorkflowOut.model_rebuild()

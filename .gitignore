@@ -33,3 +33,5 @@ graphify-out/
 .claude/
 
 docs/roadmap-fix.md
+.codegraph/
+docs/roadmap-analisi.md

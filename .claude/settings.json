@@ -53,7 +53,9 @@
       "Bash(python -m py_compile app/services/workflow_graph_service.py app/db/graph_workflow_repository.py app/db/database.py app/schemas/graph_workflows.py app/data/node_catalog.py app/core/config.py app/api/v1/endpoints/graph_workflows.py)",
       "Bash(awk '/## Phase 17/,/## Phase 18/' docs/roadmap-workflows.md)",
       "Bash(grep -n '@router.get\\(\"/\", \\\\|@router.get\\(\"\"\\)\\\\|@router.post\\(\"\", \\\\|@router.patch\\(\"/{workflow_id}\"\\\\|@router.get\\(\"/{workflow_id}\"\\\\|@router.get\\(\"/runs/{run_id}\"\\\\|_load_owned\\\\|_owned_workflow\\\\|_get_owned\\\\|async def list_workflows\\\\|async def create_workflow\\\\|async def get_workflow\\\\|async def update_workflow\\\\|async def get_run\\\\b\\\\|def _ensure_owner\\\\|status_code=404' backend/app/api/v1/endpoints/graph_workflows.py)",
-      "Bash(grep -rn '\"fields\"\\\\|\\\\$trigger\\\\|{{' backend/app/examples/graph_workflow_examples.py)"
+      "Bash(grep -rn '\"fields\"\\\\|\\\\$trigger\\\\|{{' backend/app/examples/graph_workflow_examples.py)",
+      "mcp__codegraph__*",
+      "Bash(python3 /tmp/claude-0/-opt-spice-sibyl/9a2207bd-6496-4b94-87c2-79a50f672734/scratchpad/gen_gifs.py)"
     ],
     "additionalDirectories": [
       "/opt/multi-mcp"
@@ -76,6 +78,16 @@
           {
             "type": "command",
             "command": "HIT=$(python3 -c \"import json,sys;d=json.load(sys.stdin);t=d.get('tool_input',d);exts=('.py','.js','.ts','.tsx','.jsx','.astro','.vue','.svelte','.go','.rs','.java','.rb','.c','.h','.cpp','.hpp','.cc','.cs','.kt','.swift','.php','.scala','.lua','.sh','.md','.rst','.txt','.mdx');vals=[str(t.get('file_path') or ''),str(t.get('pattern') or ''),str(t.get('path') or '')];j=' '.join(vals).lower().replace(chr(92),'/');tails=[('.'+x.rsplit('.',1)[-1]) for v in vals if v for x in [v.lower().replace(chr(92),'/').rsplit('/',1)[-1]] if '.' in x];sys.stdout.write('1' if 'graphify-out/' not in j and any(tl in exts for tl in tails) else '')\" 2>/dev/null || true); if [ \"$HIT\" = 1 ] && [ -f graphify-out/graph.json ]; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"MANDATORY: graphify-out/graph.json exists. You MUST run graphify before reading source files. Use: `graphify query \\\"<question>\\\"` (scoped subgraph), `graphify explain \\\"<concept>\\\"`, or `graphify path \\\"<A>\\\" \\\"<B>\\\"`. Only read raw files after graphify has oriented you, or to modify/debug specific lines. This rule applies to subagents too — include it in every subagent prompt involving code exploration.\"}}'; fi || true"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "codegraph prompt-hook"
           }
         ]
       }

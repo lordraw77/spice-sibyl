@@ -749,6 +749,80 @@ _STATIC_NODES: list[NodeTypeInfo] = [
             _param("ttlSeconds", "TTL seconds (0/empty = never)", "number"),
         ],
     ),
+
+    # ── Phase 52 (roadmap fase 20) — Telegram as a workflow channel ──
+    NodeTypeInfo(
+        type="telegram", category="trigger", label="Telegram", inputs=0, outputs=["main"],
+        description=(
+            "Inbound Telegram trigger (fase 20.1). Bind a bot command to this "
+            "workflow under Settings → Telegram, or launch it with /run in chat. "
+            "$trigger = {chat_id, thread_id, user, text, command, args, file?}."
+        ),
+        params_schema=[_param("command", "Bot command (optional, e.g. report)", "text")],
+    ),
+    NodeTypeInfo(
+        type="telegram.send", category="notify", label="Telegram: send", outputs=["main"],
+        description=(
+            "Sends a text message to a chat (fase 20.2). `chat_id` defaults to the "
+            "originating chat ($trigger.chat_id). Output: {sent, message_id, chat_id}."
+        ),
+        params_schema=[
+            _param("chat_id", "Chat id (expression, defaults to $trigger.chat_id)", "expression"),
+            _param("text", "Text (expression, defaults to input)", "expression"),
+            _param("thread_id", "Thread id (forum topic, optional)", "expression"),
+            _param("reply_to", "Reply to message id (optional)", "expression"),
+            _param("parse_mode", "Parse mode", "select", options=["", "Markdown", "MarkdownV2", "HTML"]),
+            _param("disable_preview", "Disable link preview", "boolean"),
+        ],
+    ),
+    NodeTypeInfo(
+        type="telegram.sendMedia", category="notify", label="Telegram: send media", outputs=["main"],
+        description=(
+            "Sends a photo/document/audio/voice/video from workspace storage or a "
+            "URL, with an optional caption (fase 20.2)."
+        ),
+        params_schema=[
+            _param("chat_id", "Chat id (defaults to $trigger.chat_id)", "expression"),
+            _param("media_type", "Media type", "select",
+                   options=["document", "photo", "audio", "voice", "video"]),
+            _param("path", "Workspace path", "expression"),
+            _param("url", "URL (instead of a path)", "expression"),
+            _param("caption", "Caption", "expression"),
+        ],
+    ),
+    NodeTypeInfo(
+        type="telegram.editMessage", category="notify", label="Telegram: edit", outputs=["main"],
+        description="Edits a message sent earlier in the run (progress → done) (fase 20.2).",
+        params_schema=[
+            _param("chat_id", "Chat id (defaults to $trigger.chat_id)", "expression"),
+            _param("message_id", "Message id", "expression"),
+            _param("text", "New text", "expression"),
+            _param("parse_mode", "Parse mode", "select", options=["", "Markdown", "MarkdownV2", "HTML"]),
+        ],
+    ),
+    NodeTypeInfo(
+        type="telegram.deleteMessage", category="notify", label="Telegram: delete", outputs=["main"],
+        description="Deletes a message sent earlier in the run (fase 20.2).",
+        params_schema=[
+            _param("chat_id", "Chat id (defaults to $trigger.chat_id)", "expression"),
+            _param("message_id", "Message id", "expression"),
+        ],
+    ),
+    NodeTypeInfo(
+        type="telegram.ask", category="action", label="Telegram: ask", outputs=["main", "timeout"],
+        description=(
+            "Presents inline buttons on Telegram and suspends the run until the "
+            "user taps one; resumes with {value} down 'main' (fase 20.3). A timeout "
+            "follows 'timeout' unless onTimeout=fail."
+        ),
+        params_schema=[
+            _param("chat_id", "Chat id (defaults to $trigger.chat_id)", "expression"),
+            _param("text", "Question", "expression"),
+            _param("options", "Options (JSON [{label, value}])", "json"),
+            _param("timeout", "Timeout seconds (default 3600)", "number"),
+            _param("onTimeout", "On timeout", "select", options=["branch", "fail"]),
+        ],
+    ),
 ]
 
 
@@ -843,6 +917,39 @@ async def node_catalog(db=None, profile_id: str = "default") -> list[NodeTypeInf
                     params_schema=params_schema,
                 ))
         except Exception:  # noqa: BLE001 — a repo hiccup must not blank the palette
+            pass
+
+        # Fase 19 — installed custom nodes (declarative or python) become
+        # first-class palette entries. Their inspector params come from the
+        # manifest's `params` JSON Schema; `custom: True` badges them in the UI.
+        try:
+            from app.db import graph_workflow_repository as wf_repo
+
+            for node in await wf_repo.list_custom_nodes(db, profile_id, enabled_only=True):
+                manifest = node.get("manifest") or {}
+                schema = manifest.get("params") if isinstance(manifest.get("params"), dict) else {}
+                props = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+                required = set(schema.get("required") or [])
+                params_schema = [
+                    _param(
+                        pname,
+                        pname + (" *" if pname in required else ""),
+                        "expression",
+                        hint=str((pinfo or {}).get("description") or ""),
+                    )
+                    for pname, pinfo in props.items()
+                ]
+                catalog.append(NodeTypeInfo(
+                    type=node["type"],
+                    category=node.get("category") or "custom",
+                    label=node.get("name") or node["type"],
+                    description=(node.get("description") or "")
+                    + f" (custom {node['kind']} node v{node['version']}).",
+                    outputs=manifest.get("handles") or ["main"],
+                    params_schema=params_schema,
+                    custom=True,
+                ))
+        except Exception:  # noqa: BLE001 — a broken custom node must not blank the palette
             pass
 
     return catalog

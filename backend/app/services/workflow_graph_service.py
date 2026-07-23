@@ -62,6 +62,9 @@ _TRIGGER_TYPES = frozenset({
     # Phase 47 (roadmap fase 15.4): rss.read = one run per new feed entry
     # (poll-based, deduped by guid).
     "rss.read",
+    # Phase 52 (roadmap fase 20.1): telegram = one run per inbound bot message /
+    # command, dispatched from the live bot (not poll-based).
+    "telegram",
 })
 _LOOP_TYPES = frozenset({"for", "repeat", "while"})
 _TOOL_RESULT_MAX_CHARS = 12000
@@ -1488,7 +1491,10 @@ def _ctx_snapshot(ctx: dict) -> dict:
 
 
 _EXTERNAL_EFFECT_TYPES = frozenset({"http.request", "db.query"})
-_EXTERNAL_EFFECT_PREFIXES = ("llm.", "notification.", "email.")
+# ``custom.`` (fase 19): a custom node is a declarative http.request or a
+# sandboxed python module — both real side effects, so pins/dry-run intercept it.
+# ``telegram.`` (fase 20): outbound bot messages are a real side effect too.
+_EXTERNAL_EFFECT_PREFIXES = ("llm.", "notification.", "email.", "custom.", "telegram.")
 
 
 def _is_external_effect(node_type: str) -> bool:
@@ -2015,6 +2021,18 @@ async def _dispatch(
     if ntype == "notify.telegram":
         return await _exec_notify_telegram(db, profile_id, params), ["main"]
 
+    # ── Phase 52 (roadmap fase 20 — Telegram as a workflow channel) ──
+    if ntype == "telegram.send":
+        return await _exec_telegram_send(params, node_input, ctx), ["main"]
+    if ntype == "telegram.sendMedia":
+        return await _exec_telegram_send_media(params, ctx), ["main"]
+    if ntype == "telegram.editMessage":
+        return await _exec_telegram_edit(params, ctx), ["main"]
+    if ntype == "telegram.deleteMessage":
+        return await _exec_telegram_delete(params, ctx), ["main"]
+    if ntype == "telegram.ask":
+        return await _exec_telegram_ask(db, profile_id, node, params, ctx)
+
     if ntype == "notify.email":
         return await _exec_notify_email(params), ["main"]
 
@@ -2084,6 +2102,12 @@ async def _dispatch(
     # ── Phase 48 (roadmap fase 16.1 — persistent state across runs) ──
     if ntype in ("state.get", "state.set", "state.increment"):
         return await _exec_state(db, ctx.get("_workflow_id"), ntype, params, node_input), ["main"]
+
+    # ── Phase 51 (roadmap fase 19 — Custom Node SDK) ──
+    if ntype.startswith("custom."):
+        from app.services import custom_node_service
+
+        return await custom_node_service.execute(db, profile_id, ntype, params, node_input, ctx)
 
     raise ValueError(f"unknown node type: {ntype}")
 
@@ -3016,6 +3040,189 @@ async def _exec_notify_telegram(db: aiosqlite.Connection, profile_id: str, param
         raise RuntimeError("notify.telegram: no Telegram chat linked to this profile")
     await notification_service.notify_telegram(db, profile_id, "workflow", text, parse_mode=parse_mode or None)
     return {"queued": True, "channel": "telegram", "parse_mode": parse_mode or None}
+
+
+# ── Phase 52 (roadmap fase 20) — Telegram as a workflow channel ───────────────
+
+def _telegram_bot():
+    """The live bot Application, or None when the bot isn't running. Kept behind a
+    helper so every telegram.* node degrades to a clean no-op off Telegram."""
+    from app.telegram import bot as telegram_bot
+
+    app = telegram_bot.get_bot()
+    return app.bot if app is not None else None
+
+
+def _resolve_chat_id(params: dict, ctx: dict):
+    """A telegram.* node targets an explicit ``chat_id`` (expression, already
+    resolved) or, failing that, the chat the run originated from (a ``telegram`` /
+    ``chat`` trigger puts ``chat_id`` on ``$trigger``)."""
+    chat_id = params.get("chat_id")
+    if chat_id in (None, ""):
+        trigger = ctx.get("trigger") if isinstance(ctx.get("trigger"), dict) else {}
+        chat_id = trigger.get("chat_id")
+    if chat_id in (None, ""):
+        raise ValueError("telegram: no 'chat_id' given and the run has no originating chat")
+    return chat_id
+
+
+def _telegram_parse_mode(params: dict) -> str | None:
+    parse_mode = str(params.get("parse_mode") or "").strip()
+    if parse_mode not in _TELEGRAM_PARSE_MODES:
+        raise ValueError(f"telegram: invalid parse_mode {parse_mode!r} (Markdown|MarkdownV2|HTML)")
+    return parse_mode or None
+
+
+async def _exec_telegram_send(params: dict, node_input, ctx: dict) -> dict:
+    """20.2 — send text to any chat/thread. Off Telegram it no-ops (``sent:
+    False``), mirroring the silent-drop of the notify bridge; a send that raises
+    (e.g. a chat the bot doesn't own) surfaces so On error applies."""
+    chat_id = _resolve_chat_id(params, ctx)
+    text = params.get("text")
+    if text in (None, ""):
+        text = node_input
+    if not isinstance(text, str):
+        text = json.dumps(text, default=str, ensure_ascii=False)
+    bot = _telegram_bot()
+    if bot is None:
+        return {"sent": False, "reason": "bot_not_running", "chat_id": chat_id}
+    kwargs: dict = {"chat_id": chat_id, "text": text, "parse_mode": _telegram_parse_mode(params)}
+    if params.get("thread_id") not in (None, ""):
+        kwargs["message_thread_id"] = int(params["thread_id"])
+    if params.get("reply_to") not in (None, ""):
+        kwargs["reply_to_message_id"] = int(params["reply_to"])
+    if _as_bool(params.get("disable_preview")):
+        kwargs["disable_web_page_preview"] = True
+    try:
+        msg = await bot.send_message(**kwargs)
+    except Exception as exc:  # noqa: BLE001 — surface as a node failure (retry/onError)
+        raise RuntimeError(f"telegram.send: {exc}") from exc
+    return {"sent": True, "message_id": msg.message_id, "chat_id": msg.chat_id}
+
+
+async def _exec_telegram_send_media(params: dict, ctx: dict) -> dict:
+    """20.2 — send a photo/document from workspace storage or a URL, with caption."""
+    chat_id = _resolve_chat_id(params, ctx)
+    kind = str(params.get("media_type") or "document").strip().lower()
+    source = params.get("url") or params.get("path")
+    if not source:
+        raise ValueError("telegram.sendMedia: 'url' or 'path' is required")
+    caption = params.get("caption")
+    bot = _telegram_bot()
+    if bot is None:
+        return {"sent": False, "reason": "bot_not_running", "chat_id": chat_id}
+    # A path is confined to the workspace storage (fase 4.2); a URL is passed through.
+    media = str(source)
+    fh = None
+    if not media.startswith(("http://", "https://")):
+        fh = open(_safe_workspace_path(media), "rb")  # noqa: SIM115 — closed below
+        media = fh
+    senders = {
+        "photo": ("send_photo", "photo"), "document": ("send_document", "document"),
+        "audio": ("send_audio", "audio"), "voice": ("send_voice", "voice"),
+        "video": ("send_video", "video"),
+    }
+    method_name, arg = senders.get(kind, senders["document"])
+    try:
+        msg = await getattr(bot, method_name)(chat_id=chat_id, caption=caption, **{arg: media})
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"telegram.sendMedia: {exc}") from exc
+    finally:
+        if fh is not None:
+            fh.close()
+    return {"sent": True, "message_id": msg.message_id, "chat_id": msg.chat_id, "media_type": kind}
+
+
+async def _exec_telegram_edit(params: dict, ctx: dict) -> dict:
+    """20.2 — edit a message sent earlier in the run (progress bars, done edits)."""
+    chat_id = _resolve_chat_id(params, ctx)
+    message_id = params.get("message_id")
+    if message_id in (None, ""):
+        raise ValueError("telegram.editMessage: 'message_id' is required")
+    text = params.get("text")
+    if text in (None, ""):
+        raise ValueError("telegram.editMessage: 'text' is required")
+    bot = _telegram_bot()
+    if bot is None:
+        return {"edited": False, "reason": "bot_not_running", "chat_id": chat_id}
+    try:
+        await bot.edit_message_text(
+            chat_id=chat_id, message_id=int(message_id), text=str(text),
+            parse_mode=_telegram_parse_mode(params),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"telegram.editMessage: {exc}") from exc
+    return {"edited": True, "message_id": int(message_id), "chat_id": chat_id}
+
+
+async def _exec_telegram_delete(params: dict, ctx: dict) -> dict:
+    """20.2 — remove a message sent earlier in the run."""
+    chat_id = _resolve_chat_id(params, ctx)
+    message_id = params.get("message_id")
+    if message_id in (None, ""):
+        raise ValueError("telegram.deleteMessage: 'message_id' is required")
+    bot = _telegram_bot()
+    if bot is None:
+        return {"deleted": False, "reason": "bot_not_running", "chat_id": chat_id}
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=int(message_id))
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"telegram.deleteMessage: {exc}") from exc
+    return {"deleted": True, "message_id": int(message_id), "chat_id": chat_id}
+
+
+async def _exec_telegram_ask(
+    db: aiosqlite.Connection, profile_id: str, node: GraphNode, params: dict, ctx: dict
+) -> tuple[object, list[str]]:
+    """20.3 — present inline buttons on Telegram, suspend the run (reusing the
+    ``wait.event`` correlation machinery), and resume with the tapped
+    ``callback_data`` as output. ``onTimeout`` (branch|fail) governs a timeout."""
+    run_id = ctx.get("_run_id")
+    if not run_id:
+        raise ValueError("telegram.ask: only runs inside a real execution")
+    chat_id = _resolve_chat_id(params, ctx)
+    question = str(params.get("text") or params.get("question") or "").strip()
+    options = params.get("options")
+    if not isinstance(options, list) or not options:
+        raise ValueError("telegram.ask: 'options' must be a non-empty list of {label, value}")
+
+    run = await repo.get_run(db, run_id)
+    workflow_id = run.workflow_id if run else ""
+    approval = await repo.get_pending_approval(db, run_id, node.id)
+    if approval is None:
+        correlation_id = f"tgask:{run_id}:{node.id}"
+        timeout_s = float(params.get("timeout") or 3600)
+        timeout_s = max(1.0, min(timeout_s, float(settings.graph_workflow_approval_max_timeout)))
+        approval = await repo.create_approval(
+            db, run_id, node.id, workflow_id, profile_id,
+            title=question or "?", message="", timeout_at=int(time.time() + timeout_s),
+            kind="event", correlation_id=correlation_id,
+        )
+        # Send the buttons; each callback_data carries the correlation id + value.
+        bot = _telegram_bot()
+        if bot is not None:
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+            rows = []
+            for opt in options:
+                label = str((opt or {}).get("label") or (opt or {}).get("value") or "")
+                value = str((opt or {}).get("value") or label)
+                rows.append([InlineKeyboardButton(label, callback_data=f"wfask:{approval.id}:{value}")])
+            try:
+                await bot.send_message(
+                    chat_id=chat_id, text=question or "?",
+                    reply_markup=InlineKeyboardMarkup(rows),
+                )
+            except Exception:  # noqa: BLE001 — a failed prompt still waits (deliverable via API)
+                logger.warning("telegram.ask: failed to send prompt to chat %s", chat_id)
+
+    current = await _wait_for_decision(db, run_id, approval)
+    if current.status == "delivered":
+        payload = current.data if isinstance(current.data, dict) else {"value": current.data}
+        return payload, ["main"]
+    if current.status == "expired" and str(params.get("onTimeout") or "branch").lower() == "fail":
+        raise RuntimeError("telegram.ask: timed out waiting for a response")
+    return {}, ["timeout"]
 
 
 async def _exec_notify_email(params: dict) -> dict:

@@ -1432,3 +1432,51 @@ nodo `human.approval`/`human.input`/`wait.event` (fase 4.4/10, default 7 giorni)
 notifica di avviso budget; `GRAPH_WORKFLOW_RUNS_RETENTION_DAYS` (default 0 = conserva per
 sempre) è il default d'istanza di retention che l'impostazione del singolo workflow può
 sovrascrivere.
+
+## Fase 19 — Custom Node SDK
+
+Estendi la palette da solo. Un **nodo personalizzato** è un pacchetto con un
+**manifest** `node.json` (`type` — sempre `custom.<name>`, `name`, `category`, schemi
+JSON di `params`/`outputs`, `handles`, `secrets`, `permissions`, `kind`) in due varianti:
+
+- **declarative** — nessun codice: un template `http.request` parametrico con
+  segnaposto `{{param.x}}` / `{{input}}`. Sicuro per costruzione; retry, rate-limit e
+  pin si applicano come per un connettore curato.
+- **python** — un modulo che definisce `run(params, input, ctx)`, eseguito **sempre**
+  nel subprocess sandbox (niente rete, limiti CPU/memoria/tempo). `ctx` espone solo i
+  secret dichiarati (`ctx.secrets`) e `ctx.log` — mai il vault.
+
+I pacchetti caricati sono versionati (la versione più alta è quella corrente); un nodo
+abilitato appare nella palette con badge *custom*. L'eliminazione di un tipo è
+bloccata finché un workflow lo usa. È possibile richiedere la **firma** HMAC per
+istanza. Autoraggio da CLI: `sibyl-wf node init|test|pack|push`.
+
+```
+GET/POST /v1/graph-workflows/custom-nodes            (elenco / installa)
+GET      /v1/graph-workflows/custom-nodes/{type}     (dettaglio, con codice)
+GET/POST /v1/graph-workflows/custom-nodes/{type}/versions
+PATCH    /v1/graph-workflows/custom-nodes/{type}     ({ enabled })
+DELETE   /v1/graph-workflows/custom-nodes/{type}     (409 + dipendenti se in uso)
+```
+
+Impostazioni: `GRAPH_WORKFLOW_CUSTOM_NODES_DIR`, `GRAPH_WORKFLOW_REQUIRE_SIGNED_NODES`,
+`GRAPH_WORKFLOW_NODE_SIGNING_KEY`.
+
+## Fase 20 — Telegram come canale di workflow
+
+Telegram diventa un canale **bidirezionale**, non solo un recapito di notifiche:
+
+- **Trigger `telegram` + launcher `/run`** — associa un comando del bot (`/report`) a
+  un workflow, oppure avvia qualsiasi workflow attivo dalla chat con `/run`. `$trigger =
+  {chat_id, thread_id, user, text, command, args, launched_via, file?}`; l'output
+  terminale `chat.reply`/`telegram.*` torna alla chat.
+- **`telegram.send` / `sendMedia` / `editMessage` / `deleteMessage`** — verso qualsiasi
+  chat (`chat_id` predefinito a `$trigger.chat_id`). Fuori da Telegram sono no-op puliti.
+- **`telegram.ask`** — mostra pulsanti inline, sospende la run (riusa la correlazione
+  `wait.event`), riprende con il valore scelto su `main` (timeout → `timeout`).
+- **Media in ingresso** — un documento/foto su un trigger `telegram` viene scaricato
+  nello storage del workspace ed esposto su `$trigger.file` per `file.*` / `doc.convert`
+  / `kb.search` (limite `GRAPH_WORKFLOW_TELEGRAM_MAX_FILE_MB`).
+- **Binding del bot** — `GET/POST/DELETE /v1/graph-workflows/telegram-bindings`
+  (collisioni di comando per profilo respinte); i comandi associati sono pubblicati via
+  `setMyCommands` all'avvio.

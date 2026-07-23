@@ -1629,3 +1629,51 @@ length; `GRAPH_WORKFLOW_OPENAPI_MAX_OPERATIONS` caps an OpenAPI import. Fase 12:
 `GRAPH_WORKFLOW_BUDGET_WARN_PCT` (default 0.8) is the usage fraction that raises the
 soft-budget-warning notification; `GRAPH_WORKFLOW_RUNS_RETENTION_DAYS` (default 0 = keep
 forever) is the instance-wide run-retention default a workflow's own setting overrides.
+
+## Phase 19 — Custom Node SDK
+
+Extend the palette yourself. A **custom node** is a package with a `node.json`
+**manifest** (`type` — always `custom.<name>`, `name`, `category`, `params`/`outputs`
+JSON Schemas, `handles`, `secrets`, `permissions`, `kind`) in one of two tiers:
+
+- **declarative** — no code: a parameterised `http.request` template with
+  `{{param.x}}` / `{{input}}` placeholders. Safe by construction; retry, rate-limit
+  and pins apply exactly like a curated connector.
+- **python** — a module defining `run(params, input, ctx)`, **always** executed in
+  the sandboxed subprocess (no network, CPU/memory/time caps). `ctx` exposes only
+  the declared secrets (`ctx.secrets`) and `ctx.log` — never the vault.
+
+Uploaded packages are versioned (highest version is current); an enabled node
+appears in the palette badged *custom*. Deleting a type is blocked while any
+workflow still uses it. Optional HMAC **signing** can be required per instance.
+Author with the CLI: `sibyl-wf node init|test|pack|push`.
+
+```
+GET/POST /v1/graph-workflows/custom-nodes            (list / install)
+GET      /v1/graph-workflows/custom-nodes/{type}     (detail, with code)
+GET/POST /v1/graph-workflows/custom-nodes/{type}/versions
+PATCH    /v1/graph-workflows/custom-nodes/{type}     ({ enabled })
+DELETE   /v1/graph-workflows/custom-nodes/{type}     (409 + dependents if in use)
+```
+
+Settings: `GRAPH_WORKFLOW_CUSTOM_NODES_DIR`, `GRAPH_WORKFLOW_REQUIRE_SIGNED_NODES`,
+`GRAPH_WORKFLOW_NODE_SIGNING_KEY`.
+
+## Phase 20 — Telegram as a workflow channel
+
+Telegram becomes a **bidirectional** channel, not just a notification sink:
+
+- **`telegram` trigger + `/run` launcher** — bind a bot command (`/report`) to a
+  workflow, or launch any active workflow from chat with `/run`. `$trigger =
+  {chat_id, thread_id, user, text, command, args, launched_via, file?}`; the run's
+  terminal `chat.reply`/`telegram.*` output returns to the chat.
+- **`telegram.send` / `sendMedia` / `editMessage` / `deleteMessage`** — talk to any
+  chat (`chat_id` defaults to `$trigger.chat_id`). Off Telegram they no-op cleanly.
+- **`telegram.ask`** — present inline buttons, suspend the run (reusing `wait.event`
+  correlation), resume with the tapped value on `main` (timeout → `timeout`).
+- **Inbound media** — a document/photo on a `telegram` trigger is fetched into the
+  workspace storage and exposed on `$trigger.file` for `file.*` / `doc.convert` /
+  `kb.search` (size-capped by `GRAPH_WORKFLOW_TELEGRAM_MAX_FILE_MB`).
+- **Bot bindings** — `GET/POST/DELETE /v1/graph-workflows/telegram-bindings`
+  (per-profile command collisions rejected); bound commands are published via
+  `setMyCommands` on boot.

@@ -864,6 +864,45 @@ CREATE TABLE IF NOT EXISTS workflow_notification_digest (
 );
 
 CREATE INDEX IF NOT EXISTS idx_workflow_notif_digest_wf ON workflow_notification_digest(workflow_id, channel, created_at);
+
+-- Phase 51 (roadmap fase 19) — Custom Node SDK. One row per (profile, type,
+-- version); the highest version of a type is the "current" one. `kind` is
+-- `declarative` (a parameterised http.request template) or `python` (a module
+-- run in the code sandbox). `manifest_json` holds the validated node.json,
+-- `code` the module source for python nodes.
+CREATE TABLE IF NOT EXISTS custom_nodes (
+    id            TEXT    PRIMARY KEY,
+    profile_id    TEXT    NOT NULL DEFAULT 'default',
+    type          TEXT    NOT NULL,                    -- custom.<name>
+    version       INTEGER NOT NULL DEFAULT 1,
+    name          TEXT    NOT NULL,
+    description    TEXT    NOT NULL DEFAULT '',
+    category       TEXT    NOT NULL DEFAULT 'action',
+    icon           TEXT    NOT NULL DEFAULT '',
+    kind           TEXT    NOT NULL DEFAULT 'declarative', -- declarative|python
+    manifest_json  TEXT    NOT NULL,
+    code           TEXT,
+    enabled        INTEGER NOT NULL DEFAULT 1,
+    created_at     INTEGER NOT NULL,
+    updated_at     INTEGER NOT NULL,
+    UNIQUE (profile_id, type, version)
+);
+CREATE INDEX IF NOT EXISTS idx_custom_nodes_type ON custom_nodes(profile_id, type, version);
+
+-- Phase 52 (roadmap fase 20.5) — Telegram command↔workflow bindings. A workflow
+-- claims a bot command (`/report`); collisions per profile are rejected at save
+-- time (UNIQUE). Used to register setMyCommands and route the command to a run.
+CREATE TABLE IF NOT EXISTS telegram_command_bindings (
+    id            TEXT    PRIMARY KEY,
+    profile_id    TEXT    NOT NULL DEFAULT 'default',
+    command       TEXT    NOT NULL,                    -- without the leading slash
+    workflow_id   TEXT    NOT NULL,
+    description   TEXT    NOT NULL DEFAULT '',
+    created_at    INTEGER NOT NULL,
+    UNIQUE (profile_id, command),
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_tg_cmd_bindings_wf ON telegram_command_bindings(workflow_id);
 """
 
 _MIGRATIONS = [
