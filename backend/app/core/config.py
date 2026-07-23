@@ -279,6 +279,13 @@ class Settings(BaseSettings):
     # SQLite database path for conversation persistence
     db_path: str = "spice_sibyl.db"
 
+    # Size of the shared aiosqlite connection pool (app/db/pool.py). Connections
+    # are reused across requests/tasks instead of opened per call. SQLite still
+    # has a single writer, so a small pool is plenty; raise it only if read
+    # concurrency (WAL) is the bottleneck. This is the seam that later fronts a
+    # networked DB (Postgres) without touching call sites.
+    db_pool_size: int = 5
+
     # Telegram bot — leave empty to disable
     telegram_bot_token: str | None = None
     # Comma-separated Telegram user IDs allowed to use the bot (empty = everyone)

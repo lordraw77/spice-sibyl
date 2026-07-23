@@ -25,6 +25,7 @@ import aiosqlite
 
 from app.core.config import settings
 from app.db import graph_workflow_repository as repo
+from app.db import pool
 from app.schemas.graph_workflows import ExposedWorkflowToolOut, GraphWorkflowOut
 
 logger = logging.getLogger(__name__)
@@ -113,8 +114,7 @@ async def call_tool(name: str, arguments: dict, profile_id: str) -> str:
             f"({depth}) would exceed the limit ({max_depth}); possible recursion."
         )
 
-    db = await aiosqlite.connect(settings.db_path)
-    db.row_factory = aiosqlite.Row
+    db = await pool.checkout()
     try:
         wf = await repo.get_workflow(db, wf_id)
         if wf is None or wf.profile_id != profile_id:

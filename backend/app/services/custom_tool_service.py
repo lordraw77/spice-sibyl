@@ -22,7 +22,7 @@ import aiosqlite
 import httpx
 
 from app.core.config import settings
-from app.db import custom_tool_repository
+from app.db import custom_tool_repository, pool
 from app.schemas.custom_tools import CustomToolOut
 
 logger = logging.getLogger(__name__)
@@ -125,8 +125,7 @@ async def invoke(tool: CustomToolOut, arguments: dict) -> str:
 async def call_tool(name: str, arguments: dict, profile_id: str) -> str:
     """Route a namespaced ``custom__<tool>`` call: resolve by profile and invoke."""
     raw = _raw_name(name)
-    db = await aiosqlite.connect(settings.db_path)
-    db.row_factory = aiosqlite.Row
+    db = await pool.checkout()
     try:
         tool = await custom_tool_repository.get_by_name(db, profile_id, raw)
     finally:

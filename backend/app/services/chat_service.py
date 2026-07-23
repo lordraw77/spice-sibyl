@@ -16,6 +16,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.core import metrics
 from app.core.config import settings
 from app.data.model_catalog import get_model_metadata
+from app.db import pool
 from app.schemas.chat import ChatCompletionRequest, ChatMessage, ToolCall, ToolCallFunction
 from app.services import cache_service, key_resolver
 from app.services.provider_factory import ProviderFactory
@@ -68,7 +69,6 @@ class ChatService:
 
         # Lazy imports keep RAG optional and avoid a hard numpy dependency on the
         # hot path when the feature is unused.
-        import aiosqlite
         from app.core.config import settings
         from app.services import rag_service
 
@@ -88,8 +88,7 @@ class ChatService:
         profile_id = request.profile_id or "default"
         top_k = request.rag_top_k or 4
         try:
-            db = await aiosqlite.connect(settings.db_path)
-            db.row_factory = aiosqlite.Row
+            db = await pool.checkout()
             try:
                 await db.execute("PRAGMA foreign_keys=ON")
                 sources = await rag_service.retrieve(
@@ -146,13 +145,11 @@ class ChatService:
         if not request.memory or not settings.memory_enabled:
             return request, False
 
-        import aiosqlite
         from app.services import memory_service
 
         profile_id = request.profile_id or "default"
         try:
-            db = await aiosqlite.connect(settings.db_path)
-            db.row_factory = aiosqlite.Row
+            db = await pool.checkout()
             try:
                 block = await memory_service.load_memory_block(db, profile_id)
             finally:

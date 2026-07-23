@@ -45,6 +45,9 @@ import aiosqlite
 
 from app.core.config import settings
 from app.db import graph_workflow_repository as repo
+from app.db import pool
+from app.workflow import registry
+from app.workflow.registry import DispatchCtx
 from app.schemas.graph_workflows import GraphEdge, GraphNode, WorkflowApprovalOut, WorkflowGraph
 
 logger = logging.getLogger(__name__)
@@ -136,11 +139,10 @@ def _publish(run_id: str, event: dict) -> None:
 
 # ── connection helper ───────────────────────────────────────────────────────
 
-async def _connect() -> aiosqlite.Connection:
-    db = await aiosqlite.connect(settings.db_path)
-    db.row_factory = aiosqlite.Row
-    await db.execute("PRAGMA foreign_keys=ON")
-    return db
+async def _connect() -> pool.PooledConnection:
+    # Borrow from the shared pool; the many `await db.close()` call sites now
+    # release the connection back instead of tearing it down (see app/db/pool.py).
+    return await pool.checkout()
 
 
 def _env_context() -> dict:
@@ -1943,9 +1945,12 @@ async def _dispatch_remote(
 async def _dispatch(
     db: aiosqlite.Connection, profile_id: str, node: GraphNode, node_input, params: dict, ctx: dict
 ) -> tuple[object, list[str]]:
-    """Return (output, active_output_handles) for a node."""
-    ntype = node.type
+    """Return (output, active_output_handles) for a node.
 
+    Cross-cutting remote routing stays here; per-type execution is delegated to
+    the dispatch table (app/workflow/registry.py, roadmap §4.1). The handlers
+    are registered just below in this module.
+    """
     if node.runOn:
         # Fase 14.1 — route to a remote runner when the node's type can
         # execute without db/profile_id context; None means "not remote-
@@ -1954,162 +1959,277 @@ async def _dispatch(
         if remote is not None:
             return remote
 
-    if ntype in _TRIGGER_TYPES:
-        return node_input if node_input is not None else params, ["main"]
+    return await registry.resolve(
+        DispatchCtx(
+            db=db, profile_id=profile_id, node=node,
+            node_input=node_input, params=params, ctx=ctx,
+        )
+    )
 
-    if ntype.startswith("tool."):
-        return await _exec_tool(profile_id, ntype[len("tool."):], params), ["main"]
 
-    if ntype == "set":
-        fields = params.get("fields")
-        return (fields if isinstance(fields, dict) else params), ["main"]
+# ── Node handler registry ────────────────────────────────────────────────────
+# One handler per node type / family, registered into the dispatch table. Each
+# adapter unpacks DispatchCtx into the existing _exec_* implementation and
+# returns (output, active_output_handles) — behaviour identical to the former
+# if/elif chain. Grouped by family so a family can later move wholesale into
+# app/workflow/nodes/<family>.py (the P1 explosion) without touching the engine.
 
-    if ntype == "if":
-        cond = _as_bool(params.get("condition"))
-        return {"value": cond, "input": node_input}, ["true" if cond else "false"]
+# -- triggers & core control flow --
 
-    if ntype == "switch":
-        return _exec_switch(node, params, node_input)
+@registry.node(*_TRIGGER_TYPES)
+async def _h_trigger(c: DispatchCtx):
+    return c.node_input if c.node_input is not None else c.params, ["main"]
 
-    if ntype == "merge":
-        items = node_input if isinstance(node_input, list) else [node_input]
-        return {"items": items}, ["main"]
 
-    if ntype == "filter":
-        return _exec_filter(params, node_input), ["main"]
+@registry.node("tool.", prefix=True)
+async def _h_tool(c: DispatchCtx):
+    return await _exec_tool(c.profile_id, c.ntype[len("tool."):], c.params), ["main"]
 
-    if ntype == "code":
-        return await _exec_code(params, node_input, ctx), ["main"]
 
-    if ntype == "wait":
-        return await _exec_wait(params), ["main"]
+@registry.node("set")
+async def _h_set(c: DispatchCtx):
+    fields = c.params.get("fields")
+    return (fields if isinstance(fields, dict) else c.params), ["main"]
 
-    if ntype == "aggregate":
-        return _exec_aggregate(params, node_input), ["main"]
 
-    if ntype == "batch":
-        return _exec_batch(params, node_input), ["main"]
+@registry.node("if")
+async def _h_if(c: DispatchCtx):
+    cond = _as_bool(c.params.get("condition"))
+    return {"value": cond, "input": c.node_input}, ["true" if cond else "false"]
 
-    if ntype == "http.request":
-        return await _exec_http_request(params), ["main"]
 
-    if ntype == "subworkflow":
-        return await _exec_subworkflow(db, profile_id, params, node_input, ctx), ["main"]
+@registry.node("switch")
+async def _h_switch(c: DispatchCtx):
+    return _exec_switch(c.node, c.params, c.node_input)
 
-    if ntype.startswith("workflow."):
-        # Fase 6.4 — a "callable" workflow exposed as a typed catalog node: the
-        # node's params ARE the child's input payload (validated against its
-        # input contract by _exec_subworkflow).
-        return await _exec_subworkflow(
-            db, profile_id,
-            {"workflow_id": ntype[len("workflow."):], "payload": params},
-            node_input, ctx,
-        ), ["main"]
 
-    if ntype == "chat.reply":
-        # Fase 9.3 — terminal reply node: its text is the conversation answer.
-        text = params.get("text")
-        if text in (None, ""):
-            text = node_input
-        if not isinstance(text, str):
-            text = json.dumps(text, default=str, ensure_ascii=False)
-        return {"reply": text}, ["main"]
+@registry.node("merge")
+async def _h_merge(c: DispatchCtx):
+    items = c.node_input if isinstance(c.node_input, list) else [c.node_input]
+    return {"items": items}, ["main"]
 
-    if ntype == "kb.search":
-        return await _exec_kb_search(db, profile_id, params, node_input), ["main"]
 
-    if ntype == "notify.telegram":
-        return await _exec_notify_telegram(db, profile_id, params), ["main"]
+@registry.node("filter")
+async def _h_filter(c: DispatchCtx):
+    return _exec_filter(c.params, c.node_input), ["main"]
 
-    # ── Phase 52 (roadmap fase 20 — Telegram as a workflow channel) ──
-    if ntype == "telegram.send":
-        return await _exec_telegram_send(params, node_input, ctx), ["main"]
-    if ntype == "telegram.sendMedia":
-        return await _exec_telegram_send_media(params, ctx), ["main"]
-    if ntype == "telegram.editMessage":
-        return await _exec_telegram_edit(params, ctx), ["main"]
-    if ntype == "telegram.deleteMessage":
-        return await _exec_telegram_delete(params, ctx), ["main"]
-    if ntype == "telegram.ask":
-        return await _exec_telegram_ask(db, profile_id, node, params, ctx)
 
-    if ntype == "notify.email":
-        return await _exec_notify_email(params), ["main"]
+@registry.node("code")
+async def _h_code(c: DispatchCtx):
+    return await _exec_code(c.params, c.node_input, c.ctx), ["main"]
 
-    if ntype == "notify.webhook":
-        return await _exec_notify_webhook(params, node_input), ["main"]
 
-    if ntype == "notify.inapp":
-        return await _exec_notify_inapp(db, profile_id, params), ["main"]
+@registry.node("wait")
+async def _h_wait(c: DispatchCtx):
+    return await _exec_wait(c.params), ["main"]
 
-    if ntype == "llm.completion":
-        return await _exec_llm_completion(db, profile_id, params), ["main"]
 
-    if ntype == "llm.agent":
-        return await _exec_llm_agent(db, profile_id, params), ["main"]
+@registry.node("aggregate")
+async def _h_aggregate(c: DispatchCtx):
+    return _exec_aggregate(c.params, c.node_input), ["main"]
 
-    # ── Phase 35 (roadmap fase 4) ──
-    if ntype == "llm.classify":
-        return await _exec_llm_classify(db, profile_id, params, node_input), ["main"]
 
-    if ntype == "llm.extract":
-        return await _exec_llm_extract(db, profile_id, params, node_input), ["main"]
+@registry.node("batch")
+async def _h_batch(c: DispatchCtx):
+    return _exec_batch(c.params, c.node_input), ["main"]
 
-    # ── Phase 50 (roadmap fase 18.1 — LLM quality gate) ──
-    if ntype == "llm.judge":
-        return await _exec_llm_judge(db, profile_id, params, node_input)
 
-    if ntype == "db.query":
-        return await _exec_db_query(params), ["main"]
+# -- data / io --
 
-    if ntype == "file.read":
-        return await _exec_file_read(params), ["main"]
+@registry.node("http.request")
+async def _h_http_request(c: DispatchCtx):
+    return await _exec_http_request(c.params), ["main"]
 
-    if ntype == "file.write":
-        return await _exec_file_write(params, node_input), ["main"]
 
-    if ntype == "file.parse":
-        return _exec_file_parse(params, node_input), ["main"]
+@registry.node("subworkflow")
+async def _h_subworkflow(c: DispatchCtx):
+    return await _exec_subworkflow(c.db, c.profile_id, c.params, c.node_input, c.ctx), ["main"]
 
-    if ntype == "human.approval":
-        return await _exec_human_approval(db, profile_id, node, params, ctx)
 
-    # ── Phase 42 (roadmap fase 10 — advanced human-in-the-loop) ──
-    if ntype == "human.input":
-        return await _exec_human_input(db, profile_id, node, params, ctx)
+@registry.node("workflow.", prefix=True)
+async def _h_workflow_call(c: DispatchCtx):
+    # Fase 6.4 — a "callable" workflow exposed as a typed catalog node: the
+    # node's params ARE the child's input payload (validated against its
+    # input contract by _exec_subworkflow).
+    return await _exec_subworkflow(
+        c.db, c.profile_id,
+        {"workflow_id": c.ntype[len("workflow."):], "payload": c.params},
+        c.node_input, c.ctx,
+    ), ["main"]
 
-    if ntype == "wait.event":
-        return await _exec_wait_event(db, profile_id, node, params, ctx)
 
-    if ntype == "queue.publish":
-        return await _exec_queue_publish(params, node_input), ["main"]
+@registry.node("chat.reply")
+async def _h_chat_reply(c: DispatchCtx):
+    # Fase 9.3 — terminal reply node: its text is the conversation answer.
+    text = c.params.get("text")
+    if text in (None, ""):
+        text = c.node_input
+    if not isinstance(text, str):
+        text = json.dumps(text, default=str, ensure_ascii=False)
+    return {"reply": text}, ["main"]
 
-    # ── Phase 47 (roadmap fase 15 — connectors and multimodal nodes) ──
-    if ntype.startswith("connector."):
-        # 15.1 — curated integration over http.request; auth from $secrets is
-        # already resolved into params by the expression layer.
-        return await _exec_connector(ntype[len("connector."):], params, node_input), ["main"]
 
-    if ntype == "ssh.exec":
-        return await _exec_ssh_exec(params), ["main"]
+@registry.node("kb.search")
+async def _h_kb_search(c: DispatchCtx):
+    return await _exec_kb_search(c.db, c.profile_id, c.params, c.node_input), ["main"]
 
-    if ntype == "browser":
-        return await _exec_browser(params), ["main"]
 
-    if ntype == "doc.convert":
-        return await _exec_doc_convert(params, node_input), ["main"]
+@registry.node("db.query")
+async def _h_db_query(c: DispatchCtx):
+    return await _exec_db_query(c.params), ["main"]
 
-    # ── Phase 48 (roadmap fase 16.1 — persistent state across runs) ──
-    if ntype in ("state.get", "state.set", "state.increment"):
-        return await _exec_state(db, ctx.get("_workflow_id"), ntype, params, node_input), ["main"]
 
-    # ── Phase 51 (roadmap fase 19 — Custom Node SDK) ──
-    if ntype.startswith("custom."):
-        from app.services import custom_node_service
+@registry.node("file.read")
+async def _h_file_read(c: DispatchCtx):
+    return await _exec_file_read(c.params), ["main"]
 
-        return await custom_node_service.execute(db, profile_id, ntype, params, node_input, ctx)
 
-    raise ValueError(f"unknown node type: {ntype}")
+@registry.node("file.write")
+async def _h_file_write(c: DispatchCtx):
+    return await _exec_file_write(c.params, c.node_input), ["main"]
+
+
+@registry.node("file.parse")
+async def _h_file_parse(c: DispatchCtx):
+    return _exec_file_parse(c.params, c.node_input), ["main"]
+
+
+# -- notifications & Telegram channel (Phase 52, roadmap fase 20) --
+
+@registry.node("notify.telegram")
+async def _h_notify_telegram(c: DispatchCtx):
+    return await _exec_notify_telegram(c.db, c.profile_id, c.params), ["main"]
+
+
+@registry.node("telegram.send")
+async def _h_telegram_send(c: DispatchCtx):
+    return await _exec_telegram_send(c.params, c.node_input, c.ctx), ["main"]
+
+
+@registry.node("telegram.sendMedia")
+async def _h_telegram_send_media(c: DispatchCtx):
+    return await _exec_telegram_send_media(c.params, c.ctx), ["main"]
+
+
+@registry.node("telegram.editMessage")
+async def _h_telegram_edit(c: DispatchCtx):
+    return await _exec_telegram_edit(c.params, c.ctx), ["main"]
+
+
+@registry.node("telegram.deleteMessage")
+async def _h_telegram_delete(c: DispatchCtx):
+    return await _exec_telegram_delete(c.params, c.ctx), ["main"]
+
+
+@registry.node("telegram.ask")
+async def _h_telegram_ask(c: DispatchCtx):
+    return await _exec_telegram_ask(c.db, c.profile_id, c.node, c.params, c.ctx)
+
+
+@registry.node("notify.email")
+async def _h_notify_email(c: DispatchCtx):
+    return await _exec_notify_email(c.params), ["main"]
+
+
+@registry.node("notify.webhook")
+async def _h_notify_webhook(c: DispatchCtx):
+    return await _exec_notify_webhook(c.params, c.node_input), ["main"]
+
+
+@registry.node("notify.inapp")
+async def _h_notify_inapp(c: DispatchCtx):
+    return await _exec_notify_inapp(c.db, c.profile_id, c.params), ["main"]
+
+
+# -- LLM nodes --
+
+@registry.node("llm.completion")
+async def _h_llm_completion(c: DispatchCtx):
+    return await _exec_llm_completion(c.db, c.profile_id, c.params), ["main"]
+
+
+@registry.node("llm.agent")
+async def _h_llm_agent(c: DispatchCtx):
+    return await _exec_llm_agent(c.db, c.profile_id, c.params), ["main"]
+
+
+@registry.node("llm.classify")  # Phase 35 (roadmap fase 4)
+async def _h_llm_classify(c: DispatchCtx):
+    return await _exec_llm_classify(c.db, c.profile_id, c.params, c.node_input), ["main"]
+
+
+@registry.node("llm.extract")
+async def _h_llm_extract(c: DispatchCtx):
+    return await _exec_llm_extract(c.db, c.profile_id, c.params, c.node_input), ["main"]
+
+
+@registry.node("llm.judge")  # Phase 50 (roadmap fase 18.1 — LLM quality gate)
+async def _h_llm_judge(c: DispatchCtx):
+    return await _exec_llm_judge(c.db, c.profile_id, c.params, c.node_input)
+
+
+# -- human-in-the-loop & async waits --
+
+@registry.node("human.approval")
+async def _h_human_approval(c: DispatchCtx):
+    return await _exec_human_approval(c.db, c.profile_id, c.node, c.params, c.ctx)
+
+
+@registry.node("human.input")  # Phase 42 (roadmap fase 10)
+async def _h_human_input(c: DispatchCtx):
+    return await _exec_human_input(c.db, c.profile_id, c.node, c.params, c.ctx)
+
+
+@registry.node("wait.event")
+async def _h_wait_event(c: DispatchCtx):
+    return await _exec_wait_event(c.db, c.profile_id, c.node, c.params, c.ctx)
+
+
+@registry.node("queue.publish")
+async def _h_queue_publish(c: DispatchCtx):
+    return await _exec_queue_publish(c.params, c.node_input), ["main"]
+
+
+# -- connectors & multimodal (Phase 47, roadmap fase 15) --
+
+@registry.node("connector.", prefix=True)
+async def _h_connector(c: DispatchCtx):
+    # 15.1 — curated integration over http.request; auth from $secrets is
+    # already resolved into params by the expression layer.
+    return await _exec_connector(c.ntype[len("connector."):], c.params, c.node_input), ["main"]
+
+
+@registry.node("ssh.exec")
+async def _h_ssh_exec(c: DispatchCtx):
+    return await _exec_ssh_exec(c.params), ["main"]
+
+
+@registry.node("browser")
+async def _h_browser(c: DispatchCtx):
+    return await _exec_browser(c.params), ["main"]
+
+
+@registry.node("doc.convert")
+async def _h_doc_convert(c: DispatchCtx):
+    return await _exec_doc_convert(c.params, c.node_input), ["main"]
+
+
+# -- persistent state (Phase 48, roadmap fase 16.1) --
+
+@registry.node("state.get", "state.set", "state.increment")
+async def _h_state(c: DispatchCtx):
+    return await _exec_state(c.db, c.ctx.get("_workflow_id"), c.ntype, c.params, c.node_input), ["main"]
+
+
+# -- Custom Node SDK (Phase 51, roadmap fase 19) --
+
+@registry.node("custom.", prefix=True)
+async def _h_custom(c: DispatchCtx):
+    from app.services import custom_node_service
+
+    return await custom_node_service.execute(
+        c.db, c.profile_id, c.ntype, c.params, c.node_input, c.ctx
+    )
 
 
 async def _exec_state(

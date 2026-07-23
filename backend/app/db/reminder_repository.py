@@ -15,6 +15,7 @@ import uuid
 import aiosqlite
 
 from app.core.config import settings
+from app.db import pool
 
 _COLUMNS = (
     "id, owner_profile_id, chat_id, text, smart_prompt, recurrence, fire_at, "
@@ -22,10 +23,9 @@ _COLUMNS = (
 )
 
 
-async def _connect() -> aiosqlite.Connection:
-    db = await aiosqlite.connect(settings.db_path)
-    db.row_factory = aiosqlite.Row
-    return db
+async def _connect() -> pool.PooledConnection:
+    # Borrow from the shared pool; call sites' `await db.close()` release it back.
+    return await pool.checkout()
 
 
 async def create(

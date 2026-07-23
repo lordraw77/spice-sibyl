@@ -16,7 +16,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.logging_context import JsonFormatter
 from app.db.database import get_db, init_db
-from app.db import vault_repository
+from app.db import pool, vault_repository
 from app.middleware.request_context import RequestContextMiddleware
 
 _INSECURE_DEFAULTS = frozenset({"change-me-in-production", "change-me", ""})
@@ -40,6 +40,8 @@ async def lifespan(application: FastAPI):
         )
 
     await init_db()
+    # Bring up the shared connection pool before anything touches the DB.
+    await pool.init_pool()
     async for db in get_db():
         await vault_repository.load_all(db)
 
@@ -111,6 +113,9 @@ async def lifespan(application: FastAPI):
         await tg_app.stop()
         await tg_app.shutdown()
         logging.getLogger(__name__).info("Telegram bot stopped")
+
+    # Drain the connection pool last, after every loop that uses it has stopped.
+    await pool.close_pool()
 
 
 def _configure_logging() -> None:

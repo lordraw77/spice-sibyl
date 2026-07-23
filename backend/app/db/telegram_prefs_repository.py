@@ -10,17 +10,14 @@ the bot module.
 import logging
 import time
 
-import aiosqlite
-
-from app.core.config import settings
+from app.db import pool
 
 logger = logging.getLogger(__name__)
 
 
-async def _connect() -> aiosqlite.Connection:
-    db = await aiosqlite.connect(settings.db_path)
-    db.row_factory = aiosqlite.Row
-    return db
+async def _connect() -> pool.PooledConnection:
+    # Borrow from the shared pool; call sites' `await db.close()` release it back.
+    return await pool.checkout()
 
 
 async def load_all() -> dict[int, str]:

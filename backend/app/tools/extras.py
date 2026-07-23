@@ -23,18 +23,17 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
-import aiosqlite
 import httpx
 
 from app.core.config import settings
+from app.db import pool
 
 logger = logging.getLogger(__name__)
 
 
-async def _connect() -> aiosqlite.Connection:
-    db = await aiosqlite.connect(settings.db_path)
-    db.row_factory = aiosqlite.Row
-    return db
+async def _connect() -> pool.PooledConnection:
+    # Borrow from the shared pool; call sites' `await db.close()` release it back.
+    return await pool.checkout()
 
 
 # ── SSRF hardening ───────────────────────────────────────────────────────────

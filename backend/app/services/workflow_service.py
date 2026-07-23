@@ -26,7 +26,7 @@ import logging
 import aiosqlite
 
 from app.core.config import settings
-from app.db import workflow_repository
+from app.db import pool, workflow_repository
 from app.schemas.chat import ChatCompletionRequest, ChatMessage, ToolCall, ToolCallFunction
 from app.schemas.workflows import AgentRunOut
 from app.services.provider_factory import ProviderFactory
@@ -52,11 +52,9 @@ def is_live(run_id: str) -> bool:
     return task is not None and not task.done()
 
 
-async def _connect() -> aiosqlite.Connection:
-    db = await aiosqlite.connect(settings.db_path)
-    db.row_factory = aiosqlite.Row
-    await db.execute("PRAGMA foreign_keys=ON")
-    return db
+async def _connect() -> pool.PooledConnection:
+    # Borrow from the shared pool; call sites' `await db.close()` release it back.
+    return await pool.checkout()
 
 
 async def _tool_definitions(db: aiosqlite.Connection, profile_id: str) -> list[dict]:

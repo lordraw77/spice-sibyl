@@ -19,7 +19,7 @@ import re
 import aiosqlite
 
 from app.core.config import settings
-from app.db import memory_repository
+from app.db import memory_repository, pool
 from app.schemas.chat import ChatCompletionRequest, ChatMessage
 from app.schemas.memories import MemoryOut
 
@@ -166,8 +166,7 @@ async def extract_from_exchange(
     if not exchange:
         return
 
-    db = await aiosqlite.connect(settings.db_path)
-    db.row_factory = aiosqlite.Row
+    db = await pool.checkout()
     try:
         if not await memory_repository.get_memory_enabled(db, profile_id):
             return

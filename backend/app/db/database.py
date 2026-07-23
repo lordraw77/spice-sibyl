@@ -1156,6 +1156,21 @@ async def _bootstrap_admin(db: aiosqlite.Connection) -> None:
 
 
 async def get_db():
+    """FastAPI dependency yielding a configured connection.
+
+    Backed by the shared pool (app/db/pool.py) once the app lifespan has run;
+    falls back to a one-shot direct connection when the pool isn't initialised
+    (standalone scripts / tests that don't start the lifespan), preserving the
+    original behaviour. Connection setup (row_factory, foreign keys, sqlite-vec)
+    is identical on both paths.
+    """
+    from app.db import pool
+
+    if pool._pool is not None:
+        async with pool.connection() as db:
+            yield db
+        return
+
     db = await aiosqlite.connect(settings.db_path)
     db.row_factory = aiosqlite.Row
     await db.execute("PRAGMA foreign_keys=ON")

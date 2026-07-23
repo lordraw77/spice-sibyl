@@ -59,7 +59,10 @@
       "Bash(git tag -a v3.7.0 -m 'Release v3.7.0 *)",
       "Bash(git push *)",
       "Bash(gh auth *)",
-      "Bash(env)"
+      "Bash(env)",
+      "Bash(python3 -c \"print\\('py', __import__\\('sys'\\).version.split\\(\\)[0]\\)\")",
+      "Bash(python3 -m py_compile app/db/pool.py app/db/database.py app/main.py app/core/config.py app/services/chat_service.py app/services/memory_service.py app/services/title_service.py app/services/custom_tool_service.py app/services/workflow_tool_service.py app/services/workflow_service.py app/services/workflow_graph_service.py app/db/telegram_prefs_repository.py app/db/reminder_repository.py app/tools/extras.py)",
+      "Bash(python3 -m py_compile app/workflow/registry.py app/workflow/__init__.py app/services/workflow_graph_service.py)"
     ],
     "additionalDirectories": [
       "/opt/multi-mcp"

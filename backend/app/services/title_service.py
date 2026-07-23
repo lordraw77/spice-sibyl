@@ -13,6 +13,7 @@ import logging
 import aiosqlite
 
 from app.core.config import settings
+from app.db import pool
 from app.schemas.chat import ChatCompletionRequest, ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,7 @@ async def generate_title(conversation_id: str, user_text: str, assistant_text: s
         title = title.strip('"“”\' \n').splitlines()[0][:80] if title else ""
         if not title:
             return
-        db = await aiosqlite.connect(settings.db_path)
+        db = await pool.checkout()
         try:
             from app.db import conversation_repository
             db.row_factory = aiosqlite.Row
