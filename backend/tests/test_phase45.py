@@ -58,7 +58,7 @@ def _fake_llm(monkeypatch, content: str):
             "usage": {"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10},
         }, "miss"
 
-    monkeypatch.setattr(engine, "_cached_complete", _fake)
+    monkeypatch.setattr("app.workflow.nodes.llm._cached_complete", _fake)
 
 
 # ── fase 13.2: explain / repair ──────────────────────────────────────────────

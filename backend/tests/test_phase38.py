@@ -462,7 +462,8 @@ def test_parse_rate_limits_pairs_and_json():
 
 
 def test_host_rate_limit_picks_the_stricter_cap(monkeypatch):
-    monkeypatch.setattr(engine, "_global_rate_limits", {"api.example.com": 10})
+    # rate-limit state now lives in app/workflow/nodes/io.py
+    monkeypatch.setattr("app.workflow.nodes.io._global_rate_limits", {"api.example.com": 10})
     assert engine._host_rate_limit("api.example.com", 30) == 10
     assert engine._host_rate_limit("api.example.com", 5) == 5
     assert engine._host_rate_limit("other.example.com", None) is None
@@ -489,7 +490,7 @@ def test_rate_limit_admit_waits_when_window_full(monkeypatch):
 
 def test_http_request_reports_rate_limited_wait(monkeypatch):
     engine._rate_hits.clear()
-    monkeypatch.setattr(engine, "_global_rate_limits", {})
+    monkeypatch.setattr("app.workflow.nodes.io._global_rate_limits", {})
 
     class FakeResponse:
         status_code = 200

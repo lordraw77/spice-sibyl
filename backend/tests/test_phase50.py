@@ -38,7 +38,7 @@ def _fake_llm(monkeypatch, content: str):
             "usage": {"prompt_tokens": 3, "completion_tokens": 5, "total_tokens": 8},
         }, "miss"
 
-    monkeypatch.setattr(engine, "_cached_complete", _fake)
+    monkeypatch.setattr("app.workflow.nodes.llm._cached_complete", _fake)
 
 
 def _make(client, auth_headers, graph, name="phase50 flow"):
@@ -206,7 +206,7 @@ def test_variant_metrics_endpoint_breaks_down_and_flags_winner(client, auth_head
             "usage": {"prompt_tokens": 3, "completion_tokens": 5, "total_tokens": 8},
         }, "miss"
 
-    monkeypatch.setattr(engine, "_cached_complete", _fake)
+    monkeypatch.setattr("app.workflow.nodes.llm._cached_complete", _fake)
     variants = [
         {"name": "strict", "params": {"instructions": "be harsh"}},
         {"name": "lenient", "params": {"instructions": "be kind"}},

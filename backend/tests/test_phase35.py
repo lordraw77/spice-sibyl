@@ -48,7 +48,7 @@ def _fake_llm(monkeypatch, content: str):
             "usage": {"prompt_tokens": 3, "completion_tokens": 5, "total_tokens": 8},
         }, "miss"
 
-    monkeypatch.setattr(engine, "_cached_complete", _fake)
+    monkeypatch.setattr("app.workflow.nodes.llm._cached_complete", _fake)
 
 
 # ── catalog (fase 4 nodes are in the palette) ───────────────────────────────
@@ -126,7 +126,7 @@ def test_llm_json_call_falls_back_to_next_model_on_invalid_json(
             "usage": {"prompt_tokens": 3, "completion_tokens": 5, "total_tokens": 8},
         }, "miss"
 
-    monkeypatch.setattr(engine, "_cached_complete", _fake)
+    monkeypatch.setattr("app.workflow.nodes.llm._cached_complete", _fake)
 
     resp = client.put(
         "/api/v1/admin/model-failover-chains",

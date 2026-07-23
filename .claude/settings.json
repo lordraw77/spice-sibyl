@@ -62,7 +62,13 @@
       "Bash(env)",
       "Bash(python3 -c \"print\\('py', __import__\\('sys'\\).version.split\\(\\)[0]\\)\")",
       "Bash(python3 -m py_compile app/db/pool.py app/db/database.py app/main.py app/core/config.py app/services/chat_service.py app/services/memory_service.py app/services/title_service.py app/services/custom_tool_service.py app/services/workflow_tool_service.py app/services/workflow_service.py app/services/workflow_graph_service.py app/db/telegram_prefs_repository.py app/db/reminder_repository.py app/tools/extras.py)",
-      "Bash(python3 -m py_compile app/workflow/registry.py app/workflow/__init__.py app/services/workflow_graph_service.py)"
+      "Bash(python3 -m py_compile app/workflow/registry.py app/workflow/__init__.py app/services/workflow_graph_service.py)",
+      "Bash(python3 -m py_compile app/workflow/context.py app/workflow/nodes/__init__.py app/workflow/nodes/logic.py app/services/workflow_graph_service.py)",
+      "Bash(python3 -m py_compile app/workflow/context.py app/workflow/nodes/io.py app/services/workflow_graph_service.py)",
+      "Bash(python3 -m py_compile app/services/workflow_graph_service.py)",
+      "Bash(sed -i 's/monkeypatch.setattr\\(engine, \"_cached_complete\", _fake\\)/monkeypatch.setattr\\(\"app.workflow.nodes.llm._cached_complete\", _fake\\)/g' tests/test_phase35.py tests/test_phase36.py tests/test_phase45.py tests/test_phase50.py)",
+      "Bash(sed -i 's/monkeypatch.setattr\\(engine, \"_llm_json_call\", _capture\\)/monkeypatch.setattr\\(\"app.workflow.nodes.llm._llm_json_call\", _capture\\)/g' tests/test_phase36.py)",
+      "Bash(python3 -m py_compile app/workflow/nodes/llm.py app/services/workflow_graph_service.py)"
     ],
     "additionalDirectories": [
       "/opt/multi-mcp"

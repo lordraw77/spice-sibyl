@@ -47,7 +47,69 @@ from app.core.config import settings
 from app.db import graph_workflow_repository as repo
 from app.db import pool
 from app.workflow import registry
+from app.workflow import nodes as _nodes  # noqa: F401 — importing registers node families
+from app.workflow.context import (
+    _as_bool,
+    _FILE_MAX_BYTES,
+    _MAX_LOOP_ITERATIONS,
+    _MAX_SUBWORKFLOW_DEPTH,
+    _safe_workspace_path,
+    _TOOL_RESULT_MAX_CHARS,
+    _WAIT_MAX_SECONDS,
+)
 from app.workflow.registry import DispatchCtx
+# Extracted node-family impls re-exported from the engine module. Some are used
+# by the engine directly (stateless remote-runner path; notify.webhook →
+# http.request); the rest are re-exported as a compatibility shim so existing
+# imports/tests referencing ``workflow_graph_service._exec_*`` keep working.
+from app.workflow.nodes.io import (  # noqa: F401
+    _connector_request,
+    _exec_browser,
+    _exec_connector,
+    _exec_db_query,
+    _exec_doc_convert,
+    _exec_file_parse,
+    _exec_file_read,
+    _exec_file_write,
+    _exec_http_request,
+    _exec_ssh_exec,
+    _host_rate_limit,
+    _parse_rate_limits,
+    _rate_hits,
+    _rate_limit_admit,
+    _rate_lock,
+    _ssh_host_allowed,
+)
+from app.workflow.nodes.llm import (  # noqa: F401
+    _cached_complete,
+    _candidate_models,
+    _classify_categories,
+    _exec_llm_agent,
+    _exec_llm_classify,
+    _exec_llm_completion,
+    _exec_llm_extract,
+    _exec_llm_judge,
+    _extract_usage,
+    _full_tool_definitions,
+    _judge_scale_max,
+    _llm_json_call,
+    _parse_llm_json,
+)
+from app.workflow.nodes.logic import _exec_aggregate, _exec_batch, _exec_filter, _exec_switch
+from app.workflow.nodes.messaging import (  # noqa: F401
+    _exec_kb_search,
+    _exec_notify_email,
+    _exec_notify_inapp,
+    _exec_notify_telegram,
+    _exec_notify_webhook,
+    _exec_telegram_delete,
+    _exec_telegram_edit,
+    _exec_telegram_send,
+    _exec_telegram_send_media,
+    _notify_text,
+    _resolve_chat_id,
+    _telegram_bot,
+)
 from app.schemas.graph_workflows import GraphEdge, GraphNode, WorkflowApprovalOut, WorkflowGraph
 
 logger = logging.getLogger(__name__)
@@ -70,17 +132,13 @@ _TRIGGER_TYPES = frozenset({
     "telegram",
 })
 _LOOP_TYPES = frozenset({"for", "repeat", "while"})
-_TOOL_RESULT_MAX_CHARS = 12000
-_MAX_LOOP_ITERATIONS = 1000
-_MAX_SUBWORKFLOW_DEPTH = 5
-_HTTP_MAX_TIMEOUT = 120.0
-_WAIT_MAX_SECONDS = 3600.0
+# Shared limits now live in app/workflow/context.py (imported below) so node
+# family modules can use them without importing the engine.
 _RETRY_MAX_BACKOFF_SECONDS = 60.0  # cap per pause, even with exponential growth
 _SCHEDULE_POLL_SECONDS = 20
 # Phase 35 (roadmap fase 4) — new node bounds.
 _APPROVAL_POLL_SECONDS = 2.0        # how often a waiting human.approval re-checks its request
-_DB_QUERY_MAX_ROWS = 1000           # rows returned by db.query, hard cap
-_FILE_MAX_BYTES = 10 * 1024 * 1024  # file.read/file.write size guard
+# _DB_QUERY_MAX_ROWS / _FILE_MAX_BYTES now live in app/workflow/context.py
 _ENV_WHITELIST_PREFIX = "WF_"  # only WF_*-prefixed env vars are exposed as $env
 _NO_OVERRIDE = object()  # sentinel: "no node-input override supplied" (fase 8.3 step debug)
 
@@ -1986,32 +2044,7 @@ async def _h_tool(c: DispatchCtx):
     return await _exec_tool(c.profile_id, c.ntype[len("tool."):], c.params), ["main"]
 
 
-@registry.node("set")
-async def _h_set(c: DispatchCtx):
-    fields = c.params.get("fields")
-    return (fields if isinstance(fields, dict) else c.params), ["main"]
-
-
-@registry.node("if")
-async def _h_if(c: DispatchCtx):
-    cond = _as_bool(c.params.get("condition"))
-    return {"value": cond, "input": c.node_input}, ["true" if cond else "false"]
-
-
-@registry.node("switch")
-async def _h_switch(c: DispatchCtx):
-    return _exec_switch(c.node, c.params, c.node_input)
-
-
-@registry.node("merge")
-async def _h_merge(c: DispatchCtx):
-    items = c.node_input if isinstance(c.node_input, list) else [c.node_input]
-    return {"items": items}, ["main"]
-
-
-@registry.node("filter")
-async def _h_filter(c: DispatchCtx):
-    return _exec_filter(c.params, c.node_input), ["main"]
+# set / if / switch / merge / filter / aggregate / batch → app/workflow/nodes/logic.py
 
 
 @registry.node("code")
@@ -2024,22 +2057,10 @@ async def _h_wait(c: DispatchCtx):
     return await _exec_wait(c.params), ["main"]
 
 
-@registry.node("aggregate")
-async def _h_aggregate(c: DispatchCtx):
-    return _exec_aggregate(c.params, c.node_input), ["main"]
+# http.request / db.query / file.* / connector.* / ssh.exec / browser / doc.convert
+#   → app/workflow/nodes/io.py
 
-
-@registry.node("batch")
-async def _h_batch(c: DispatchCtx):
-    return _exec_batch(c.params, c.node_input), ["main"]
-
-
-# -- data / io --
-
-@registry.node("http.request")
-async def _h_http_request(c: DispatchCtx):
-    return await _exec_http_request(c.params), ["main"]
-
+# -- subworkflow & callable workflows --
 
 @registry.node("subworkflow")
 async def _h_subworkflow(c: DispatchCtx):
@@ -2058,115 +2079,18 @@ async def _h_workflow_call(c: DispatchCtx):
     ), ["main"]
 
 
-@registry.node("chat.reply")
-async def _h_chat_reply(c: DispatchCtx):
-    # Fase 9.3 — terminal reply node: its text is the conversation answer.
-    text = c.params.get("text")
-    if text in (None, ""):
-        text = c.node_input
-    if not isinstance(text, str):
-        text = json.dumps(text, default=str, ensure_ascii=False)
-    return {"reply": text}, ["main"]
+# chat.reply / kb.search / notify.* / telegram.send/sendMedia/editMessage/deleteMessage
+#   → app/workflow/nodes/messaging.py
 
-
-@registry.node("kb.search")
-async def _h_kb_search(c: DispatchCtx):
-    return await _exec_kb_search(c.db, c.profile_id, c.params, c.node_input), ["main"]
-
-
-@registry.node("db.query")
-async def _h_db_query(c: DispatchCtx):
-    return await _exec_db_query(c.params), ["main"]
-
-
-@registry.node("file.read")
-async def _h_file_read(c: DispatchCtx):
-    return await _exec_file_read(c.params), ["main"]
-
-
-@registry.node("file.write")
-async def _h_file_write(c: DispatchCtx):
-    return await _exec_file_write(c.params, c.node_input), ["main"]
-
-
-@registry.node("file.parse")
-async def _h_file_parse(c: DispatchCtx):
-    return _exec_file_parse(c.params, c.node_input), ["main"]
-
-
-# -- notifications & Telegram channel (Phase 52, roadmap fase 20) --
-
-@registry.node("notify.telegram")
-async def _h_notify_telegram(c: DispatchCtx):
-    return await _exec_notify_telegram(c.db, c.profile_id, c.params), ["main"]
-
-
-@registry.node("telegram.send")
-async def _h_telegram_send(c: DispatchCtx):
-    return await _exec_telegram_send(c.params, c.node_input, c.ctx), ["main"]
-
-
-@registry.node("telegram.sendMedia")
-async def _h_telegram_send_media(c: DispatchCtx):
-    return await _exec_telegram_send_media(c.params, c.ctx), ["main"]
-
-
-@registry.node("telegram.editMessage")
-async def _h_telegram_edit(c: DispatchCtx):
-    return await _exec_telegram_edit(c.params, c.ctx), ["main"]
-
-
-@registry.node("telegram.deleteMessage")
-async def _h_telegram_delete(c: DispatchCtx):
-    return await _exec_telegram_delete(c.params, c.ctx), ["main"]
-
+# telegram.ask stays here: it suspends the run (human-in-the-loop machinery).
 
 @registry.node("telegram.ask")
 async def _h_telegram_ask(c: DispatchCtx):
     return await _exec_telegram_ask(c.db, c.profile_id, c.node, c.params, c.ctx)
 
 
-@registry.node("notify.email")
-async def _h_notify_email(c: DispatchCtx):
-    return await _exec_notify_email(c.params), ["main"]
-
-
-@registry.node("notify.webhook")
-async def _h_notify_webhook(c: DispatchCtx):
-    return await _exec_notify_webhook(c.params, c.node_input), ["main"]
-
-
-@registry.node("notify.inapp")
-async def _h_notify_inapp(c: DispatchCtx):
-    return await _exec_notify_inapp(c.db, c.profile_id, c.params), ["main"]
-
-
-# -- LLM nodes --
-
-@registry.node("llm.completion")
-async def _h_llm_completion(c: DispatchCtx):
-    return await _exec_llm_completion(c.db, c.profile_id, c.params), ["main"]
-
-
-@registry.node("llm.agent")
-async def _h_llm_agent(c: DispatchCtx):
-    return await _exec_llm_agent(c.db, c.profile_id, c.params), ["main"]
-
-
-@registry.node("llm.classify")  # Phase 35 (roadmap fase 4)
-async def _h_llm_classify(c: DispatchCtx):
-    return await _exec_llm_classify(c.db, c.profile_id, c.params, c.node_input), ["main"]
-
-
-@registry.node("llm.extract")
-async def _h_llm_extract(c: DispatchCtx):
-    return await _exec_llm_extract(c.db, c.profile_id, c.params, c.node_input), ["main"]
-
-
-@registry.node("llm.judge")  # Phase 50 (roadmap fase 18.1 — LLM quality gate)
-async def _h_llm_judge(c: DispatchCtx):
-    return await _exec_llm_judge(c.db, c.profile_id, c.params, c.node_input)
-
+# llm.completion / llm.agent / llm.classify / llm.extract / llm.judge
+#   → app/workflow/nodes/llm.py
 
 # -- human-in-the-loop & async waits --
 
@@ -2190,37 +2114,6 @@ async def _h_queue_publish(c: DispatchCtx):
     return await _exec_queue_publish(c.params, c.node_input), ["main"]
 
 
-# -- connectors & multimodal (Phase 47, roadmap fase 15) --
-
-@registry.node("connector.", prefix=True)
-async def _h_connector(c: DispatchCtx):
-    # 15.1 — curated integration over http.request; auth from $secrets is
-    # already resolved into params by the expression layer.
-    return await _exec_connector(c.ntype[len("connector."):], c.params, c.node_input), ["main"]
-
-
-@registry.node("ssh.exec")
-async def _h_ssh_exec(c: DispatchCtx):
-    return await _exec_ssh_exec(c.params), ["main"]
-
-
-@registry.node("browser")
-async def _h_browser(c: DispatchCtx):
-    return await _exec_browser(c.params), ["main"]
-
-
-@registry.node("doc.convert")
-async def _h_doc_convert(c: DispatchCtx):
-    return await _exec_doc_convert(c.params, c.node_input), ["main"]
-
-
-# -- persistent state (Phase 48, roadmap fase 16.1) --
-
-@registry.node("state.get", "state.set", "state.increment")
-async def _h_state(c: DispatchCtx):
-    return await _exec_state(c.db, c.ctx.get("_workflow_id"), c.ntype, c.params, c.node_input), ["main"]
-
-
 # -- Custom Node SDK (Phase 51, roadmap fase 19) --
 
 @registry.node("custom.", prefix=True)
@@ -2230,47 +2123,6 @@ async def _h_custom(c: DispatchCtx):
     return await custom_node_service.execute(
         c.db, c.profile_id, c.ntype, c.params, c.node_input, c.ctx
     )
-
-
-async def _exec_state(
-    db: aiosqlite.Connection, workflow_id: str | None, ntype: str, params: dict, node_input,
-) -> dict:
-    """Fase 16.1 — per-workflow persistent key/value state that outlives a run.
-
-    ``state.get`` → ``{key, value, found}``; ``state.set`` → ``{key, value}``;
-    ``state.increment`` → ``{key, value}`` (numeric, atomic). ``ttlSeconds`` on
-    set/increment gives the key an expiry (default from settings). Backed by the
-    ``workflow_state`` table, never carried in an export."""
-    if not workflow_id:
-        raise ValueError("state.* nodes require a workflow context (not available in this run mode)")
-    key = str(params.get("key") or "").strip()
-    if not key:
-        raise ValueError("state node requires a non-empty 'key'")
-
-    if ntype == "state.get":
-        found, value = await repo.state_get(db, workflow_id, key)
-        if not found and "default" in params:
-            value = params.get("default")
-        return {"key": key, "value": value, "found": found}
-
-    ttl = params.get("ttlSeconds")
-    ttl = int(ttl) if isinstance(ttl, (int, float)) and not isinstance(ttl, bool) else None
-    if ttl is None and settings.graph_workflow_state_default_ttl_seconds > 0:
-        ttl = settings.graph_workflow_state_default_ttl_seconds
-
-    if ntype == "state.set":
-        # `value` defaults to the node's primary input, so `state.set` can park
-        # whatever flowed in without an explicit expression.
-        value = params["value"] if "value" in params else node_input
-        await repo.state_set(db, workflow_id, key, value, ttl)
-        return {"key": key, "value": value}
-
-    # state.increment
-    amount = params.get("amount", 1)
-    if isinstance(amount, bool) or not isinstance(amount, (int, float)):
-        amount = 1
-    value = await repo.state_increment(db, workflow_id, key, amount, ttl)
-    return {"key": key, "value": value}
 
 
 # ── message queue (Phase 46 — roadmap fase 14.4) ────────────────────────────
@@ -2393,32 +2245,6 @@ async def _exec_tool(profile_id: str, tool_name: str, params: dict) -> dict:
     return {"result": result, "json": parsed}
 
 
-def _exec_switch(node: GraphNode, params: dict, node_input) -> tuple[object, list[str]]:
-    value = params.get("value")
-    cases = params.get("cases")
-    if not isinstance(cases, list):
-        # cases may be declared on the node params as a list of match values.
-        cases = []
-    out = {"value": value, "input": node_input}
-    for case in cases:
-        if str(case) == str(value):
-            return out, [f"case:{case}"]
-    return out, ["default"]
-
-
-def _exec_filter(params: dict, node_input) -> dict:
-    items = params.get("items")
-    if items is None:
-        items = node_input if isinstance(node_input, list) else []
-    keep = params.get("keep")
-    if isinstance(keep, list):
-        # keep is a same-length boolean mask resolved per item by the caller.
-        filtered = [it for it, flag in zip(items, keep) if _as_bool(flag)]
-    else:
-        filtered = list(items)
-    return {"items": filtered, "count": len(filtered)}
-
-
 async def _exec_code(params: dict, node_input, ctx: dict) -> dict:
     from app.tools.code_interpreter import python_exec
 
@@ -2458,193 +2284,6 @@ async def _exec_wait(params: dict) -> dict:
     delay = max(0.0, min(delay, _WAIT_MAX_SECONDS))
     await asyncio.sleep(delay)
     return {"waited": delay}
-
-
-def _resolve_field(item, field: str | None):
-    if not field:
-        return item
-    value = item
-    for part in str(field).split("."):
-        if isinstance(value, dict):
-            value = value.get(part)
-        else:
-            return None
-    return value
-
-
-def _exec_aggregate(params: dict, node_input) -> dict:
-    """Reduce an array (``items``, or the node input) with ``op`` over ``field``."""
-    items = params.get("items")
-    if items is None:
-        items = node_input if isinstance(node_input, list) else []
-    op = str(params.get("op") or "count").lower()
-    field = params.get("field")
-
-    if op == "count":
-        return {"result": len(items), "count": len(items)}
-
-    values = [_resolve_field(it, field) for it in items]
-    values = [v for v in values if isinstance(v, (int, float))]
-
-    if op == "concat":
-        result = ", ".join(str(_resolve_field(it, field)) for it in items)
-    elif not values:
-        result = None
-    elif op == "sum":
-        result = sum(values)
-    elif op == "avg":
-        result = sum(values) / len(values)
-    elif op == "min":
-        result = min(values)
-    elif op == "max":
-        result = max(values)
-    else:
-        raise ValueError(f"aggregate: unknown op {op!r}")
-
-    return {"result": result, "count": len(items)}
-
-
-def _exec_batch(params: dict, node_input) -> dict:
-    """Split an array (``items``, or the node input) into chunks of ``size``."""
-    items = params.get("items")
-    if items is None:
-        items = node_input if isinstance(node_input, list) else []
-    size = max(1, int(params.get("size") or 1))
-    batches = [items[i:i + size] for i in range(0, len(items), size)]
-    return {"batches": batches, "count": len(batches)}
-
-
-# ── per-host rate limiting (fase 6.6) ───────────────────────────────────────
-# Sliding-window admission timestamps per host, shared by every run in the
-# process. Requests over the threshold WAIT (they don't fail); the wait is
-# reported in the node output as `rate_limited_s`.
-_rate_hits: dict[str, list[float]] = {}
-_rate_lock: asyncio.Lock = asyncio.Lock()
-_global_rate_limits: dict[str, int] | None = None  # parsed lazily from settings
-
-
-def _parse_rate_limits(raw: str) -> dict[str, int]:
-    """GRAPH_WORKFLOW_RATE_LIMITS: a JSON object {host: rpm} or 'host=rpm'
-    pairs separated by commas. Invalid entries are dropped."""
-    text = (raw or "").strip()
-    out: dict[str, int] = {}
-    if not text:
-        return out
-    if text.startswith("{"):
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            return out
-        if isinstance(data, dict):
-            for host, rpm in data.items():
-                try:
-                    out[str(host).lower()] = max(1, int(rpm))
-                except (TypeError, ValueError):
-                    continue
-        return out
-    for pair in text.split(","):
-        host, _, rpm = pair.partition("=")
-        try:
-            out[host.strip().lower()] = max(1, int(rpm))
-        except (TypeError, ValueError):
-            continue
-    return {h: r for h, r in out.items() if h}
-
-
-def _host_rate_limit(host: str, node_rpm) -> int | None:
-    """The effective requests-per-minute cap for a host: the stricter of the
-    node's own maxRequestsPerMinute and the global per-domain map (None = no cap)."""
-    global _global_rate_limits
-    if _global_rate_limits is None:
-        _global_rate_limits = _parse_rate_limits(settings.graph_workflow_rate_limits)
-    caps: list[int] = []
-    global_cap = _global_rate_limits.get(host.lower())
-    if global_cap:
-        caps.append(global_cap)
-    try:
-        rpm = int(node_rpm or 0)
-        if rpm > 0:
-            caps.append(rpm)
-    except (TypeError, ValueError):
-        pass
-    return min(caps) if caps else None
-
-
-async def _rate_limit_admit(host: str, rpm: int) -> float:
-    """Block until the host's sliding one-minute window has a free slot, record
-    the admission, and return the seconds actually waited."""
-    waited = 0.0
-    while True:
-        async with _rate_lock:
-            now = time.monotonic()
-            hits = [t for t in _rate_hits.get(host, []) if now - t < 60.0]
-            if len(hits) < rpm:
-                hits.append(now)
-                _rate_hits[host] = hits
-                return waited
-            delay = max(0.05, hits[0] + 60.0 - now)
-            _rate_hits[host] = hits
-        await asyncio.sleep(delay)
-        waited += delay
-
-
-async def _exec_http_request(params: dict) -> dict:
-    """Generic HTTP call. Non-2xx raises by default so retry/onError apply;
-    set ``allow_errors`` to get the response back regardless of status.
-    Fase 6.6 — calls are throttled per host (node maxRequestsPerMinute and/or
-    the global GRAPH_WORKFLOW_RATE_LIMITS map); throttled requests wait."""
-    from urllib.parse import urlparse
-
-    import httpx
-
-    url = str(params.get("url") or "").strip()
-    if not url.startswith(("http://", "https://")):
-        raise ValueError("http.request: 'url' must be an http(s) URL")
-    method = str(params.get("method") or "GET").upper()
-
-    host = (urlparse(url).hostname or "").lower()
-    rate_limited_s = 0.0
-    rpm = _host_rate_limit(host, params.get("maxRequestsPerMinute")) if host else None
-    if rpm:
-        rate_limited_s = await _rate_limit_admit(host, rpm)
-
-    headers = params.get("headers") if isinstance(params.get("headers"), dict) else None
-    query = params.get("query") if isinstance(params.get("query"), dict) else None
-    timeout = min(float(params.get("timeout") or 30.0), _HTTP_MAX_TIMEOUT)
-
-    body = params.get("body")
-    body_kwargs: dict = {}
-    if isinstance(body, (dict, list)):
-        body_kwargs["json"] = body
-    elif body is not None and str(body) != "":
-        body_kwargs["content"] = str(body)
-
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        resp = await client.request(method, url, params=query, headers=headers, **body_kwargs)
-
-    text = resp.text
-    if len(text) > _TOOL_RESULT_MAX_CHARS:
-        text = text[:_TOOL_RESULT_MAX_CHARS] + "\n[Truncated]"
-    parsed = None
-    if "json" in (resp.headers.get("content-type") or ""):
-        try:
-            parsed = resp.json()
-        except ValueError:
-            parsed = None
-
-    if not resp.is_success and not _as_bool(params.get("allow_errors")):
-        raise RuntimeError(f"http.request: {method} {url} → HTTP {resp.status_code}: {text[:300]}")
-
-    out = {
-        "status": resp.status_code,
-        "ok": resp.is_success,
-        "headers": dict(resp.headers),
-        "json": parsed,
-        "text": text,
-    }
-    if rate_limited_s > 0:
-        out["rate_limited_s"] = round(rate_limited_s, 2)
-    return out
 
 
 def _validate_json_schema(value, schema: dict, path: str = "$") -> list[str]:
@@ -3085,212 +2724,6 @@ async def budget_status(db: aiosqlite.Connection, workflow_id: str, profile_id: 
     }
 
 
-async def _exec_kb_search(
-    db: aiosqlite.Connection, profile_id: str, params: dict, node_input
-) -> dict:
-    """Fase 6.5 — semantic search over the profile's knowledge base (Phase 28),
-    returning structured hits instead of the tool's flattened text: RAG inside
-    workflows without going through a generic llm.agent."""
-    from app.services import rag_service
-
-    query = params.get("query")
-    if query in (None, ""):
-        query = node_input
-    if query in (None, ""):
-        raise ValueError("kb.search: 'query' is required")
-    if not isinstance(query, str):
-        query = json.dumps(query, default=str, ensure_ascii=False)
-    query = query.strip()
-    if not query:
-        raise ValueError("kb.search: 'query' is required")
-    top_k = max(1, min(int(params.get("top_k") or 5), 20))
-    document_ids = params.get("document_ids")
-    if isinstance(document_ids, str):
-        document_ids = [d.strip() for d in document_ids.split(",") if d.strip()]
-    if not isinstance(document_ids, list) or not document_ids:
-        document_ids = None
-    sources = await rag_service.retrieve(
-        db, profile_id, query, top_k=top_k, document_ids=document_ids
-    )
-    results = [
-        {
-            "text": s.snippet,
-            "score": round(float(s.score), 4),
-            "source": s.filename,
-            "chunk_index": s.chunk_index,
-        }
-        for s in sources
-    ]
-    return {"results": results, "count": len(results), "query": query}
-
-
-# ── notification nodes ──────────────────────────────────────────────────────
-
-def _notify_text(params: dict) -> str:
-    text = params.get("text") or params.get("message") or params.get("body") or ""
-    if not isinstance(text, str):
-        text = json.dumps(text, default=str, ensure_ascii=False)
-    return text
-
-
-_TELEGRAM_PARSE_MODES = frozenset({"", "Markdown", "MarkdownV2", "HTML"})
-# CommonMark-style **bold** (what LLM nodes typically produce) isn't valid Telegram
-# Markdown/MarkdownV2 — both dialects use a single asterisk for bold — so normalise
-# it rather than silently rendering the literal '**' in the chat.
-_DOUBLE_STAR_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
-
-
-async def _exec_notify_telegram(db: aiosqlite.Connection, profile_id: str, params: dict) -> dict:
-    """Send to the profile's linked Telegram chat via the Phase 23.c bridge.
-    The bridge is best-effort (missing link / muted chat / stopped bot = no-op),
-    so report whether a link exists rather than pretending delivery."""
-    from app.db import telegram_link_repository
-    from app.services import notification_service
-
-    text = _notify_text(params)
-    if not text:
-        raise ValueError("notify.telegram: 'text' is required")
-    parse_mode = str(params.get("parse_mode") or "").strip()
-    if parse_mode not in _TELEGRAM_PARSE_MODES:
-        raise ValueError(f"notify.telegram: invalid parse_mode {parse_mode!r} (Markdown|MarkdownV2|HTML)")
-    if parse_mode in ("Markdown", "MarkdownV2"):
-        text = _DOUBLE_STAR_BOLD_RE.sub(r"*\1*", text)
-    link = await telegram_link_repository.get_by_profile_id(db, profile_id)
-    if link is None:
-        raise RuntimeError("notify.telegram: no Telegram chat linked to this profile")
-    await notification_service.notify_telegram(db, profile_id, "workflow", text, parse_mode=parse_mode or None)
-    return {"queued": True, "channel": "telegram", "parse_mode": parse_mode or None}
-
-
-# ── Phase 52 (roadmap fase 20) — Telegram as a workflow channel ───────────────
-
-def _telegram_bot():
-    """The live bot Application, or None when the bot isn't running. Kept behind a
-    helper so every telegram.* node degrades to a clean no-op off Telegram."""
-    from app.telegram import bot as telegram_bot
-
-    app = telegram_bot.get_bot()
-    return app.bot if app is not None else None
-
-
-def _resolve_chat_id(params: dict, ctx: dict):
-    """A telegram.* node targets an explicit ``chat_id`` (expression, already
-    resolved) or, failing that, the chat the run originated from (a ``telegram`` /
-    ``chat`` trigger puts ``chat_id`` on ``$trigger``)."""
-    chat_id = params.get("chat_id")
-    if chat_id in (None, ""):
-        trigger = ctx.get("trigger") if isinstance(ctx.get("trigger"), dict) else {}
-        chat_id = trigger.get("chat_id")
-    if chat_id in (None, ""):
-        raise ValueError("telegram: no 'chat_id' given and the run has no originating chat")
-    return chat_id
-
-
-def _telegram_parse_mode(params: dict) -> str | None:
-    parse_mode = str(params.get("parse_mode") or "").strip()
-    if parse_mode not in _TELEGRAM_PARSE_MODES:
-        raise ValueError(f"telegram: invalid parse_mode {parse_mode!r} (Markdown|MarkdownV2|HTML)")
-    return parse_mode or None
-
-
-async def _exec_telegram_send(params: dict, node_input, ctx: dict) -> dict:
-    """20.2 — send text to any chat/thread. Off Telegram it no-ops (``sent:
-    False``), mirroring the silent-drop of the notify bridge; a send that raises
-    (e.g. a chat the bot doesn't own) surfaces so On error applies."""
-    chat_id = _resolve_chat_id(params, ctx)
-    text = params.get("text")
-    if text in (None, ""):
-        text = node_input
-    if not isinstance(text, str):
-        text = json.dumps(text, default=str, ensure_ascii=False)
-    bot = _telegram_bot()
-    if bot is None:
-        return {"sent": False, "reason": "bot_not_running", "chat_id": chat_id}
-    kwargs: dict = {"chat_id": chat_id, "text": text, "parse_mode": _telegram_parse_mode(params)}
-    if params.get("thread_id") not in (None, ""):
-        kwargs["message_thread_id"] = int(params["thread_id"])
-    if params.get("reply_to") not in (None, ""):
-        kwargs["reply_to_message_id"] = int(params["reply_to"])
-    if _as_bool(params.get("disable_preview")):
-        kwargs["disable_web_page_preview"] = True
-    try:
-        msg = await bot.send_message(**kwargs)
-    except Exception as exc:  # noqa: BLE001 — surface as a node failure (retry/onError)
-        raise RuntimeError(f"telegram.send: {exc}") from exc
-    return {"sent": True, "message_id": msg.message_id, "chat_id": msg.chat_id}
-
-
-async def _exec_telegram_send_media(params: dict, ctx: dict) -> dict:
-    """20.2 — send a photo/document from workspace storage or a URL, with caption."""
-    chat_id = _resolve_chat_id(params, ctx)
-    kind = str(params.get("media_type") or "document").strip().lower()
-    source = params.get("url") or params.get("path")
-    if not source:
-        raise ValueError("telegram.sendMedia: 'url' or 'path' is required")
-    caption = params.get("caption")
-    bot = _telegram_bot()
-    if bot is None:
-        return {"sent": False, "reason": "bot_not_running", "chat_id": chat_id}
-    # A path is confined to the workspace storage (fase 4.2); a URL is passed through.
-    media = str(source)
-    fh = None
-    if not media.startswith(("http://", "https://")):
-        fh = open(_safe_workspace_path(media), "rb")  # noqa: SIM115 — closed below
-        media = fh
-    senders = {
-        "photo": ("send_photo", "photo"), "document": ("send_document", "document"),
-        "audio": ("send_audio", "audio"), "voice": ("send_voice", "voice"),
-        "video": ("send_video", "video"),
-    }
-    method_name, arg = senders.get(kind, senders["document"])
-    try:
-        msg = await getattr(bot, method_name)(chat_id=chat_id, caption=caption, **{arg: media})
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"telegram.sendMedia: {exc}") from exc
-    finally:
-        if fh is not None:
-            fh.close()
-    return {"sent": True, "message_id": msg.message_id, "chat_id": msg.chat_id, "media_type": kind}
-
-
-async def _exec_telegram_edit(params: dict, ctx: dict) -> dict:
-    """20.2 — edit a message sent earlier in the run (progress bars, done edits)."""
-    chat_id = _resolve_chat_id(params, ctx)
-    message_id = params.get("message_id")
-    if message_id in (None, ""):
-        raise ValueError("telegram.editMessage: 'message_id' is required")
-    text = params.get("text")
-    if text in (None, ""):
-        raise ValueError("telegram.editMessage: 'text' is required")
-    bot = _telegram_bot()
-    if bot is None:
-        return {"edited": False, "reason": "bot_not_running", "chat_id": chat_id}
-    try:
-        await bot.edit_message_text(
-            chat_id=chat_id, message_id=int(message_id), text=str(text),
-            parse_mode=_telegram_parse_mode(params),
-        )
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"telegram.editMessage: {exc}") from exc
-    return {"edited": True, "message_id": int(message_id), "chat_id": chat_id}
-
-
-async def _exec_telegram_delete(params: dict, ctx: dict) -> dict:
-    """20.2 — remove a message sent earlier in the run."""
-    chat_id = _resolve_chat_id(params, ctx)
-    message_id = params.get("message_id")
-    if message_id in (None, ""):
-        raise ValueError("telegram.deleteMessage: 'message_id' is required")
-    bot = _telegram_bot()
-    if bot is None:
-        return {"deleted": False, "reason": "bot_not_running", "chat_id": chat_id}
-    try:
-        await bot.delete_message(chat_id=chat_id, message_id=int(message_id))
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"telegram.deleteMessage: {exc}") from exc
-    return {"deleted": True, "message_id": int(message_id), "chat_id": chat_id}
-
-
 async def _exec_telegram_ask(
     db: aiosqlite.Connection, profile_id: str, node: GraphNode, params: dict, ctx: dict
 ) -> tuple[object, list[str]]:
@@ -3343,488 +2776,6 @@ async def _exec_telegram_ask(
     if current.status == "expired" and str(params.get("onTimeout") or "branch").lower() == "fail":
         raise RuntimeError("telegram.ask: timed out waiting for a response")
     return {}, ["timeout"]
-
-
-async def _exec_notify_email(params: dict) -> dict:
-    from app.services import email_service
-
-    to = params.get("to") or ""
-    subject = str(params.get("subject") or "SpiceSibyl workflow notification")
-    body = _notify_text(params)
-    return await email_service.send_email(to, subject, body)
-
-
-async def _exec_notify_webhook(params: dict, node_input) -> dict:
-    """POST a JSON payload to an external webhook (Slack/Discord/ntfy/…)."""
-    payload = params.get("payload")
-    if payload is None:
-        payload = node_input
-    out = await _exec_http_request({
-        "method": str(params.get("method") or "POST"),
-        "url": params.get("url"),
-        "headers": params.get("headers"),
-        "body": payload,
-        "timeout": params.get("timeout"),
-    })
-    return {"sent": True, "status": out["status"], "response": out["json"] if out["json"] is not None else out["text"]}
-
-
-async def _exec_notify_inapp(db: aiosqlite.Connection, profile_id: str, params: dict) -> dict:
-    """Push a notification to the web UI bell (persisted + live SSE)."""
-    from app.services import notification_service
-
-    title = str(params.get("title") or "Workflow")
-    body = _notify_text(params)
-    await notification_service.notify_web(db, profile_id, "workflow", title, body)
-    return {"queued": True, "channel": "inapp", "title": title}
-
-
-async def _cached_complete(request) -> tuple[dict, str]:
-    """Complete a chat request through the Phase 19/26 response cache (same dance as
-    ChatService.complete — see chat_service.py:275-307), so identical workflow LLM node
-    runs skip the provider like chat does. Returns (response_dict, "hit"|"semantic"|"miss").
-    cache_service.cache_key() already returns None for tool-bearing/multimodal requests,
-    so tool-using llm.agent steps are naturally excluded from caching."""
-    from app.services import cache_service
-    from app.services.chat_service import ChatService
-    from app.services.provider_factory import ProviderFactory
-
-    cache_key = cache_service.cache_key(request)
-    cached = cache_service.get(cache_key)
-    if cached is not None:
-        return ChatService._cached_completion(request, cached, semantic=False), "hit"
-
-    query_embedding: list[float] | None = None
-    embed_model: str | None = None
-    bucket: str | None = None
-    if cache_key is not None and settings.semantic_cache_enabled:
-        sem, query_embedding, embed_model, bucket = await cache_service.semantic_get(request)
-        if sem is not None:
-            return ChatService._cached_completion(request, sem, semantic=True), "semantic"
-
-    provider = ProviderFactory.get_provider(request.model)
-    response = await provider.complete(request)
-    if hasattr(response, "model_dump"):
-        response = response.model_dump()
-    try:
-        choices = response.get("choices") or []
-        content = ((choices[0].get("message") or {}).get("content") or "") if choices else ""
-        cache_service.put(
-            cache_key, content, {"usage": response.get("usage") or {}},
-            embedding=query_embedding, embed_model=embed_model, bucket=bucket,
-        )
-    except (AttributeError, TypeError, KeyError, IndexError):
-        pass  # non-dict/odd provider response — skip caching
-    return response, "miss"
-
-
-async def _candidate_models(db: aiosqlite.Connection, model: str, failover_chain: str | None) -> list[str]:
-    """[model] plus any further models from a named Settings → Models failover chain
-    (Phase 31.c), in order, deduplicated. [model] alone when no chain is configured."""
-    candidates = [model]
-    chain_name = str(failover_chain or "").strip()
-    if chain_name:
-        from app.db import settings_repository
-        from app.schemas.features import MODEL_FAILOVER_CHAINS_OWNER_KEY, failover_chain_models
-
-        blob = await settings_repository.get(db, MODEL_FAILOVER_CHAINS_OWNER_KEY)
-        for candidate in failover_chain_models(blob, chain_name):
-            if candidate not in candidates:
-                candidates.append(candidate)
-    return candidates
-
-
-async def _exec_llm_completion(db: aiosqlite.Connection, profile_id: str, params: dict) -> dict:
-    from app.schemas.chat import ChatCompletionRequest, ChatMessage
-
-    model = params.get("model") or settings.default_model
-    prompt = params.get("prompt") or params.get("input") or ""
-    system = params.get("system")
-    messages = []
-    if system:
-        messages.append(ChatMessage(role="system", content=str(system)))
-    messages.append(ChatMessage(role="user", content=str(prompt)))
-
-    candidates = await _candidate_models(db, model, params.get("failover_chain"))
-    tried: list[str] = []
-    last_exc: Exception | None = None
-    for candidate in candidates:
-        tried.append(candidate)
-        request = ChatCompletionRequest(
-            model=candidate, messages=messages, stream=False, profile_id=profile_id
-        )
-        try:
-            response, cache_status = await _cached_complete(request)
-        except Exception as exc:  # noqa: BLE001 — fall through to the next chain candidate
-            last_exc = exc
-            continue
-        choices = response.get("choices") or []
-        content = ((choices[0].get("message") or {}).get("content") if choices else "") or ""
-        out = {"content": content, "model": candidate, "_usage": _extract_usage(response), "_cache": cache_status}
-        if len(candidates) > 1:
-            out["_failover"] = {"tried": tried, "used": candidate}
-        return out
-    raise last_exc
-
-
-def _extract_usage(response: dict) -> dict | None:
-    """Token counts from a provider response, when it reported any (Phase 30.d
-    observability — no per-model cost table exists in the repo yet, so cost is
-    intentionally omitted rather than guessed)."""
-    usage = response.get("usage") or {}
-    if not usage:
-        return None
-    return {
-        "tokens_in": usage.get("prompt_tokens"),
-        "tokens_out": usage.get("completion_tokens"),
-        "tokens_total": usage.get("total_tokens"),
-    }
-
-
-async def _full_tool_definitions(db: aiosqlite.Connection, profile_id: str) -> list[dict]:
-    """Built-ins + discovered MCP tools + the profile's custom tools — the same
-    set the Phase 18 agent loop uses, so ``llm.agent`` nodes can call them."""
-    from app.services import custom_tool_service, mcp_service
-    from app.tools.registry import TOOL_DEFINITIONS
-
-    tools = list(TOOL_DEFINITIONS)
-    try:
-        await mcp_service.refresh(db)
-        tools.extend(mcp_service.get_tool_definitions())
-    except Exception:  # noqa: BLE001 — a broken MCP server must not block the run
-        logger.exception("graph llm.agent: MCP discovery failed; continuing without MCP tools")
-    try:
-        tools.extend(await custom_tool_service.get_tool_definitions(db, profile_id))
-    except Exception:  # noqa: BLE001
-        logger.exception("graph llm.agent: custom tool listing failed; continuing without them")
-    # Fase 9.1 — the profile's workflows published as tools (active + input
-    # contract + expose_as_tool). Namespaced ``workflow__<id>`` so execute_tool
-    # routes them to a nested workflow run.
-    try:
-        from app.services import workflow_tool_service
-
-        tools.extend(await workflow_tool_service.get_tool_definitions(db, profile_id))
-    except Exception:  # noqa: BLE001
-        logger.exception("graph llm.agent: workflow tool listing failed; continuing without them")
-    return tools
-
-
-async def _exec_llm_agent(db: aiosqlite.Connection, profile_id: str, params: dict) -> dict:
-    """Bridge node: run the Phase 18 durable agent loop to completion inline, over
-    the full tool set (built-in + MCP + custom)."""
-    from app.schemas.chat import ChatCompletionRequest, ChatMessage, ToolCall, ToolCallFunction
-    from app.tools.registry import execute_tool
-
-    model = params.get("model") or settings.default_model
-    goal = str(params.get("goal") or params.get("prompt") or "")
-    max_steps = int(params.get("max_steps") or 8)
-    system = params.get("system_prompt") or (
-        "You are an autonomous agent. Work towards the goal using the available "
-        "tools; when done, reply with the final answer and no further tool calls."
-    )
-    tools = await _full_tool_definitions(db, profile_id)
-    messages = [
-        ChatMessage(role="system", content=str(system)),
-        ChatMessage(role="user", content=goal),
-    ]
-    usage_total = {"tokens_in": 0, "tokens_out": 0, "tokens_total": 0}
-
-    def _accumulate(response: dict) -> None:
-        step_usage = _extract_usage(response)
-        if not step_usage:
-            return
-        for k in usage_total:
-            usage_total[k] += step_usage.get(k) or 0
-
-    candidates = await _candidate_models(db, model, params.get("failover_chain"))
-    model_idx = 0  # sticky: once a candidate succeeds, later steps start from it
-    tried: list[str] = []
-
-    def _failover_meta(used: str) -> dict | None:
-        return {"tried": tried, "used": used} if len(candidates) > 1 else None
-
-    for _ in range(max_steps):
-        response = cache_status = last_exc = None
-        for idx in range(model_idx, len(candidates)):
-            candidate = candidates[idx]
-            if candidate not in tried:
-                tried.append(candidate)
-            request = ChatCompletionRequest(
-                model=candidate, messages=messages, tools=tools or None,
-                stream=False, profile_id=profile_id,
-            )
-            try:
-                response, cache_status = await _cached_complete(request)
-            except Exception as exc:  # noqa: BLE001 — fall through to the next chain candidate
-                last_exc = exc
-                continue
-            model_idx = idx
-            model = candidate
-            break
-        if response is None:
-            raise last_exc
-        _accumulate(response)
-        choices = response.get("choices") or []
-        if not choices:
-            break
-        choice = choices[0]
-        msg = choice.get("message") or {}
-        tool_calls_raw = msg.get("tool_calls") or []
-        content = msg.get("content") or ""
-        if choice.get("finish_reason") != "tool_calls" or not tool_calls_raw:
-            out = {"content": content, "model": model, "_usage": usage_total, "_cache": cache_status}
-            failover = _failover_meta(model)
-            if failover:
-                out["_failover"] = failover
-            return out
-        tool_calls = [
-            ToolCall(
-                id=tc["id"], type=tc.get("type", "function"),
-                function=ToolCallFunction(name=tc["function"]["name"], arguments=tc["function"]["arguments"]),
-            )
-            for tc in tool_calls_raw
-        ]
-        messages.append(ChatMessage(role="assistant", content=msg.get("content"), tool_calls=tool_calls))
-        for tc in tool_calls:
-            try:
-                args = json.loads(tc.function.arguments)
-            except json.JSONDecodeError:
-                args = {}
-            try:
-                result = await execute_tool(tc.function.name, args, profile_id=profile_id)
-            except (RuntimeError, ValueError, OSError) as exc:
-                result = f"Error: {exc}"
-            messages.append(ChatMessage(role="tool", tool_call_id=tc.id, content=result))
-
-    out = {"content": "Step limit reached without a final answer.", "model": model, "_usage": usage_total}
-    failover = _failover_meta(model)
-    if failover:
-        out["_failover"] = failover
-    return out
-
-
-# ── structured LLM nodes (Phase 35 — roadmap fase 4.1) ─────────────────────
-
-def _parse_llm_json(content: str) -> object:
-    """The JSON value inside an LLM reply: tolerates code fences and prose
-    around the first JSON object/array. Raises ``ValueError`` when none parses
-    (so node retry/onError apply)."""
-    text = str(content or "").strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", text)
-        text = re.sub(r"\s*```$", "", text).strip()
-    start = min((i for i in (text.find("{"), text.find("[")) if i >= 0), default=-1)
-    if start < 0:
-        raise ValueError(f"no JSON found in the model reply: {text[:200]!r}")
-    try:
-        value, _ = json.JSONDecoder().raw_decode(text[start:])
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"model reply is not valid JSON: {exc}") from None
-    return value
-
-
-async def _llm_json_call(
-    db: aiosqlite.Connection, profile_id: str, params: dict, system: str, prompt: str
-) -> tuple[object, dict]:
-    """One completion (with failover chain + response cache, like llm.completion)
-    that MUST come back as JSON. Returns (parsed_value, meta)."""
-    from app.schemas.chat import ChatCompletionRequest, ChatMessage
-
-    model = params.get("model") or settings.default_model
-    messages = [
-        ChatMessage(role="system", content=system),
-        ChatMessage(role="user", content=prompt),
-    ]
-    candidates = await _candidate_models(db, model, params.get("failover_chain"))
-    tried: list[str] = []
-    last_exc: Exception | None = None
-    for candidate in candidates:
-        tried.append(candidate)
-        request = ChatCompletionRequest(
-            model=candidate, messages=messages, stream=False, profile_id=profile_id
-        )
-        try:
-            response, cache_status = await _cached_complete(request)
-            choices = response.get("choices") or []
-            content = ((choices[0].get("message") or {}).get("content") if choices else "") or ""
-            value = _parse_llm_json(content)
-        except Exception as exc:  # noqa: BLE001 — a bad reply (call failure or invalid JSON)
-            # falls through to the next chain candidate, same as a provider failure
-            last_exc = exc
-            continue
-        meta = {"model": candidate, "_usage": _extract_usage(response), "_cache": cache_status}
-        if len(candidates) > 1:
-            meta["_failover"] = {"tried": tried, "used": candidate}
-        return value, meta
-    raise last_exc
-
-
-def _classify_categories(params: dict) -> list[str]:
-    raw = params.get("categories")
-    if isinstance(raw, str):
-        text = raw.strip()
-        if text.startswith("["):
-            try:
-                raw = json.loads(text)
-            except json.JSONDecodeError:
-                raw = None
-        else:
-            raw = [c.strip() for c in text.split(",") if c.strip()]
-    if not isinstance(raw, list) or not raw:
-        raise ValueError("llm.classify: 'categories' must be a non-empty array (or comma-separated list)")
-    return [str(c) for c in raw]
-
-
-async def _exec_llm_classify(
-    db: aiosqlite.Connection, profile_id: str, params: dict, node_input
-) -> dict:
-    """Guaranteed-structured classification: the model must answer with a JSON
-    object whose ``category`` is one of the allowed values — anything else
-    raises, so retry/onError apply instead of garbage flowing downstream."""
-    categories = _classify_categories(params)
-    text = params.get("input") or params.get("text")
-    if text is None or str(text) == "":
-        text = node_input
-    if not isinstance(text, str):
-        text = json.dumps(text, default=str, ensure_ascii=False)
-    instructions = str(params.get("instructions") or "").strip()
-    system = (
-        "You are a strict classifier. Reply with ONLY a JSON object — no prose, no code fences — "
-        'shaped exactly like {"category": "<one allowed category>", "confidence": <number 0..1>}. '
-        f"Allowed categories: {json.dumps(categories, ensure_ascii=False)}."
-        + (f" Additional instructions: {instructions}" if instructions else "")
-    )
-    data, meta = await _llm_json_call(db, profile_id, params, system, text)
-    if not isinstance(data, dict):
-        raise ValueError("llm.classify: model did not return a JSON object")
-    category = str(data.get("category") or "")
-    if category not in categories:
-        # Tolerate case slips before failing — determinism beats strictness here.
-        by_lower = {c.lower(): c for c in categories}
-        if category.lower() in by_lower:
-            category = by_lower[category.lower()]
-        else:
-            raise ValueError(f"llm.classify: model returned {category!r}, not one of {categories}")
-    confidence = data.get("confidence")
-    if not isinstance(confidence, (int, float)):
-        confidence = None
-    return {"category": category, "confidence": confidence, **meta}
-
-
-async def _exec_llm_extract(
-    db: aiosqlite.Connection, profile_id: str, params: dict, node_input
-) -> dict:
-    """Guaranteed-structured extraction against a JSON Schema declared in the
-    inspector. Top-level ``required`` properties are enforced; a non-conforming
-    reply raises, so retry/onError apply."""
-    schema = params.get("schema")
-    if isinstance(schema, str):
-        try:
-            schema = json.loads(schema)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"llm.extract: 'schema' is not valid JSON: {exc}") from None
-    if not isinstance(schema, dict) or not schema:
-        raise ValueError("llm.extract: 'schema' must be a JSON Schema object")
-    text = params.get("input") or params.get("text")
-    if text is None or str(text) == "":
-        text = node_input
-    if not isinstance(text, str):
-        text = json.dumps(text, default=str, ensure_ascii=False)
-    instructions = str(params.get("instructions") or "").strip()
-    system = (
-        "You extract structured data. Reply with ONLY a JSON value matching this JSON Schema "
-        "— no prose, no code fences, no extra keys: "
-        f"{json.dumps(schema, ensure_ascii=False)}."
-        + (f" Additional instructions: {instructions}" if instructions else "")
-    )
-    data, meta = await _llm_json_call(db, profile_id, params, system, text)
-    required = schema.get("required")
-    if isinstance(required, list) and isinstance(data, dict):
-        missing = [k for k in required if k not in data]
-        if missing:
-            raise ValueError(f"llm.extract: model reply is missing required properties: {missing}")
-    elif isinstance(required, list) and not isinstance(data, dict):
-        raise ValueError("llm.extract: model did not return a JSON object")
-    return {"data": data, **meta}
-
-
-# ── Phase 50 (roadmap fase 18 — LLM quality) ────────────────────────────────
-
-def _judge_scale_max(params: dict) -> int:
-    raw = params.get("scaleMax")
-    try:
-        value = int(raw)
-    except (TypeError, ValueError):
-        value = settings.graph_workflow_judge_default_scale_max
-    return value if value >= 2 else 2
-
-
-async def _exec_llm_judge(
-    db: aiosqlite.Connection, profile_id: str, params: dict, node_input
-) -> tuple[dict, list[str]]:
-    """Fase 18.1 — evaluate content against a rubric on a 1..scaleMax scale and
-    route to the ``pass``/``fail`` handle by a threshold. The score/threshold
-    decides ``passed`` (authoritative), so a generate → judge → regenerate loop
-    (`while`) or a quality gate before publishing keeps a deterministic gate even
-    when the model's own ``verdict`` disagrees. Shares the model picker, failover
-    chain and response cache with the other ``llm.*`` nodes; the judge model can
-    differ from the generator's."""
-    scale_max = _judge_scale_max(params)
-    threshold = params.get("threshold")
-    try:
-        threshold = float(threshold)
-    except (TypeError, ValueError):
-        # Default gate: at least 60% of the scale (rounded up), so a 1..5 scale
-        # passes from 3 and a 1..10 scale from 6 without extra configuration.
-        threshold = float(math.ceil(scale_max * 0.6))
-
-    criteria = str(params.get("criteria") or "").strip()
-    if not criteria:
-        raise ValueError("llm.judge: 'criteria' (the rubric to score against) is required")
-
-    content = params.get("input") or params.get("text")
-    if content is None or str(content) == "":
-        content = node_input
-    if not isinstance(content, str):
-        content = json.dumps(content, default=str, ensure_ascii=False)
-
-    reference = params.get("reference")
-    if reference is not None and not isinstance(reference, str):
-        reference = json.dumps(reference, default=str, ensure_ascii=False)
-    instructions = str(params.get("instructions") or "").strip()
-
-    system = (
-        "You are a strict, impartial evaluator. Score the CONTENT against the CRITERIA on an "
-        f"integer scale from 1 to {scale_max} (higher is better). Reply with ONLY a JSON object — "
-        'no prose, no code fences — shaped exactly like '
-        '{"score": <integer>, "verdict": "pass"|"fail", "rationale": "<one short sentence>"}.'
-        + (f" Additional instructions: {instructions}" if instructions else "")
-    )
-    prompt = f"CRITERIA:\n{criteria}\n\nCONTENT:\n{content}"
-    if reference:
-        prompt += f"\n\nREFERENCE (the ideal answer to compare against):\n{reference}"
-
-    data, meta = await _llm_json_call(db, profile_id, params, system, prompt)
-    if not isinstance(data, dict):
-        raise ValueError("llm.judge: model did not return a JSON object")
-    raw_score = data.get("score")
-    if not isinstance(raw_score, (int, float)) or isinstance(raw_score, bool):
-        raise ValueError("llm.judge: model reply is missing a numeric 'score'")
-    score = max(1, min(scale_max, int(round(raw_score))))
-    passed = score >= threshold
-    rationale = data.get("rationale")
-    if not isinstance(rationale, str):
-        rationale = None
-    result = {
-        "score": score,
-        "scaleMax": scale_max,
-        "threshold": threshold,
-        "passed": passed,
-        "verdict": "pass" if passed else "fail",
-        "rationale": rationale,
-        **meta,
-    }
-    return result, ["pass" if passed else "fail"]
 
 
 # ── Phase 50 (roadmap fase 18.2 — prompt A/B testing) ───────────────────────
@@ -4323,438 +3274,6 @@ async def git_sync_pull(db: aiosqlite.Connection, wf) -> dict:
     return {"imported_versions": [new_version], "unchanged": False}
 
 
-# ── db / file nodes (Phase 35 — roadmap fase 4.2) ───────────────────────────
-
-def _safe_workspace_path(raw, *, create_dirs: bool = False):
-    """Resolve a node-supplied path INSIDE the workspace storage root
-    (``GRAPH_WORKFLOW_FILES_DIR``). Absolute paths and ``..`` traversal that
-    escape the root are rejected — file/db nodes can never touch the host FS."""
-    from pathlib import Path
-
-    rel = str(raw or "").strip()
-    if not rel:
-        raise ValueError("'path' is required")
-    root = Path(settings.graph_workflow_files_dir).resolve()
-    candidate = (root / rel).resolve()
-    if candidate != root and root not in candidate.parents:
-        raise ValueError(f"path {rel!r} escapes the workspace storage")
-    if create_dirs:
-        candidate.parent.mkdir(parents=True, exist_ok=True)
-    return candidate
-
-
-async def _exec_db_query(params: dict) -> dict:
-    """Parameterised SQL. sqlite databases live inside the workspace storage;
-    postgres connects via a DSN (typically ``={{ $secrets.PG_DSN }}``). Output:
-    ``{rows, count, rowcount}`` (rows capped at 1000)."""
-    query = str(params.get("query") or "").strip()
-    if not query:
-        raise ValueError("db.query: 'query' is required")
-    args = params.get("params")
-    if not isinstance(args, list):
-        args = [] if args in (None, "") else [args]
-    driver = str(params.get("driver") or "sqlite").strip().lower()
-
-    if driver == "sqlite":
-        path = _safe_workspace_path(params.get("database"), create_dirs=True)
-        conn = await aiosqlite.connect(path)
-        try:
-            conn.row_factory = aiosqlite.Row
-            cur = await conn.execute(query, args)
-            rows = [dict(r) for r in await cur.fetchmany(_DB_QUERY_MAX_ROWS)] if cur.description else []
-            rowcount = cur.rowcount
-            await conn.commit()
-        finally:
-            await conn.close()
-        return {"rows": rows, "count": len(rows), "rowcount": rowcount}
-
-    if driver == "postgres":
-        dsn = str(params.get("dsn") or "").strip()
-        if not dsn:
-            raise ValueError("db.query: postgres needs a 'dsn' (use ={{ $secrets.<name> }})")
-        try:
-            import asyncpg  # noqa: PLC0415 — optional dependency
-        except ImportError:
-            raise RuntimeError(
-                "db.query: postgres support requires the 'asyncpg' package in the backend image"
-            ) from None
-        conn = await asyncpg.connect(dsn=dsn, timeout=15)
-        try:
-            records = await conn.fetch(query, *args)
-            rows = [dict(r) for r in records[:_DB_QUERY_MAX_ROWS]]
-        finally:
-            await conn.close()
-        return {"rows": rows, "count": len(rows), "rowcount": len(rows)}
-
-    raise ValueError(f"db.query: unknown driver {driver!r} (sqlite|postgres)")
-
-
-def _file_format(params: dict, path) -> str:
-    fmt = str(params.get("format") or "auto").strip().lower()
-    if fmt != "auto":
-        return fmt
-    suffix = str(getattr(path, "suffix", "") or "").lower()
-    return {".json": "json", ".csv": "csv"}.get(suffix, "text")
-
-
-def _parse_structured(text: str, fmt: str, delimiter: str) -> dict:
-    """Shared by file.read and file.parse: a text payload → structured output."""
-    import csv
-    import io
-
-    if fmt == "json":
-        try:
-            return {"data": json.loads(text)}
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"invalid JSON: {exc}") from None
-    if fmt == "csv":
-        rows = list(csv.DictReader(io.StringIO(text), delimiter=delimiter or ","))
-        return {"rows": rows, "count": len(rows)}
-    if fmt == "lines":
-        lines = [ln for ln in text.splitlines() if ln.strip() != ""]
-        return {"lines": lines, "count": len(lines)}
-    return {"text": text, "size": len(text.encode("utf-8"))}
-
-
-async def _exec_file_read(params: dict) -> dict:
-    path = _safe_workspace_path(params.get("path"))
-    if not path.is_file():
-        raise FileNotFoundError(f"file.read: {params.get('path')!r} not found in the workspace storage")
-    if path.stat().st_size > _FILE_MAX_BYTES:
-        raise ValueError(f"file.read: file exceeds the {_FILE_MAX_BYTES // (1024 * 1024)} MB limit")
-    encoding = str(params.get("encoding") or "utf-8")
-    text = await asyncio.to_thread(path.read_text, encoding)
-    fmt = _file_format(params, path)
-    return {"path": str(params.get("path")), "format": fmt,
-            **_parse_structured(text, fmt, str(params.get("delimiter") or ","))}
-
-
-def _render_file_content(content, fmt: str, delimiter: str) -> str:
-    import csv
-    import io
-
-    if fmt == "json" or (fmt == "text" and isinstance(content, (dict, list))):
-        return json.dumps(content, indent=2, ensure_ascii=False, default=str)
-    if fmt == "csv":
-        rows = content if isinstance(content, list) else [content]
-        if not rows:
-            return ""
-        buf = io.StringIO()
-        if all(isinstance(r, dict) for r in rows):
-            fieldnames: list[str] = []
-            for r in rows:
-                fieldnames.extend(k for k in r if k not in fieldnames)
-            writer = csv.DictWriter(buf, fieldnames=fieldnames, delimiter=delimiter or ",")
-            writer.writeheader()
-            writer.writerows(rows)
-        else:
-            plain = csv.writer(buf, delimiter=delimiter or ",")
-            for r in rows:
-                plain.writerow(r if isinstance(r, (list, tuple)) else [r])
-        return buf.getvalue()
-    return content if isinstance(content, str) else json.dumps(content, default=str, ensure_ascii=False)
-
-
-async def _exec_file_write(params: dict, node_input) -> dict:
-    path = _safe_workspace_path(params.get("path"), create_dirs=True)
-    content = params.get("content")
-    if content is None:
-        content = node_input
-    fmt = _file_format(params, path)
-    text = _render_file_content(content, fmt, str(params.get("delimiter") or ","))
-    if len(text.encode("utf-8")) > _FILE_MAX_BYTES:
-        raise ValueError(f"file.write: content exceeds the {_FILE_MAX_BYTES // (1024 * 1024)} MB limit")
-    append = _as_bool(params.get("append"))
-
-    def _write() -> int:
-        mode = "a" if append else "w"
-        with open(path, mode, encoding=str(params.get("encoding") or "utf-8")) as fh:
-            return fh.write(text)
-
-    written = await asyncio.to_thread(_write)
-    return {"path": str(params.get("path")), "format": fmt,
-            "bytes_written": len(text.encode("utf-8")), "chars_written": written, "append": append}
-
-
-def _exec_file_parse(params: dict, node_input) -> dict:
-    """Parse an in-flight text payload (an http.request body, a tool result…)
-    without touching disk. ``content`` defaults to the node input."""
-    content = params.get("content")
-    if content is None or content == "":
-        content = node_input
-    fmt = str(params.get("format") or "auto").strip().lower()
-    if not isinstance(content, str):
-        # Already-structured input passes through as parsed data.
-        return {"data": content} if fmt in ("auto", "json") else {"rows": content if isinstance(content, list) else [content], "count": len(content) if isinstance(content, list) else 1}
-    if fmt == "auto":
-        stripped = content.strip()
-        fmt = "json" if stripped[:1] in ("{", "[") else "csv" if ("," in stripped.splitlines()[0] if stripped else False) else "lines"
-    return _parse_structured(content, fmt, str(params.get("delimiter") or ","))
-
-
-# ── Phase 47 (roadmap fase 15) — connectors and multimodal nodes ────────────
-
-def _connector_slack_post(p: dict) -> dict:
-    return {
-        "method": "POST", "url": "https://slack.com/api/chat.postMessage",
-        "headers": {"Authorization": f"Bearer {p.get('token', '')}"},
-        "body": {"channel": p.get("channel"), "text": p.get("text"),
-                 **({"thread_ts": p["thread_ts"]} if p.get("thread_ts") else {})},
-    }
-
-
-def _connector_discord_post(p: dict) -> dict:
-    return {"method": "POST", "url": str(p.get("webhook_url") or ""),
-            "body": {"content": p.get("text"),
-                     **({"username": p["username"]} if p.get("username") else {})}}
-
-
-def _connector_github_issue(p: dict) -> dict:
-    return {
-        "method": "POST",
-        "url": f"https://api.github.com/repos/{p.get('repo', '')}/issues",
-        "headers": {"Authorization": f"Bearer {p.get('token', '')}",
-                    "Accept": "application/vnd.github+json"},
-        "body": {"title": p.get("title"), "body": p.get("body"),
-                 **({"labels": p["labels"]} if p.get("labels") else {})},
-    }
-
-
-def _connector_gitlab_issue(p: dict) -> dict:
-    from urllib.parse import quote
-
-    base = str(p.get("base_url") or "https://gitlab.com").rstrip("/")
-    project = quote(str(p.get("project") or ""), safe="")
-    return {
-        "method": "POST", "url": f"{base}/api/v4/projects/{project}/issues",
-        "headers": {"PRIVATE-TOKEN": str(p.get("token") or "")},
-        "body": {"title": p.get("title"), "description": p.get("body"),
-                 **({"labels": p["labels"]} if p.get("labels") else {})},
-    }
-
-
-def _connector_jira_issue(p: dict) -> dict:
-    import base64
-
-    base = str(p.get("base_url") or "").rstrip("/")
-    token = base64.b64encode(f"{p.get('email', '')}:{p.get('token', '')}".encode()).decode()
-    return {
-        "method": "POST", "url": f"{base}/rest/api/3/issue",
-        "headers": {"Authorization": f"Basic {token}"},
-        "body": {"fields": {
-            "project": {"key": p.get("project_key")},
-            "summary": p.get("summary"),
-            "issuetype": {"name": p.get("issue_type") or "Task"},
-            **({"description": p["description"]} if p.get("description") else {}),
-        }},
-    }
-
-
-def _connector_sheets_append(p: dict) -> dict:
-    rng = str(p.get("range") or "Sheet1!A1")
-    return {
-        "method": "POST",
-        "url": (f"https://sheets.googleapis.com/v4/spreadsheets/"
-                f"{p.get('spreadsheet_id', '')}/values/{rng}:append"),
-        "query": {"valueInputOption": p.get("value_input_option") or "USER_ENTERED"},
-        "headers": {"Authorization": f"Bearer {p.get('token', '')}"},
-        "body": {"values": p.get("values") or []},
-    }
-
-
-def _connector_sheets_read(p: dict) -> dict:
-    rng = str(p.get("range") or "Sheet1!A1:Z1000")
-    return {
-        "method": "GET",
-        "url": (f"https://sheets.googleapis.com/v4/spreadsheets/"
-                f"{p.get('spreadsheet_id', '')}/values/{rng}"),
-        "headers": {"Authorization": f"Bearer {p.get('token', '')}"},
-    }
-
-
-# Registry of curated integrations (15.1). Each entry maps the connector's
-# operation params to an http.request spec; auth values arrive already resolved
-# from $secrets via the expression layer. Adding a service is a one-line entry
-# — the dispatch, retry, node-test and pin machinery come for free.
-_CONNECTORS: dict[str, callable] = {
-    "slack.postMessage": _connector_slack_post,
-    "discord.postMessage": _connector_discord_post,
-    "github.createIssue": _connector_github_issue,
-    "gitlab.createIssue": _connector_gitlab_issue,
-    "jira.createIssue": _connector_jira_issue,
-    "sheets.append": _connector_sheets_append,
-    "sheets.read": _connector_sheets_read,
-}
-
-
-def _connector_request(operation: str, params: dict) -> dict:
-    """Pure mapper (unit-testable, no I/O): connector operation + params → the
-    http.request params the engine would issue. Raises for an unknown op."""
-    builder = _CONNECTORS.get(operation)
-    if builder is None:
-        raise ValueError(
-            f"connector: unknown operation '{operation}' "
-            f"(known: {', '.join(sorted(_CONNECTORS))})"
-        )
-    spec = builder(params)
-    # Carry through the shared http.request knobs so retry/rate-limit still apply.
-    for passthrough in ("timeout", "allow_errors", "maxRequestsPerMinute"):
-        if params.get(passthrough) is not None:
-            spec[passthrough] = params[passthrough]
-    return spec
-
-
-async def _exec_connector(operation: str, params: dict, node_input) -> dict:
-    """15.1 — execute a curated connector as an http.request. Output is the
-    http.request output plus the ``operation`` that produced it."""
-    spec = _connector_request(operation, params)
-    out = await _exec_http_request(spec)
-    out["operation"] = operation
-    return out
-
-
-def _ssh_host_allowed(host: str) -> bool:
-    allowed = [h.strip().lower() for h in settings.graph_workflow_ssh_allowed_hosts.split(",") if h.strip()]
-    return not allowed or host.lower() in allowed
-
-
-async def _exec_ssh_exec(params: dict) -> dict:
-    """15.2 — run a command on a remote host over SSH. Credentials (key or
-    password) come from $secrets; the host must pass the per-instance allow-list.
-    Output: {stdout, stderr, exit_code}. A non-zero exit raises unless
-    ``allow_nonzero`` is set (so retry / On error apply)."""
-    host = str(params.get("host") or "").strip()
-    if not host:
-        raise ValueError("ssh.exec: 'host' is required")
-    if not _ssh_host_allowed(host):
-        raise ValueError(f"ssh.exec: host '{host}' is not in GRAPH_WORKFLOW_SSH_ALLOWED_HOSTS")
-    command = str(params.get("command") or "").strip()
-    if not command:
-        raise ValueError("ssh.exec: 'command' is required")
-
-    try:
-        import paramiko  # noqa: PLC0415 — optional dependency
-    except ImportError:
-        raise RuntimeError("ssh.exec: the 'paramiko' package is required in the backend image") from None
-
-    port = int(params.get("port") or 22)
-    username = str(params.get("username") or "").strip()
-    password = params.get("password")
-    private_key = params.get("private_key")
-    timeout = min(float(params.get("timeout") or settings.graph_workflow_ssh_timeout_seconds),
-                  float(settings.graph_workflow_ssh_timeout_seconds))
-
-    def _run() -> dict:
-        import io
-
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        connect_kwargs: dict = {"hostname": host, "port": port, "username": username, "timeout": timeout}
-        if private_key:
-            connect_kwargs["pkey"] = paramiko.RSAKey.from_private_key(io.StringIO(str(private_key)))
-        elif password is not None:
-            connect_kwargs["password"] = str(password)
-        client.connect(**connect_kwargs)
-        try:
-            _stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
-            out = stdout.read().decode("utf-8", errors="replace")[:_TOOL_RESULT_MAX_CHARS]
-            err = stderr.read().decode("utf-8", errors="replace")[:_TOOL_RESULT_MAX_CHARS]
-            code = stdout.channel.recv_exit_status()
-            return {"stdout": out, "stderr": err, "exit_code": code}
-        finally:
-            client.close()
-
-    result = await asyncio.to_thread(_run)
-    if result["exit_code"] != 0 and not _as_bool(params.get("allow_nonzero")):
-        raise RuntimeError(
-            f"ssh.exec: '{command}' exited {result['exit_code']}: {result['stderr'][:300]}"
-        )
-    return result
-
-
-async def _exec_browser(params: dict) -> dict:
-    """15.3 — drive a headless browser (Playwright): open a URL, optionally wait
-    for a selector, then extract text / an attribute / a rendered screenshot
-    (saved to the workspace storage). Output depends on ``action``. Runs in a
-    thread with a per-action timeout; a missing Playwright raises clearly."""
-    url = str(params.get("url") or "").strip()
-    if not url.startswith(("http://", "https://")):
-        raise ValueError("browser: 'url' must be an http(s) URL")
-    action = str(params.get("action") or "text").strip().lower()
-    selector = str(params.get("selector") or "").strip()
-    timeout_ms = int(min(float(params.get("timeout") or settings.graph_workflow_browser_timeout_seconds),
-                         float(settings.graph_workflow_browser_timeout_seconds)) * 1000)
-
-    screenshot_path = None
-    if action == "screenshot":
-        screenshot_path = _safe_workspace_path(
-            params.get("screenshot_path") or f"browser/{uuid.uuid4().hex}.png", create_dirs=True,
-        )
-
-    def _run() -> dict:
-        try:
-            from playwright.sync_api import sync_playwright  # noqa: PLC0415 — optional dependency
-        except ImportError:
-            raise RuntimeError(
-                "browser: the 'playwright' package (and a browser: playwright install chromium) "
-                "is required in the backend image"
-            ) from None
-
-        with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True)
-            try:
-                page = browser.new_page()
-                page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
-                if selector:
-                    page.wait_for_selector(selector, timeout=timeout_ms)
-                target = page.locator(selector) if selector else None
-                if action == "screenshot":
-                    from pathlib import Path  # noqa: PLC0415
-
-                    (target or page).screenshot(path=str(screenshot_path))
-                    root = Path(settings.graph_workflow_files_dir).resolve()
-                    return {"action": action, "url": url,
-                            "path": str(screenshot_path.relative_to(root))}
-                if action == "attribute":
-                    attr = str(params.get("attribute") or "href")
-                    return {"action": action, "url": url, "attribute": attr,
-                            "value": (target or page).first.get_attribute(attr) if target else None}
-                # default: extract text (of the selector, or the whole page)
-                text = (target.first.inner_text() if target else page.inner_text("body"))
-                return {"action": "text", "url": url,
-                        "text": text[:_TOOL_RESULT_MAX_CHARS], "title": page.title()}
-            finally:
-                browser.close()
-
-    return await asyncio.to_thread(_run)
-
-
-async def _exec_doc_convert(params: dict, node_input) -> dict:
-    """15.5 — convert a PDF/DOCX/HTML/… document from the workspace storage to
-    markdown via markitdown (already in the backend image for the KB). Output:
-    {markdown, chars, path}. ``path`` defaults to the node input."""
-    raw = params.get("path")
-    if raw in (None, "") and isinstance(node_input, str):
-        raw = node_input
-    path = _safe_workspace_path(raw)
-    if not path.is_file():
-        raise FileNotFoundError(f"doc.convert: {raw!r} not found in the workspace storage")
-    if path.stat().st_size > _FILE_MAX_BYTES:
-        raise ValueError(f"doc.convert: file exceeds the {_FILE_MAX_BYTES // (1024 * 1024)} MB limit")
-
-    def _convert() -> str:
-        from markitdown import MarkItDown  # noqa: PLC0415 — optional dependency
-
-        return MarkItDown().convert(str(path)).text_content or ""
-
-    try:
-        markdown = await asyncio.to_thread(_convert)
-    except ImportError:
-        raise RuntimeError("doc.convert: the 'markitdown' package is required in the backend image") from None
-    markdown = markdown[:_TOOL_RESULT_MAX_CHARS * 4]
-    return {"path": str(raw), "markdown": markdown, "chars": len(markdown)}
-
-
 # ── human-in-the-loop (Phase 35 — roadmap fase 4.4) ─────────────────────────
 
 async def _notify_approval_request(
@@ -4965,16 +3484,6 @@ async def _note_trigger_failure(
             )
         except Exception:  # noqa: BLE001 — alerting must never break the poll loop
             logger.exception("failed to raise trigger-disabled alert for %s", tr_id)
-
-
-def _as_bool(value) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in ("true", "1", "yes", "on")
-    if isinstance(value, (int, float)):
-        return value != 0
-    return bool(value)
 
 
 # ── external-world poll triggers (fase 6.2) ─────────────────────────────────

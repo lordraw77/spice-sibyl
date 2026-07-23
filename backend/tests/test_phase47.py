@@ -74,7 +74,9 @@ def test_exec_connector_runs_via_http_request(monkeypatch):
         captured["spec"] = spec
         return {"status": 200, "ok": True, "json": {"ok": True}, "text": ""}
 
-    monkeypatch.setattr(engine, "_exec_http_request", _fake_http)
+    # _exec_connector/_exec_http_request now live in app/workflow/nodes/io.py;
+    # patch the binding _exec_connector actually calls.
+    monkeypatch.setattr("app.workflow.nodes.io._exec_http_request", _fake_http)
     out = asyncio.run(engine._exec_connector(
         "discord.postMessage",
         {"webhook_url": "https://discord.com/api/webhooks/x", "text": "yo"}, None,

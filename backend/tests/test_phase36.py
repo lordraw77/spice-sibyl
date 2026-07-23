@@ -43,7 +43,7 @@ def _fake_llm(monkeypatch, content: str):
             "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
         }, "miss"
 
-    monkeypatch.setattr(engine, "_cached_complete", _fake)
+    monkeypatch.setattr("app.workflow.nodes.llm._cached_complete", _fake)
 
 
 # ── fase 5.1: metrics ────────────────────────────────────────────────────────
@@ -228,6 +228,7 @@ def test_generate_passes_model_and_failover_chain(client, auth_headers, monkeypa
         return {"name": "x", "description": "", "graph": {
             "nodes": [{"id": "t", "type": "manual"}], "edges": []}}, {"model": params.get("model")}
 
+    # generate_workflow (engine copilot) calls the engine's re-exported binding.
     monkeypatch.setattr(engine, "_llm_json_call", _capture)
     resp = client.post(
         "/api/v1/graph-workflows/generate",
