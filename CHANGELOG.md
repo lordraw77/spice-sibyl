@@ -5,6 +5,14 @@ correspond to the project's git tags.
 
 ---
 
+## [3.8.0] - 2026-08-01
+
+### Changed
+- **Telegram `/tool` vs `/tools` split (23.c)** — the per-chat tool-loop toggle moves to its own command: **`/tool on|off`** enables/disables tool usage for the chat (persisted in `telegram_prefs.tools`, OFF by default), while **`/tools`** becomes **view-only** — it lists the available tools grouped by kind (🧩 built-in · 🔌 MCP · 🛠 custom) plus the current status, and never mutates state. `/tool` with no (or an invalid) argument replies with its usage. Both commands are in the bot command menu; the `/help` (`/start`) text and the five-locale bot strings were updated accordingly
+- Version bumped to **3.8.0**; docs updated
+
+---
+
 ## [3.7.0] - 2026-07-23
 
 ### Added — Phase 51 (roadmap fase 19): Custom Node SDK
