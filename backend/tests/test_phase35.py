@@ -14,6 +14,7 @@ import pytest
 
 from app.db import graph_workflow_repository as repo
 from app.services import workflow_graph_service as engine
+from app.workflow.nodes import hitl  # _APPROVAL_POLL_SECONDS moved here (god-object explosion)
 
 
 @pytest.fixture()
@@ -337,7 +338,7 @@ def _drive_and_decide(captured_spawns, run_id, *, status):
 
 
 def test_human_approval_approved_branch(client, auth_headers, captured_spawns, monkeypatch):
-    monkeypatch.setattr(engine, "_APPROVAL_POLL_SECONDS", 0.05)
+    monkeypatch.setattr(hitl, "_APPROVAL_POLL_SECONDS", 0.05)
     _, run_id = _make_and_run(client, auth_headers, _APPROVAL_GRAPH, name="gate approve")
     _drive_and_decide(captured_spawns, run_id, status="approved")
     run = client.get(f"/api/v1/graph-workflows/runs/{run_id}", headers=auth_headers).json()
@@ -350,7 +351,7 @@ def test_human_approval_approved_branch(client, auth_headers, captured_spawns, m
 
 
 def test_human_approval_rejected_branch(client, auth_headers, captured_spawns, monkeypatch):
-    monkeypatch.setattr(engine, "_APPROVAL_POLL_SECONDS", 0.05)
+    monkeypatch.setattr(hitl, "_APPROVAL_POLL_SECONDS", 0.05)
     _, run_id = _make_and_run(client, auth_headers, _APPROVAL_GRAPH, name="gate reject")
     _drive_and_decide(captured_spawns, run_id, status="rejected")
     run = client.get(f"/api/v1/graph-workflows/runs/{run_id}", headers=auth_headers).json()
@@ -362,7 +363,7 @@ def test_human_approval_rejected_branch(client, auth_headers, captured_spawns, m
 
 
 def test_human_approval_timeout_routes_to_rejected(client, auth_headers, captured_spawns, monkeypatch):
-    monkeypatch.setattr(engine, "_APPROVAL_POLL_SECONDS", 0.05)
+    monkeypatch.setattr(hitl, "_APPROVAL_POLL_SECONDS", 0.05)
     graph = json.loads(json.dumps(_APPROVAL_GRAPH))
     graph["nodes"][1]["params"]["timeout"] = 1  # clamped minimum
     _, run_id = _make_and_run(client, auth_headers, graph, name="gate timeout")
@@ -421,7 +422,7 @@ def test_approval_decision_endpoint_and_conflicts(client, auth_headers):
 
 
 def test_cancel_waiting_run_settles_pending_approvals(client, auth_headers, captured_spawns, monkeypatch):
-    monkeypatch.setattr(engine, "_APPROVAL_POLL_SECONDS", 0.05)
+    monkeypatch.setattr(hitl, "_APPROVAL_POLL_SECONDS", 0.05)
     _, run_id = _make_and_run(client, auth_headers, _APPROVAL_GRAPH, name="gate cancel")
     args, kwargs = captured_spawns[-1]
 

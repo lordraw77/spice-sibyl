@@ -11,6 +11,8 @@ each family that moves out of ``services/workflow_graph_service.py`` lands as a
 module here, self-contained and independently testable.
 """
 
+from app.workflow.nodes import custom  # noqa: F401 — registers the custom.* prefix handler
+from app.workflow.nodes import hitl  # noqa: F401 — registers human-in-the-loop / wait handlers
 from app.workflow.nodes import io  # noqa: F401 — registers io-family handlers
 from app.workflow.nodes import llm  # noqa: F401 — registers llm-family handlers
 from app.workflow.nodes import logic  # noqa: F401 — registers logic-family handlers

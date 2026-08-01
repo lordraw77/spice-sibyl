@@ -15,6 +15,7 @@ import pytest
 
 from app.db import graph_workflow_repository as repo
 from app.services import workflow_graph_service as engine
+from app.workflow.nodes import hitl  # _APPROVAL_POLL_SECONDS moved here (god-object explosion)
 
 
 @pytest.fixture()
@@ -106,7 +107,7 @@ def _drive_and_submit(captured_spawns, run_id, *, data, kind="input"):
 
 
 def test_human_input_submitted_branch(client, auth_headers, captured_spawns, monkeypatch):
-    monkeypatch.setattr(engine, "_APPROVAL_POLL_SECONDS", 0.05)
+    monkeypatch.setattr(hitl, "_APPROVAL_POLL_SECONDS", 0.05)
     _, run_id = _make_and_run(client, auth_headers, _INPUT_GRAPH, name="input submit")
     _drive_and_submit(captured_spawns, run_id, data={"amount": 42})
     run = client.get(f"/api/v1/graph-workflows/runs/{run_id}", headers=auth_headers).json()
@@ -119,7 +120,7 @@ def test_human_input_submitted_branch(client, auth_headers, captured_spawns, mon
 
 
 def test_human_input_timeout_routes_to_timeout_branch(client, auth_headers, captured_spawns, monkeypatch):
-    monkeypatch.setattr(engine, "_APPROVAL_POLL_SECONDS", 0.05)
+    monkeypatch.setattr(hitl, "_APPROVAL_POLL_SECONDS", 0.05)
     graph = json.loads(json.dumps(_INPUT_GRAPH))
     graph["nodes"][1]["params"]["timeout"] = 1  # clamped minimum
     _, run_id = _make_and_run(client, auth_headers, graph, name="input timeout")
@@ -210,7 +211,7 @@ _EVENT_GRAPH = {
 
 
 def test_wait_event_delivered_branch(client, auth_headers, captured_spawns, monkeypatch):
-    monkeypatch.setattr(engine, "_APPROVAL_POLL_SECONDS", 0.05)
+    monkeypatch.setattr(hitl, "_APPROVAL_POLL_SECONDS", 0.05)
     _, run_id = _make_and_run(
         client, auth_headers, _EVENT_GRAPH, payload={"order_id": "ord-1"}, name="event delivered"
     )
@@ -225,7 +226,7 @@ def test_wait_event_delivered_branch(client, auth_headers, captured_spawns, monk
 
 
 def test_wait_event_timeout_routes_to_timeout_branch(client, auth_headers, captured_spawns, monkeypatch):
-    monkeypatch.setattr(engine, "_APPROVAL_POLL_SECONDS", 0.05)
+    monkeypatch.setattr(hitl, "_APPROVAL_POLL_SECONDS", 0.05)
     graph = json.loads(json.dumps(_EVENT_GRAPH))
     graph["nodes"][1]["params"]["timeout"] = 1  # clamped minimum
     _, run_id = _make_and_run(client, auth_headers, graph, payload={"order_id": "ord-2"}, name="event timeout")
