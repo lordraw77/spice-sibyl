@@ -2,7 +2,7 @@
 
 SpiceSibyl is an OpenAI-compatible multi-provider AI gateway with a built-in Angular web console and a Telegram bot on the same backend.  A single API endpoint routes chat completion requests to any supported backend — local Ollama models, Groq, OpenRouter, Cloudflare Workers AI, Google Gemini, Mistral, Cerebras, Together AI, Fireworks AI, HuggingFace, and NVIDIA — without changing the client code.
 
-> 📖 **Feature documentation** — this file covers architecture, setup, and the original core API; the day-to-day **feature-by-feature guide with screenshots** (auth, RAG, MCP/agents, workflows, workspaces, i18n, notifications, and everything below) lives in [docs/en/README.md](docs/en/README.md) · [docs/it/README.md](docs/it/README.md) · [fr](docs/fr/README.md) · [de](docs/de/README.md) · [es](docs/es/README.md). The full phase-by-phase changelog is [docs/roadmap.md](docs/roadmap.md).
+> 📖 **Feature documentation** — this file covers architecture, setup, and the original core API; the day-to-day **feature-by-feature guide with screenshots** (auth, RAG, MCP/agents, workflows, workspaces, i18n, notifications, and everything below) lives in [docs/en/README.md](docs/en/README.md) · [docs/it/README.md](docs/it/README.md) · [fr](docs/fr/README.md) · [de](docs/de/README.md) · [es](docs/es/README.md). The full phase-by-phase changelog is [docs/roadmap.md](docs/roadmap.md); the consolidated **open backlog** (security, git/release, technical debt, remaining phases) is [docs/roadmapv2.md](docs/roadmapv2.md).
 
 ---
 

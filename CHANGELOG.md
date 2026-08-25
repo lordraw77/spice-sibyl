@@ -1,7 +1,27 @@
 # Changelog
 
-All notable changes to SpiceSibyl are documented in this file. Versions and dates
-correspond to the project's git tags.
+All notable changes to SpiceSibyl are documented in this file.
+
+**Nota sui tag git.** Le versioni **3.1.0, 3.2.0, 3.3.0, 3.4.0 e 3.5.0 non hanno un tag git
+corrispondente** e non sono mai state rilasciate come commit distinti: tutto il lavoro fra
+`v3.0.0` e `v3.6.0` è confluito in un unico commit (`a4ed227`, 22k righe), che è quello taggato
+`v3.6.0`. Le sezioni 3.1.0–3.4.0 qui sotto descrivono quindi tappe di sviluppo, non release
+taggate; **3.5.0 non ha nemmeno una sezione propria** perché il suo contenuto (Phase 49 —
+scheduling, SLA e scale UX) è documentato dentro `[3.6.0]`. Taggare a posteriori quelle versioni
+significherebbe puntare cinque tag allo stesso commit di `v3.6.0`: si è preferito un buco
+dichiarato a un tag falso. Dalla `v3.6.0` in poi ogni release ha il suo tag.
+
+---
+
+## [Unreleased]
+
+### Security
+- **IDOR sul link Telegram (audit 2.1)** — i tre endpoint `/v1/telegram/link` prendevano il `profile_id` da body/path senza alcun controllo di proprietà: conoscere l'UUID di un profilo bastava per leggerne lo stato del link, cancellarlo o dirottarlo sul proprio account Telegram. `POST /link`, `GET /link/{profile_id}` e `DELETE /link/{profile_id}` verificano ora il profilo contro l'utente autenticato (`404` se inesistente, `403` se di un altro utente) prima di qualunque lettura o scrittura; un tentativo respinto **non** consuma il codice di link monouso
+- **IDOR sulla cancellazione dei documenti KB (audit 2.2)** — `DELETE /v1/knowledge/documents/{doc_id}` cancellava documento, chunk, grafo e vettori di qualsiasi profilo. Ora la route risolve il profilo del chiamante e restituisce `404` per un documento che non gli appartiene
+- 7 test di regressione (`backend/tests/test_idor.py`): utente B con token valido non può leggere/cancellare/dirottare risorse di utente A, mentre le stesse operazioni sulle proprie risorse continuano a funzionare
+
+### Fixed
+- **MCP stdio: actionable error when the server process dies before the handshake** — registering a `docker run …` MCP server whose container exited immediately (image not pulled, `docker.sock` permission denied, wrong entrypoint) surfaced a raw event-loop traceback (`RuntimeError: unable to perform operation on <WriteUnixTransport closed=True …>; the handler is closed`) and logged it as *"MCP probe crashed"*. `_StdioSession._send`/`_read_result` now translate the dead-transport `RuntimeError`/`OSError` into `MCPError`, and `_open_stdio` catches **any** handshake failure so it can always report the child's stderr plus its exit code, e.g. `handshake failed for 'docker' (exit code 125): Unable to find image …`. The MCP servers page shows that text instead of the uvloop message. See `docs/mcp-deployment.md` § Troubleshooting
 
 ---
 
