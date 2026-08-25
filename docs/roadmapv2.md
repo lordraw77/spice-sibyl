@@ -1,7 +1,7 @@
 # Roadmap v2 — Backlog consolidato
 
 **Data:** 2026-08-16 · **ultima verifica:** 2026-08-25
-**Base:** HEAD `2555fae` (branch `refactor` e `main` allineati, tag **`v3.9.0`**)
+**Base:** HEAD `47c9eb5` su **`main`**, unico branch (tag **`v3.9.0`**)
 **Fonti consolidate:** [roadmap.md](roadmap.md) · [roadmap-overview.md](roadmap-overview.md) · [roadmap-workflows.md](roadmap-workflows.md) · [roadmap-analisi.md](roadmap-analisi.md) · [roadmap-fix.md](roadmap-fix.md)
 
 Questo documento raccoglie **tutto e solo ciò che resta da fare**, verificato contro il codice
@@ -104,13 +104,13 @@ Stato rilevato:
 
 Aggiornato al 2026-08-25:
 
+Aggiornato a fine giornata, dopo la release e la chiusura di `refactor`:
+
 ```
-* refactor   7d3bf88  [origin/refactor]  ← HEAD, in pari con il remoto
-  main       7d3bf88  [origin/main]      ← in pari con il remoto
-remote/refactor  7d3bf88   ✅
-remote/main      7d3bf88   ✅ allineato il 2026-08-25
+* main  47c9eb5  [origin/main]  ← unico branch, in pari con il remoto
 remote: origin  https://github.com/lordraw77/spice-sibyl.git
-47 tag, tutti presenti sul remoto; nessuna directory .github/ → nessuna CI
+48 tag, tutti presenti sul remoto (ultimo: v3.9.0)
+nessuna directory .github/ → nessuna CI
 working tree: pulito
 ```
 
@@ -150,9 +150,18 @@ la `v3.8.0` con tutto il refactoring P0/P1/P2, e `git describe` su `main` è di 
 > ordinario resta consigliato configurare `gh auth login` o una chiave SSH dedicata, invece di
 > dipendere da un token nato per il registry dei package.
 
-`refactor` resta il **branch di lavoro permanente** —
-si sviluppa lì e si porta su `main` in fast-forward a ogni release; la convenzione va scritta nel
-`CONTRIBUTING.md` previsto dalla § 2.4.
+**Destino di `refactor` — deciso il 2026-08-25: chiuso.** La domanda che questa sezione lasciava
+aperta era se fosse il branch di lavoro permanente o un branch temporaneo per il refactoring
+architetturale. Vale la seconda: quel refactoring è finito (§ 3, debito P0-P2 esaurito), quindi il
+branch ha esaurito la sua ragione d'essere ed è stato cancellato in locale e su `origin` dopo il
+fast-forward finale, con `main` e `refactor` a `47c9eb5` — divergenza zero in entrambe le direzioni,
+quindi non si è perso nulla.
+
+**Convenzione da qui in avanti:** si lavora su `main`, con un branch effimero per i cambi rischiosi
+o lunghi — la Phase 37 (§ 4.2) è esattamente il caso che ne merita uno. Il giro a due branch
+permanenti non proteggeva più niente: ogni release era comunque un fast-forward e la divergenza era
+sistematicamente zero, quindi era cerimonia senza sostanza finché non esistono CI e branch
+protection (§ 2.3). Va scritta nel `CONTRIBUTING.md` previsto dalla § 2.4.
 
 ### 2.2 ✅ Cinque release documentate ma mai taggate — chiuso il 2026-08-24 (senza taggare)
 
@@ -215,6 +224,8 @@ Non esiste `.github/workflows/`. Tutto — test, lint, build immagini, coerenza 
   intenzionale (config di progetto condivisa) o se va spostato in `settings.local.json`.
 - **Nessun `CONTRIBUTING.md` né convenzione di branch documentata:** i messaggi di commit seguono
   di fatto Conventional Commits (`feat:`, …) ma la convenzione non è scritta da nessuna parte.
+  Dal 2026-08-25 c'è anche la regola sui branch da mettere per iscritto: **si lavora su `main`**,
+  con branch effimeri per i cambi rischiosi (vedi § 2.1); `refactor` non esiste più.
   Con la CI del punto 2.3 si può anche far generare il CHANGELOG dai commit.
 - **Nessuna protezione su `main`:** con la CI in piedi, abilitare required checks lato GitHub.
 
