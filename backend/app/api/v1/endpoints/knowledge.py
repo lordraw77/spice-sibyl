@@ -162,7 +162,13 @@ async def ingest_url(
 async def delete_document(
     doc_id: str,
     db: aiosqlite.Connection = Depends(get_db),
+    pid: str = Depends(resolve_profile),
 ):
+    # Profile-scoped: a document of another profile must look non-existent,
+    # otherwise the id alone deletes its chunks, graph and vectors (finding 2.2).
+    doc = await repo.get_document(db, doc_id)
+    if not doc or doc.profile_id != pid:
+        raise HTTPException(status_code=404, detail="Document not found.")
     await repo.delete_document(db, doc_id)
     return Response(status_code=204)
 
