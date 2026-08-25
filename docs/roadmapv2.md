@@ -1,7 +1,7 @@
 # Roadmap v2 — Backlog consolidato
 
 **Data:** 2026-08-16 · **ultima verifica:** 2026-08-25
-**Base:** HEAD `7d3bf88` (branch `refactor` e `main` allineati, `v3.8.0-12-g7d3bf88`)
+**Base:** HEAD `2555fae` (branch `refactor` e `main` allineati, tag **`v3.9.0`**)
 **Fonti consolidate:** [roadmap.md](roadmap.md) · [roadmap-overview.md](roadmap-overview.md) · [roadmap-workflows.md](roadmap-workflows.md) · [roadmap-analisi.md](roadmap-analisi.md) · [roadmap-fix.md](roadmap-fix.md)
 
 Questo documento raccoglie **tutto e solo ciò che resta da fare**, verificato contro il codice
@@ -206,11 +206,11 @@ Non esiste `.github/workflows/`. Tutto — test, lint, build immagini, coerenza 
 
 ### 2.4 🟡 Igiene del repository
 
-- ~~**Lavoro non committato:** 4 file modificati (fix MCP stdio).~~ ✅ **chiuso il 2026-08-25** —
-  committato come `58ab2b2`; il working tree è pulito. Resta però da **rilasciare**: le voci in
-  `[Unreleased]` del CHANGELOG (fix MCP, IDOR, migrazioni versionate, coordinamento, split dei god
-  object) valgono un bump di versione — è la naturale `v3.9.0`, da tagliare insieme al push di
-  `main` del § 2.1.
+- ~~**Lavoro non committato** e **release da tagliare**~~ ✅ **chiusi il 2026-08-25** — il fix MCP è
+  stato committato (`58ab2b2`) e tutto `[Unreleased]` è uscito come **`v3.9.0`** (`2555fae`, taggata
+  e pushata). Le tre fonti di versione — `_DEFAULT_VERSION`, `frontend/package.json` e la sezione
+  del CHANGELOG — sono state allineate nello stesso commit: è il finding 4.2 **prevenuto** invece
+  che corretto. `main` è avanzato in fast-forward come da convenzione.
 - **`.claude/settings.json` è tracciato:** contiene le permission dell'agente. Valutare se è
   intenzionale (config di progetto condivisa) o se va spostato in `settings.local.json`.
 - **Nessun `CONTRIBUTING.md` né convenzione di branch documentata:** i messaggi di commit seguono
@@ -387,7 +387,8 @@ installate con i nomi di trixie. Il build termina con un avvio di Chromium, cos�
 contiene ma non riesce a lanciarlo non arriva mai al registry.
 
 **Verificato end-to-end** nell'immagine costruita: `action=text` estrae il testo del selettore e
-`action=screenshot` scrive un PNG reale da 10 KB nella workspace. **Resta il push al registry.**
+`action=screenshot` scrive un PNG reale da 10 KB nella workspace. ✅ **Pushata** come
+`lordraw/spice-sibyl-backend:v3.9.0-browser` il 2026-08-25.
 
 ### 5.3 ✅ 13.3 — Git sync richiedeva il rebuild dell'immagine — build fatto il 2026-08-25
 
@@ -408,18 +409,16 @@ al fallback numpy con scan O(n).
 | `playwright` (5.2) | `import playwright` | ❌ assente — **escluso di proposito**, vedi § 5.2 |
 | App | `import app.main` | ✅ |
 
-⚠️ **Due code aperte.**
-1. **Il push al registry non è stato fatto** (solo build locale): finché `lordraw/spice-sibyl-backend`
-   non viene pushato, i deployment esistenti continuano a girare sull'immagine vecchia e i tre
-   degradi restano *in produzione*. `make push` o `make publish` chiudono il cerchio.
-2. **L'immagine è taggata `v3.8.0` ma contiene codice post-3.8.0** — `VERSION` deriva da
-   `git describe --tags --abbrev=0`, e da `v3.8.0` in poi ci sono 12 commit non ancora rilasciati.
-   Il push va quindi fatto **dopo** aver tagliato la `v3.9.0` prevista dal § 2.4, altrimenti si
-   sovrascrive un tag di release con contenuto diverso da quello che il tag dichiara.
+✅ **Entrambe le code chiuse il 2026-08-25.** Le immagini sono state **ricostruite come `v3.9.0`** —
+non ri-taggate: `VERSION` deriva da `git describe`, quindi il build precedente stampava `v3.8.0` su
+codice post-3.8.0, e ri-taggarlo avrebbe pubblicato un tag che dichiarava il falso — e **pushate su
+Docker Hub**: `spice-sibyl-backend`, `-frontend` e `-nginx` a `v3.9.0` + `latest`, più
+`spice-sibyl-backend:v3.9.0-browser`. Verificato interrogando il registry, non solo leggendo
+l'output del push; `settings.app_version` dentro l'immagine riporta `3.9.0`.
 
 ### 5.4 ⚪ Suite di test
 
-Ultima esecuzione (2026-08-25): **537 passed**, con 4 failure pre-esistenti — `test_phase26`
+Ultima esecuzione (2026-08-25): **582 passed**, con 4 failure pre-esistenti — `test_phase26`
 (stats), `test_phase45` (git-sync ×2) e la flaky di ordinamento in `test_phase48`. Vanno triagiate e o corretti o marcati `xfail` con motivazione: una suite con failure
 tollerate rende inutile qualunque required check in CI (§ 2.3).
 
@@ -463,13 +462,11 @@ debito tecnico appena ripagato non lo copre: **è lì che va il prossimo sprint*
    passaggio.
 2. ~~**Allineare `main` a `refactor`**~~ ✅ **chiuso il 2026-08-25** (§ 2.1) — fast-forward pushato,
    `origin/main` = `origin/refactor` = `7d3bf88`, tutti i tag sul remoto.
-3. **Rebuild + push delle immagini** (§ 5.2, § 5.3) — 🟡 **build fatti il 2026-08-25** e verificati:
-   l'immagine standard ha `git`, `markitdown` e `sqlite-vec` (git sync e degrado KB risolti), e la
-   variante `-browser` fa girare davvero il nodo `browser` end-to-end. **Resta il push al registry
-   di entrambe**, da fare dopo il tag `v3.9.0` del punto 4 perché non ereditino un numero di
-   versione che non gli appartiene.
-4. ~~**Committare il lavoro MCP pendente**~~ ✅ fatto (`58ab2b2`); resta da **rilasciarlo** con un
-   tag `v3.9.0` insieme al push del punto 2 (§ 2.4).
+3. ~~**Rebuild + push delle immagini**~~ ✅ **chiuso il 2026-08-25** (§ 5.2, § 5.3) — ricostruite
+   come `v3.9.0` e pushate, variante `-browser` inclusa. I tre degradi (git sync, markitdown,
+   sqlite-vec) sono ora risolti *in produzione*, non solo in locale.
+4. ~~**Committare il lavoro MCP pendente** e rilasciarlo~~ ✅ **chiuso il 2026-08-25** — uscito nella
+   `v3.9.0` (§ 2.4), taggata e pushata. **Lo sprint 1 è ora chiuso tranne le due Critical.**
 
 ### Sprint 2 — Rendere il processo ripetibile
 
@@ -514,10 +511,10 @@ Aggiornato al 2026-08-25 (fine giornata).
 | Area | Aperti | Peso | Δ dal 2026-08-16 |
 |---|---|---|---|
 | Sicurezza (audit QA) | **8 finding** (1.1, 1.2, 1.4, 2.7, 3.2, 3.3, 4.3, 4.4), di cui 2 Critical | 🔴 | −9 (1.3, 2.1, 2.2, 2.3, 2.5, 2.6, 2.8, 3.1, 4.1) |
-| Git / release / CI | 2 aree: nessuna CI, release `[Unreleased]` da tagliare (`v3.9.0`) | 🟠 | −1 (`main` allineato e pushato) |
+| Git / release / CI | **1 area: nessuna CI** | 🟠 | −1 (`v3.9.0` taggata e pushata, immagini sul registry) |
 | Debito tecnico | **nessuna voce P0-P2 aperta**; resta il P3 PostgreSQL, che è la Phase 37. P1 engine parziale per scelta | ✅ | −1 (mega-componenti Angular) |
 | Roadmap prodotto | 2 fasi (25, 37 — quest'ultima in 6 sotto-fasi) | 🟡 | invariato |
-| Roadmap workflow | **1 residuo**: push al registry delle due immagini già costruite; + triage di 4 test | 🟡 | −2 (multimodale, immagine browser) |
+| Roadmap workflow | **nessun residuo**; il triage dei 4 test rossi resta, ma è § 2.3, non una fase | ✅ | −1 (immagini pushate) |
 | Documentazione | nessuno | ✅ | −5 (tutti allineati) |
 
 **Lettura in una riga:** il debito architetturale P0-P2 è esaurito, **le 20 fasi della roadmap
@@ -527,7 +524,9 @@ workflow sono tutte implementate**, la documentazione è allineata e l'audit di 
 1. **Le due Critical di luglio** — 1.1 evasione della sandbox `python_exec`, 1.2 SSRF nel nodo
    `http.request` con i `$secrets` negli header. Non hanno più nulla davanti; la 1.2 è a due righe
    dall'essere chiusa, una volta decisa la politica sugli host interni.
-2. **Tagliare la `v3.9.0` e pushare le due immagini** — finché non si pusha, tutto il lavoro di
-   agosto non arriva a nessun deployment.
-3. **La CI**, che ancora non esiste.
-4. **Le due fasi rimaste**: 25 (API keys) e 37 (persistenza pluggable, che assorbe il P3).
+2. **La CI**, che ancora non esiste — con il triage dei 4 test rossi, senza cui un required check
+   non avrebbe senso.
+3. **Le due fasi rimaste**: 25 (API keys) e 37 (persistenza pluggable, che assorbe il P3).
+
+*(La `v3.9.0` è uscita il 2026-08-25 — tag pushato e quattro immagini sul registry — quindi il
+lavoro di agosto è ora effettivamente distribuito, non più fermo in locale.)*
