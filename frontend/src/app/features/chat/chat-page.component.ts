@@ -49,6 +49,9 @@ import DOMPurify from 'dompurify';
 import hljs from 'highlight.js';
 import { NotificationService } from '../../core/services/notification.service';
 import { AppConfigService } from '../../core/config/app-config.service';
+import { ImageAttachmentService } from './image-attachment.service';
+import { SpeechService } from './speech.service';
+import { TelegramLinkService } from './telegram-link.service';
 import { UserPreferencesService } from '../../core/services/user-preferences.service';
 import { PushNotifyService } from '../../core/services/push-notify.service';
 import { FeatureService } from '../../core/services/feature.service';
@@ -63,6 +66,9 @@ import { LocaleCostPipe } from '../../core/i18n/format.pipes';
   imports: [CommonModule, FormsModule, DatePipe, RouterLink, ProfileModalComponent, OnboardingComponent, TranslatePipe, LocaleCostPipe],
   templateUrl: './chat-page.component.html',
   styleUrl: './chat-page.component.css',
+  // Page-scoped: their state (which message is speaking, the pending link
+  // code) belongs to this page and dies with it.
+  providers: [ImageAttachmentService, SpeechService, TelegramLinkService],
 })
 export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly chatService = inject(ChatService);
@@ -120,9 +126,9 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   tagAssignConvId: string | null = null;
 
   // Telegram linking
-  telegramLink = signal<TelegramLinkStatus>({ linked: false });
-  telegramLinkCode = '';
-  telegramLinkLoading = false;
+  readonly attachment = inject(ImageAttachmentService);
+  readonly speech = inject(SpeechService);
+  readonly telegram = inject(TelegramLinkService);
 
   openConvPicker(): void { this.convPickerOpen.set(true); }
   closeConvPicker(): void { this.convPickerOpen.set(false); this.tagAssignConvId = null; }
@@ -336,12 +342,6 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   copiedMessageIdx: number | null = null;
   sidebarOpen = this.savedPrefs.sidebarOpen;
 
-  /** Base64-encoded image attached by the user for vision input */
-  attachedImageB64: string | null = null;
-  attachedImageName: string | null = null;
-  /** True while a file is being dragged over the chat area */
-  dragActive = false;
-
   /** Branch navigation: tracks the active branch index per parent message ID */
   readonly activeBranches = signal<Record<string, number>>({});
   /** True while an /imagine request is in-flight */
@@ -351,7 +351,6 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   readonly pinnedMessages = signal<ChatMessage[]>([]);
 
   /** Index of the message currently being spoken, or null */
-  speakingMessageIdx: number | null = null;
 
   /** Slash command autocomplete */
   readonly slashCommands: { cmd: string; desc: string; insert: string }[] = [
@@ -464,7 +463,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     });
 
     this.loadTags();
-    this.loadTelegramLink();
+    this.telegram.load();
 
     this.searchSubject.pipe(
       debounceTime(300),
@@ -589,7 +588,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   send(overrideMessages?: ChatMessage[]): void {
     this.showSlashMenu = false;
     const text = this.prompt.trim();
-    if (!overrideMessages && (!text && !this.attachedImageB64 || this.loading)) {
+    if (!overrideMessages && (!text && !this.attachment.attached || this.loading)) {
       return;
     }
 
@@ -600,11 +599,10 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     }
 
     this.loading = true;
-    const attachedImage = this.attachedImageB64;
+    const attachedImage = this.attachment.dataUrl();
     if (!overrideMessages) {
       this.prompt = '';
-      this.attachedImageB64 = null;
-      this.attachedImageName = null;
+      this.attachment.clear();
     }
 
     const userMsg: ChatMessage = {
@@ -922,84 +920,6 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   // ── Telegram Linking ───────────────────────────────────────
-  loadTelegramLink(): void {
-    const profileId = this.profileService.currentId;
-    fetch(`${this.appConfig.apiUrl}/telegram/link/${profileId}`, { headers: this.authHeaders() })
-      .then(r => r.json())
-      .then(data => this.telegramLink.set(data))
-      .catch(() => {});
-  }
-
-  submitTelegramLink(): void {
-    const code = this.telegramLinkCode.trim();
-    if (!code) return;
-    this.telegramLinkLoading = true;
-    fetch(`${this.appConfig.apiUrl}/telegram/link`, {
-      method: 'POST',
-      headers: this.authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ code, profile_id: this.profileService.currentId }),
-    })
-      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-      .then(data => {
-        this.telegramLink.set(data);
-        this.telegramLinkCode = '';
-        this.telegramLinkLoading = false;
-        this.notifications.add('success', this.i18n.translate('chat.telegram.linkedTitle'), this.i18n.translate('chat.telegram.linkedBody', { user: data.username || this.i18n.translate('chat.telegram.unknown') }));
-      })
-      .catch(() => {
-        this.telegramLinkLoading = false;
-        this.notifications.add('error', this.i18n.translate('common.error'), this.i18n.translate('chat.telegram.invalidCode'));
-      });
-  }
-
-  unlinkTelegram(): void {
-    fetch(`${this.appConfig.apiUrl}/telegram/link/${this.profileService.currentId}`, { method: 'DELETE', headers: this.authHeaders() })
-      .then(() => {
-        this.telegramLink.set({ linked: false });
-        this.notifications.add('success', this.i18n.translate('chat.telegram.unlinkedTitle'), this.i18n.translate('chat.telegram.unlinkedBody'));
-      })
-      .catch(() => this.notifications.add('error', this.i18n.translate('common.error'), this.i18n.translate('chat.telegram.unlinkFailed')));
-  }
-
-  // ── TTS (Text-to-Speech) ───────────────────────────────────
-  get hasSpeechSynthesis(): boolean {
-    return typeof window !== 'undefined' && 'speechSynthesis' in window;
-  }
-
-  speakMessage(message: ChatMessage, idx: number): void {
-    if (!this.hasSpeechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const text = this.stripMarkdown(typeof message.content === 'string' ? message.content : '');
-    if (!text) return;
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = this.i18n.bcp47();
-    utterance.onend = () => { this.speakingMessageIdx = null; };
-    utterance.onerror = () => { this.speakingMessageIdx = null; };
-    this.speakingMessageIdx = idx;
-    window.speechSynthesis.speak(utterance);
-  }
-
-  stopSpeaking(): void {
-    window.speechSynthesis.cancel();
-    this.speakingMessageIdx = null;
-  }
-
-  private stripMarkdown(md: string): string {
-    return md
-      .replace(/```[\s\S]*?```/g, '')
-      .replace(/`[^`]*`/g, '')
-      .replace(/!\[.*?\]\(.*?\)/g, '')
-      .replace(/\[([^\]]*)\]\(.*?\)/g, '$1')
-      .replace(/#{1,6}\s+/g, '')
-      .replace(/[*_~]{1,3}/g, '')
-      .replace(/>\s+/gm, '')
-      .replace(/[-*+]\s+/gm, '')
-      .replace(/\d+\.\s+/gm, '')
-      .replace(/\n{2,}/g, '. ')
-      .replace(/\n/g, ' ')
-      .trim();
-  }
-
   // ── Message Pins ───────────────────────────────────────────
   togglePin(message: ChatMessage, idx: number): void {
     if (!this.currentConversationId || !message.id) return;
@@ -1236,86 +1156,6 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   /** Open the native file picker for images. */
-  triggerImageUpload(): void {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/jpeg,image/png,image/webp,image/gif';
-    input.onchange = () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      if (file.size > 20 * 1024 * 1024) {
-        this.notifications.add('error', this.i18n.translate('chat.err.fileTooBigTitle'), this.i18n.translate('chat.err.fileTooBigBody'));
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        this.attachedImageB64 = dataUrl;
-        this.attachedImageName = file.name;
-      };
-      reader.readAsDataURL(file);
-    };
-    input.click();
-  }
-
-  removeAttachedImage(): void {
-    this.attachedImageB64 = null;
-    this.attachedImageName = null;
-  }
-
-  onDragOver(event: DragEvent): void {
-    event.preventDefault();
-    event.stopPropagation();
-    this.dragActive = true;
-  }
-
-  onDragLeave(event: DragEvent): void {
-    event.preventDefault();
-    event.stopPropagation();
-    this.dragActive = false;
-  }
-
-  onDrop(event: DragEvent): void {
-    event.preventDefault();
-    event.stopPropagation();
-    this.dragActive = false;
-    const file = event.dataTransfer?.files?.[0];
-    if (!file || !file.type.startsWith('image/')) {
-      if (file) this.notifications.add('error', this.i18n.translate('chat.err.fileTypeTitle'), this.i18n.translate('chat.err.fileTypeBody'));
-      return;
-    }
-    if (file.size > 20 * 1024 * 1024) {
-      this.notifications.add('error', this.i18n.translate('chat.err.fileTooBigTitle'), this.i18n.translate('chat.err.fileTooBigBody'));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      this.attachedImageB64 = reader.result as string;
-      this.attachedImageName = file.name;
-    };
-    reader.readAsDataURL(file);
-  }
-
-  /** Handle paste events to capture pasted images. */
-  onPaste(event: ClipboardEvent): void {
-    const items = event.clipboardData?.items;
-    if (!items) return;
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.startsWith('image/')) {
-        const file = items[i].getAsFile();
-        if (!file) continue;
-        event.preventDefault();
-        const reader = new FileReader();
-        reader.onload = () => {
-          this.attachedImageB64 = reader.result as string;
-          this.attachedImageName = file.name || 'pasted-image';
-        };
-        reader.readAsDataURL(file);
-        break;
-      }
-    }
-  }
-
   get hasSpeechRecognition(): boolean {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any;
