@@ -19,8 +19,8 @@ Legenda gravità: 🔴 critico · 🟠 alto · 🟡 medio · ⚪ basso
 2. [Git, branch, tag e release](#2-git-branch-tag-e-release) 🟠
 3. [Debito tecnico architetturale](#3-debito-tecnico-architetturale) 🟠
 4. [Roadmap prodotto — fasi aperte](#4-roadmap-prodotto--fasi-aperte) 🟡
-5. [Roadmap workflow — residui](#5-roadmap-workflow--residui) 🟡
-6. [Igiene della documentazione](#6-igiene-della-documentazione) ⚪
+5. [Roadmap workflow — residui](#5-roadmap-workflow--residui) 🟡 *(resta solo il push delle immagini)*
+6. [Igiene della documentazione](#6-igiene-della-documentazione) ✅
 7. [Piano di esecuzione consigliato](#7-piano-di-esecuzione-consigliato)
 
 ---
@@ -333,30 +333,61 @@ affrontata solo con suite verde e dopo aver chiuso i punti di § 1.
 Le fasi **1–20** di [roadmap-workflows.md](roadmap-workflows.md) sono tutte implementate. Restano
 tre code, tutte piccole ma tutte con impatto reale a runtime.
 
-### 5.1 🟡 15.5 — Nodi multimodali (mai implementati)
+### 5.1 ✅ 15.5 — Nodi multimodali — fatto il 2026-08-25
 
-Marcati "⬜ deferred" nella roadmap; verificato: **nessuna occorrenza nel codice**.
+Erano marcati "⬜ deferred" e non esistevano nel codice. Ora sono quattro nodi in
+`app/workflow/nodes/multimodal.py`, con 26 test in `tests/test_multimodal.py`:
 
-- `audio.transcribe` — file audio dallo storage workspace → testo via provider layer/Whisper,
-  output `{text, segments}`. **Blocca il resto:** richiede prima la trascrizione nel provider layer.
-- `image.ocr` — immagine → testo.
-- `image.generate` e `tts` dove il provider layer li supporta, con output scritti nello storage
-  workspace (leggibili dai nodi `file.*` della 4.2).
+| Nodo | Output | Note |
+|---|---|---|
+| `audio.transcribe` | `{text, segments, language, duration, model, path}` | `segments` è best-effort: solo i provider con output verbose lo popolano |
+| `image.ocr` | `{text, chars, model, path}` | Nessun motore OCR nell'immagine: passa dal provider layer come i nodi `llm.*`, con l'immagine come data URI in un content part multimodale |
+| `image.generate` | `{path, bytes, provider, model, prompt}` | Riusa `IMAGE_GENERATION_CHAIN` |
+| `tts` | `{path, bytes, format, voice, model, chars}` | mp3/opus/aac/flac/wav/pcm |
+
+**La trascrizione nel provider layer, che qui era indicata come bloccante, è stata fatta** come
+`app/services/speech_service.py`: un servizio a sé che chiama litellm, sulla falsariga di
+`image_service`, **non** una nuova coppia di metodi su `BaseProvider` — il parlato prende un file e
+restituisce un file, quindi infilarlo nei dieci provider di chat avrebbe voluto dire nove
+`NotImplementedError` per servirne uno che funziona.
+
+Le due direzioni sono asimmetriche di proposito: i nodi che *consumano* un file restituiscono il
+testo, usabile direttamente da un'espressione; quelli che *producono* restituiscono il path scritto
+più i metadati del provider. Restituire megabyte di base64 renderebbe illeggibile il log della run
+e finirebbe in ogni riga `node_run`. I path sono workspace-relative e passano da
+`safe_workspace_path`, e `path` ha come default il node input come già faceva `doc.convert`: un
+trigger `file.watch` può alimentarli senza ripetere `{{ $trigger.path }}`.
+
+Nuove variabili: `SPEECH_TRANSCRIPTION_MODEL`, `SPEECH_TTS_MODEL`, `SPEECH_TTS_VOICE`,
+`VISION_OCR_MODEL`.
 
 ### 5.2 🟠 15.3 — `browser` (Playwright) non funziona in produzione
 
 Il nodo è implementato ma **Playwright non è nell'immagine backend**: a runtime fallisce.
 
-**Decisione del 2026-08-25:** al rebuild del § 5.3 Playwright è stato **deliberatamente escluso**.
-Non è né in `requirements.txt` né nel `Dockerfile`, e aggiungerlo con il browser Chromium avrebbe
-fatto crescere l'immagine di circa 1 GB **per tutti**, anche per la maggioranza che non usa mai il
-nodo `browser`. L'immagine ricostruita è di **1,03 GB**: raddoppiarla per un nodo opzionale è il
-tipo di costo che si paga a ogni pull, su ogni deployment.
+**Risolto il 2026-08-25 con una variante dell'immagine**, non con il runner remoto.
 
-**Da fare:** la strada indicata resta l'**immagine separata per il runner remoto della fase 14**
-(`runOn`), con Playwright e i browser dentro, più uno smoke test che verifichi la disponibilità del
-binario. È lavoro nuovo, non un rebuild, e va pianificato insieme al runner. Fino ad allora il nodo
-`browser` va considerato **non disponibile in produzione** e documentato come tale.
+Playwright resta fuori dall'immagine backend di default: Chromium e le sue librerie la portano da
+1,03 GB a **2,3 GB**, e la maggioranza dei deployment non tocca mai quel nodo. Esiste invece
+`backend/Dockerfile.browser`, che stratifica Playwright + Chromium **sull'immagine backend della
+stessa versione** e pubblica `<versione>-browser`; per usarla basta puntarci il servizio `backend`
+del compose. Target: `make docker/build-browser` / `make docker/push-browser`, documentati in
+[deploy.md](deploy.md) § 1.1.
+
+> ⚠️ **Correzione a questo documento.** Il piano qui sopra — spostare il nodo sul runner remoto
+> della fase 14 — **non funziona**: `browser` non è fra i `_REMOTE_CAPABLE_TYPES` perché scrive gli
+> screenshot nella workspace storage, quindi ha bisogno del contesto backend che un processo runner
+> non riceve mai. Una variante della stessa immagine è l'unica strada che fa davvero funzionare il
+> nodo, ed è quella presa.
+
+Due dettagli emersi dal build: `playwright install --with-deps` **non è utilizzabile**, perché
+riconosce la base come non supportata e ripiega su una lista di pacchetti Ubuntu 20.04 che su Debian
+13 fallisce (`ttf-unifont` e `ttf-ubuntu-font-family` non esistono); le librerie sono quindi
+installate con i nomi di trixie. Il build termina con un avvio di Chromium, così un'immagine che lo
+contiene ma non riesce a lanciarlo non arriva mai al registry.
+
+**Verificato end-to-end** nell'immagine costruita: `action=text` estrae il testo del selettore e
+`action=screenshot` scrive un PNG reale da 10 KB nella workspace. **Resta il push al registry.**
 
 ### 5.3 ✅ 13.3 — Git sync richiedeva il rebuild dell'immagine — build fatto il 2026-08-25
 
@@ -396,16 +427,20 @@ tollerate rende inutile qualunque required check in CI (§ 2.3).
 
 ## 6. Igiene della documentazione
 
-Le roadmap originali sono in più punti disallineate dalla realtà. Da correggere (o dichiarare
-questo documento come unica fonte di verità, deprecando gli altri):
+✅ **Allineati tutti il 2026-08-25.** La decisione presa è la seconda delle due che erano sul
+tavolo: **questo documento è l'unica fonte di verità per il lavoro aperto**, e gli altri file
+restano come storia (cosa è stato fatto e quando), con un rimando esplicito qui. Non sono stati
+deprecati, perché il dettaglio per fase che contengono non è duplicato altrove.
 
-| File | Problema |
-|---|---|
-| [roadmap-overview.md](roadmap-overview.md) | Segna 📋 le fasi 27, 29 e 30 che sono completate; **non elenca affatto la Phase 37**, che è una delle due realmente aperte |
-| [roadmap-workflows.md](roadmap-workflows.md) righe 566-575 | La tabella riassuntiva finale segna ⬜ le fasi **8, 10, 11, 13, 14, 15, 16, 17** mentre le sezioni corrispondenti dello stesso file le danno ✅ COMPLETED. Contraddizione interna |
-| [roadmap.md](roadmap.md) righe 280-288 | La sezione "Next" dichiara le fasi workflow 15–19 come backlog aperto: sono tutte chiuse. Anche il "recommended next sprint" finale (7.1 + 7.5 + 8.1) è superato |
-| [roadmap.md](roadmap.md) riga 225 vs codice | Collisione "Phase 30": la roadmap la assegna alla persistenza (poi rinumerata 37), il codice usa la stessa etichetta per l'hardening workflow (finding 4.3) |
-| [CHANGELOG.md](../CHANGELOG.md) | Manca la sezione `[3.5.0]`; `[Unreleased]` contiene lavoro non committato |
+| File | Problema | Esito |
+|---|---|---|
+| [roadmap-overview.md](roadmap-overview.md) | Segnava 📋 le fasi 27, 29 e 30 che sono completate; **non elencava affatto la Phase 37**, una delle due realmente aperte | ✅ 27 e 29 → ✅; la riga "30 = persistenza" era il finding 4.3 e diventa **37**, con la 30 al suo vero titolo (pagine run/schedule); aggiunte le fasi **31–52**, che mancavano del tutto; banner in testa che rimanda qui |
+| [roadmap-workflows.md](roadmap-workflows.md) | La tabella riassuntiva finale segnava ⬜ le fasi **8, 10, 11, 13, 14, 15, 16, 17** mentre le sezioni corrispondenti dello stesso file le davano ✅ COMPLETED — contraddizione interna | ✅ le 8 righe corrette (le sezioni erano quelle giuste); **zero ⬜ rimasti**; il "recommended first sprint" superato sostituito dal rimando qui |
+| [roadmap.md](roadmap.md) § "Next" | Dichiarava le fasi workflow 15–19 come backlog aperto: sono tutte chiuse. Anche il "recommended next sprint" (7.1 + 7.5 + 8.1) era superato | ✅ sezione riscritta: restano solo Phase 25 e 37, con il rimando qui; aggiunta la mappatura fasi workflow → Phase 47-52 |
+| [roadmap.md](roadmap.md) — collisione "Phase 30" | Il finding **4.3**: la roadmap assegnava la 30 alla persistenza, il codice la usa per l'hardening workflow | ✅ chiarito: la 30 è le pagine run/schedule, la persistenza è la **37**. In `roadmap.md` la rinumerazione era già avvenuta, mancava solo in `roadmap-overview.md` |
+| [roadmap.md](roadmap.md) — marcatori | Le Phase 26 e 27 non avevano il ✓ pur essendo implementate | ✅ marcate |
+| [roadmap-fix.md](roadmap-fix.md) | Il referto d'audit non diceva quali finding fossero stati chiusi | ✅ gli **11 chiusi** sono barrati e annotati con data e intervento; banner in testa con il conteggio aggiornato. Il testo originale del 2026-07-17 non è stato riscritto, solo annotato |
+| [CHANGELOG.md](../CHANGELOG.md) | Mancava la sezione `[3.5.0]`; `[Unreleased]` conteneva lavoro non committato | ✅ chiuso il 2026-08-24 come **non applicabile** (§ 2.2: quella versione non è mai esistita come commit, la "Nota sui tag git" lo dichiara) e il lavoro pendente è committato. Resta da **tagliare la release** |
 
 ---
 
@@ -428,11 +463,11 @@ debito tecnico appena ripagato non lo copre: **è lì che va il prossimo sprint*
    passaggio.
 2. ~~**Allineare `main` a `refactor`**~~ ✅ **chiuso il 2026-08-25** (§ 2.1) — fast-forward pushato,
    `origin/main` = `origin/refactor` = `7d3bf88`, tutti i tag sul remoto.
-3. **Rebuild + push dell'immagine backend** (§ 5.3) — 🟡 **build fatto il 2026-08-25**, con smoke
-   test che conferma `git`, `markitdown` e `sqlite-vec` dentro l'immagine: git sync e il degrado KB
-   sono risolti. **Resta il push al registry**, da fare dopo il tag `v3.9.0` del punto 4 perché
-   l'immagine non erediti un numero di versione che non le appartiene. Playwright (5.2) è escluso
-   di proposito e passa a un'immagine runner separata.
+3. **Rebuild + push delle immagini** (§ 5.2, § 5.3) — 🟡 **build fatti il 2026-08-25** e verificati:
+   l'immagine standard ha `git`, `markitdown` e `sqlite-vec` (git sync e degrado KB risolti), e la
+   variante `-browser` fa girare davvero il nodo `browser` end-to-end. **Resta il push al registry
+   di entrambe**, da fare dopo il tag `v3.9.0` del punto 4 perché non ereditino un numero di
+   versione che non gli appartiene.
 4. ~~**Committare il lavoro MCP pendente**~~ ✅ fatto (`58ab2b2`); resta da **rilasciarlo** con un
    tag `v3.9.0` insieme al push del punto 2 (§ 2.4).
 
@@ -442,7 +477,9 @@ debito tecnico appena ripagato non lo copre: **è lì che va il prossimo sprint*
 6. ~~**Tag mancanti + `[3.5.0]` nel CHANGELOG**~~ ✅ chiuso il 2026-08-24 come *non applicabile*
    (§ 2.2): i tag punterebbero tutti allo stesso commit, il buco è dichiarato nel CHANGELOG.
 7. **Triage dei 4 test rossi** (§ 5.4) — precondizione perché la CI abbia senso.
-8. **Allineare le roadmap obsolete** (§ 6). ❌ da fare.
+8. ~~**Allineare le roadmap obsolete**~~ ✅ **fatto il 2026-08-25** (§ 6) — sei disallineamenti
+   corretti in quattro file; questo documento è ora dichiaratamente l'unica fonte di verità per il
+   lavoro aperto.
 
 ### ~~Sprint 3 — Debito tecnico P1~~ ✅ completato il 2026-08-25 (anticipato)
 
@@ -459,7 +496,8 @@ debito tecnico appena ripagato non lo copre: **è lì che va il prossimo sprint*
 
 11. **Phase 25 — API keys** (§ 4.1), abbinata al fix 2.5 (rate limit su login): stesso layer, un
     solo intervento.
-12. **15.5 — nodi multimodali** (§ 5.1), a partire dalla trascrizione nel provider layer.
+12. ~~**15.5 — nodi multimodali**~~ ✅ **fatto il 2026-08-25** (§ 5.1) — quattro nodi più
+    `speech_service`; era la trascrizione nel provider layer a bloccare, ed è stata fatta.
 
 ### Sprint 5+ — Il lift grosso
 
@@ -479,13 +517,17 @@ Aggiornato al 2026-08-25 (fine giornata).
 | Git / release / CI | 2 aree: nessuna CI, release `[Unreleased]` da tagliare (`v3.9.0`) | 🟠 | −1 (`main` allineato e pushato) |
 | Debito tecnico | **nessuna voce P0-P2 aperta**; resta il P3 PostgreSQL, che è la Phase 37. P1 engine parziale per scelta | ✅ | −1 (mega-componenti Angular) |
 | Roadmap prodotto | 2 fasi (25, 37 — quest'ultima in 6 sotto-fasi) | 🟡 | invariato |
-| Roadmap workflow | 3 residui: multimodale, push dell'immagine ricostruita, runner con Playwright; + triage di 4 test | 🟡 | invariato |
-| Documentazione | 5 file disallineati | ⚪ | invariato |
+| Roadmap workflow | **1 residuo**: push al registry delle due immagini già costruite; + triage di 4 test | 🟡 | −2 (multimodale, immagine browser) |
+| Documentazione | nessuno | ✅ | −5 (tutti allineati) |
 
-**Lettura in una riga:** il debito architetturale P0-P2 è **esaurito**, la distribuzione è
-allineata e l'audit di sicurezza è sceso a 8 finding aperti su 19. Quello che resta è concentrato e
-nominabile: **le due Critical di luglio** — evasione della sandbox `python_exec` e SSRF nel nodo
-`http.request` con i `$secrets` negli header — più la CI che ancora non esiste e la release
-`[Unreleased]` da tagliare. Non c'è più nulla davanti a loro nella coda: il prossimo intervento è
-1.1 e 1.2, e la 1.2 in particolare è a due righe dall'essere chiusa una volta decisa la politica
-sugli host interni.
+**Lettura in una riga:** il debito architetturale P0-P2 è esaurito, **le 20 fasi della roadmap
+workflow sono tutte implementate**, la documentazione è allineata e l'audit di sicurezza è sceso a
+8 finding aperti su 19. Il backlog è ormai corto e tutto nominabile:
+
+1. **Le due Critical di luglio** — 1.1 evasione della sandbox `python_exec`, 1.2 SSRF nel nodo
+   `http.request` con i `$secrets` negli header. Non hanno più nulla davanti; la 1.2 è a due righe
+   dall'essere chiusa, una volta decisa la politica sugli host interni.
+2. **Tagliare la `v3.9.0` e pushare le due immagini** — finché non si pusha, tutto il lavoro di
+   agosto non arriva a nessun deployment.
+3. **La CI**, che ancora non esiste.
+4. **Le due fasi rimaste**: 25 (API keys) e 37 (persistenza pluggable, che assorbe il P3).

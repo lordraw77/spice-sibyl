@@ -563,21 +563,27 @@ Today a single bot instance serves the deployment. For workflow-facing bots, all
 | 5 | Product | Metrics/costs, export/import, LLM generation | Commercial value | ✅ Done |
 | 6 | Engine extension | Success/file/email triggers, `while`, subworkflow contracts, `kb.search`, rate limit | New integration patterns | ✅ Done |
 | 7 | Operations | Replay from failed node, dev/prod environments, audit+roles, per-node metrics, Telegram approval | Production-grade management | ✅ Done |
-| 8 | Advanced editor | Visual version diff, notes/frames, step-by-step debugging | Large graphs and debugging | ⬜ To do |
+| 8 | Advanced editor | Visual version diff, notes/frames, step-by-step debugging | Large graphs and debugging | ✅ Done |
 | 9 | Ecosystem | Workflow as a tool (chat/agent/MCP), chat trigger, OpenAPI import | The product multiplier | ✅ Done |
-| 10 | Advanced HITL | `human.input` (form), `wait.event` with correlation | Real async processes | ⬜ To do |
-| 11 | Quality | Test suites, dry-run, cost estimate | Workflows treated like code | ⬜ To do |
+| 10 | Advanced HITL | `human.input` (form), `wait.event` with correlation | Real async processes | ✅ Done |
+| 11 | Quality | Test suites, dry-run, cost estimate | Workflows treated like code | ✅ Done |
 | 12 | Governance | Token budgets/quotas, retention + redaction | Production without surprises | ✅ Done |
-| 13 | Copilot & as-code | Expression autocomplete, LLM explain/repair, Git sync | DX and PR review | ⬜ To do |
-| 14 | Scale & remote | Remote runner, `code` sandbox, scale-out, MQ triggers, CLI | Private networks, GPU, multi-instance | ⬜ To do |
-| 15 | Connectors & multimodal | Curated connectors, `ssh.exec`, `browser`, `rss.read`, transcribe/OCR/doc.convert | Reach beyond text/JSON APIs | ⬜ To do |
-| 16 | Execution semantics | Persistent state, trigger idempotency, saga compensations, run priority | Real-world integration patterns | ⬜ To do |
-| 17 | Scheduling & scale UX | Calendars/blackouts, SLA monitors, folders/tags/search, run comparison, digests | Dozens of workflows without babysitting | ⬜ To do |
+| 13 | Copilot & as-code | Expression autocomplete, LLM explain/repair, Git sync | DX and PR review | ✅ Done |
+| 14 | Scale & remote | Remote runner, `code` sandbox, scale-out, MQ triggers, CLI | Private networks, GPU, multi-instance | ✅ Done |
+| 15 | Connectors & multimodal | Curated connectors, `ssh.exec`, `browser`, `rss.read`, transcribe/OCR/doc.convert | Reach beyond text/JSON APIs | ✅ Done |
+| 16 | Execution semantics | Persistent state, trigger idempotency, saga compensations, run priority | Real-world integration patterns | ✅ Done |
+| 17 | Scheduling & scale UX | Calendars/blackouts, SLA monitors, folders/tags/search, run comparison, digests | Dozens of workflows without babysitting | ✅ Done |
 | 18 | LLM quality | `llm.judge`, prompt A/B testing | Measured, gated LLM output | ✅ Done |
 | 19 | Custom Node SDK | Manifest + declarative/Python nodes, registry, sandboxed security model, CLI DX, distribution | User-extensible palette, community connectors | ✅ Done |
 | 20 | Telegram channel | `telegram` trigger + `/run` launcher for active workflows, `telegram.send`/edit/media nodes, generic inline keyboards, inbound file ingestion, bot binding | Telegram as a bidirectional workflow channel | ✅ Done |
 
-Recommended first sprint (phases 1–5): **1.1 + 1.2** (UI refactoring) in parallel with **2.1** (per-node retry, backend only) — no cross-dependencies and immediate value on both fronts.
+**All 20 phases are implemented** (last: 15.5 multimodal nodes, 2026-08-25). The summary table
+above used to contradict the per-phase sections below it — eight phases marked ⬜ that their own
+section reported ✅ COMPLETED — which is fixed here; the sections were the accurate ones.
+
+Anything still open for workflows lives in [roadmapv2.md](roadmapv2.md) § 5, which is the single
+source of truth for remaining work. Today that is: pushing the rebuilt backend image, and the
+`<version>-browser` image variant for the `browser` node (built, not yet published).
 
 Recommended next sprint (phases 7–8): **7.1** (replay/retry from here) + **7.5** (Telegram approval) + **8.1** (visual version diff) — all reuse existing infrastructure (checkpoints, approvals API, versioning + graph-preview), no refactoring, immediate user value.
 

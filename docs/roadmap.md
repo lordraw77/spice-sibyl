@@ -195,12 +195,12 @@
 - **25.b — Key management UI** — an "API keys" panel (settings/navbar) to create/name/revoke keys and copy the value once, with a last-used indicator.
 - **25.c — Documentation** — `curl` examples and an OpenAI SDK snippet (`base_url=<host>/api/v1`, `api_key=sk-sibyl-…`) in a new doc + README index entry.
 
-## Phase 26 — Semantic response cache (extends 19.c)
+## Phase 26 — Semantic response cache (extends 19.c) ✓
 *Phase 19's exact-match cache only catches identical prompts; this adds semantic matching by reusing the embedding infrastructure.*
 - **26.a — Semantic cache** ✓ — when `SEMANTIC_CACHE_ENABLED`, on an exact-match miss `cache_service` embeds the normalized last user message via `embedding_service` and compares it (cosine) against the stored embeddings of recent entries in the **same** `(model, temperature, max_tokens)` bucket; a hit above `SEMANTIC_CACHE_THRESHOLD` replays the saved reply flagged `cached_semantic` (⚡~ chip). The same 19.c exclusions apply (tools, `agent/*`, multimodal payloads). Embeddings are stored alongside `content`/`meta`; the existing LRU + TTL are reused. Degrades silently to exact-match-only when no embedding provider is reachable.
 - **26.b — Settings & observability** ✓ — `SEMANTIC_CACHE_ENABLED`, `SEMANTIC_CACHE_THRESHOLD`, `SEMANTIC_CACHE_MAX_ENTRIES`; `cache_service.stats()` (already surfaced in `/info`) extended with semantic vs exact hit counts.
 
-## Phase 27 — Scheduled & recurring workflows (cron) (extends Phase 18)
+## Phase 27 — Scheduled & recurring workflows (cron) (extends Phase 18) ✓
 *Phase 18's durable workflows are manual-only; this makes them schedulable and recurring, wired into the 23.c notification bridge.*
 - **27.a — Persistent schedules** — a new `workflow_schedules` table (`id`, `profile_id`, `goal`, `model`, `max_steps`, `extra_instructions`, a `cron`/RRULE expression or interval, `next_run_at`, `enabled`, `last_run_id`, `created_at`). Endpoints `GET/POST/PATCH/DELETE /v1/workflows/schedules` (audited) with an enable/pause toggle and "run now".
 - **27.b — Background scheduler** — an async loop (same pattern as `backup_service.backup_loop` / `discovery_refresh.refresh_loop`, started in the `lifespan` of `app/main.py`) wakes on the minute, selects due schedules and spawns a normal agent run via `workflow_service.start`, recomputing `next_run_at`. Reuses the Telegram reminders' relative/natural parsing (`app/telegram/bot.py`).
@@ -277,12 +277,18 @@ Retry a failed run from its failed node (`POST /runs/{id}/retry`, checkpoint-see
 - **37.e — parallel Data Access Service (opt-in topology)** — the facade wrapped in a standalone `data-access-service` process (internal FastAPI/gRPC) that owns the pool and is the only thing talking to the engine, with its own Dockerfile + compose service. The backend gets `PERSISTENCE_MODE=embedded|service`: `embedded` (default) keeps repos in-process (today's behavior, zero latency); `service` swaps the `Db` wrapper for a **remote client** that RPCs the DAS — a transport swap thanks to 37.a's `Db` protocol. Internal auth (service token), health/readiness, connection draining; the Telegram bot + workflow engine inherit it for free (shared repos). The SQLite retrieval store stays local to the DAS/backend so no vectors cross the wire per KNN. Trade-off documented: service mode = independent scaling/isolation at the cost of a network hop and cross-repo transaction boundaries (mitigation: keep multi-statement txns inside a single DAS call).
 - **37.f — Data migration tooling, config & docs** — `sibyl-db migrate --from sqlite://… --to postgresql://…`: engine-agnostic export/import of the **relational** tables (streamed in FK order) on top of the existing backup/export tooling, **leaving the SQLite KB store intact** (no re-embed needed). Config surface: `DATABASE_URL`, `RETRIEVAL_DB_URL`, `PERSISTENCE_MODE`, `DATA_SERVICE_URL`, pool knobs; `/info` + `/health` report the active engine + pool stats. `docs/persistence.md` (engine matrix, embedded-vs-service topology, migration guide), README index entry, five-locale labels for the admin surface showing the active engine.
 
-## Next — Workflow engine evolution (workflow roadmap phases 15–19)
-*The dedicated [workflow roadmap](roadmap-workflows.md) tracks the evolution of the Phase 29 DAG engine. Its phases 1–14 are shipped (as Phases 31–36, 38, 39, 40, 41, 42, 43, 44, 45 and 46 above); phases 15–19 are the open backlog and will be numbered as main-roadmap phases when picked up:*
-- **15 — Connectors and multimodal nodes** — curated connector library, `ssh.exec`, `browser` (Playwright), `rss.read` trigger, transcribe/OCR/doc.convert
-- **16 — State and execution semantics** — persistent state across runs, trigger idempotency, saga compensations, run priority
-- **17 — Scheduling, SLA and scale UX** — calendars/blackout windows, SLA monitors, folders/tags/search, run comparison, notification digests
-- **18 — LLM quality** — `llm.judge` node, prompt A/B testing
-- **19 — Custom Node SDK** — node manifest + declarative/Python nodes, registry and lifecycle, sandboxed security model, CLI DX, distribution
+## Next — what is actually open
 
-*Recommended next sprint (per the workflow roadmap): 7.1 (replay/retry from failed node) + 7.5 (Telegram approval) + 8.1 (visual version diff).*
+*Corrected 2026-08-25. This section previously listed workflow phases 15–19 as the open backlog
+and recommended a sprint of 7.1 + 7.5 + 8.1 — all of that has shipped since. **All 20 phases of the
+[workflow roadmap](roadmap-workflows.md) are done** (15 → Phase 47 and the 15.5 multimodal nodes,
+16 → 48, 17 → 49, 18 → 50, 19 → 51, 20 → 52).*
+
+Two phases of this roadmap remain, and the single source of truth for everything still open —
+including the security audit, CI and release work that no phase covers — is
+**[roadmapv2.md](roadmapv2.md)**:
+
+- **Phase 25 — Programmatic access (Personal API keys)** — see § 4.1 of roadmap v2.
+- **Phase 37 — Pluggable persistence (SQLAlchemy Core) + Data Access Service** — see § 4.2. This is
+  the phase the persistence work was renumbered *to*; "Phase 30" in this file is the workflow runs
+  and schedules pages, which is a different, completed thing (that collision was audit finding 4.3).
