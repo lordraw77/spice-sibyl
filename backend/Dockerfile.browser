@@ -1,0 +1,56 @@
+# syntax=docker/dockerfile:1
+#
+# Backend image + Playwright and Chromium, for deployments that use the
+# `browser` workflow node (roadmap fase 15.3).
+#
+# Why a second image instead of adding Playwright to the main one: Chromium and
+# its system libraries roughly double the backend image, and every deployment
+# would pay that on every pull to serve one optional node. Why not the phase-14
+# remote runner, as the roadmap originally assumed: `browser` is not in
+# `_REMOTE_CAPABLE_TYPES` — it writes screenshots into the workspace storage, so
+# it needs backend context a runner process never gets. A same-code image
+# variant is the only option that makes the node actually work.
+#
+# Build:  make docker/build-browser
+# Use:    point the backend service at <image>:<tag>-browser in compose.
+#
+# The base tag is passed in so this always layers on the image that was just
+# built, never on a stale `latest`.
+ARG BASE_IMAGE=lordraw/spice-sibyl-backend
+ARG BASE_TAG=latest
+FROM ${BASE_IMAGE}:${BASE_TAG}
+
+# Browsers go to a system-wide path rather than the app user's home: the
+# default (~/.cache/ms-playwright) would be written as root at build time and
+# then be unreadable to the non-root runtime user.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+
+USER root
+# The system libraries are installed by name instead of via `playwright install
+# --with-deps`: that flag detects the base as "not officially supported" and
+# falls back to an Ubuntu 20.04 package list, which fails on Debian 13 (trixie)
+# because ttf-unifont and ttf-ubuntu-font-family do not exist there. These are
+# the same libraries, under the names trixie actually uses (the t64 suffix is
+# the 64-bit time_t transition).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       libnss3 libnspr4 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 \
+       libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
+       libgbm1 libpango-1.0-0 libcairo2 libasound2t64 libatspi2.0-0t64 \
+       libx11-6 libxcb1 libxext6 libglib2.0-0t64 fonts-liberation \
+    && pip install --no-cache-dir playwright==1.49.1 \
+    && playwright install chromium \
+    && chmod -R a+rX /opt/playwright \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+USER app
+
+# Fail the build if the browser cannot actually start — an image that ships
+# Chromium but cannot launch it is worse than not having the image at all.
+RUN python -c "\
+from playwright.sync_api import sync_playwright;\
+p = sync_playwright().start();\
+b = p.chromium.launch(headless=True);\
+b.close();\
+p.stop();\
+print('playwright chromium OK')"

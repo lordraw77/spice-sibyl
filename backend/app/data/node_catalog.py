@@ -710,6 +710,75 @@ _STATIC_NODES: list[NodeTypeInfo] = [
         ],
     ),
 
+    # ── 15.5 multimodal: audio/image in, audio/image out ──
+    # Paths are workspace-relative like every other file node, so the generated
+    # ones can be picked up by file.read / telegram.sendMedia downstream.
+    NodeTypeInfo(
+        type="audio.transcribe", category="ai", label="Audio → text", outputs=["main"],
+        description=(
+            "Transcribes an audio file from the workspace storage via the "
+            "configured speech model (SPEECH_TRANSCRIPTION_MODEL). Output: "
+            "{text, segments, language, duration, model, path}. `segments` is "
+            "best-effort — only providers returning verbose output fill it. "
+            "Path defaults to the node input (e.g. a file.watch $trigger.path)."
+        ),
+        params_schema=[
+            _param("path", "Audio path (expression, defaults to input)", "expression"),
+            _param("model", "Model (blank = SPEECH_TRANSCRIPTION_MODEL)", "text"),
+            _param("language", "Language hint (ISO 639-1, optional)", "text"),
+        ],
+        defaults={"retry": 1, "backoff": 2},
+    ),
+    NodeTypeInfo(
+        type="image.ocr", category="ai", label="Image → text (OCR)", outputs=["main"],
+        description=(
+            "Reads the text out of an image using a vision model — there is no "
+            "OCR engine in the image, so this goes through the provider layer "
+            "like the other llm.* nodes. Output: {text, chars, model, path}. "
+            "Override `prompt` to extract something specific instead of the "
+            "whole text."
+        ),
+        params_schema=[
+            _param("path", "Image path (expression, defaults to input)", "expression"),
+            _param("model", "Vision model (blank = VISION_OCR_MODEL or default)", "text"),
+            _param("prompt", "Prompt override (optional)", "text"),
+        ],
+        defaults={"retry": 1, "backoff": 2},
+    ),
+    NodeTypeInfo(
+        type="image.generate", category="ai", label="Text → image", outputs=["main"],
+        description=(
+            "Generates an image from a prompt via IMAGE_GENERATION_CHAIN and "
+            "writes it into the workspace storage. Output: {path, bytes, "
+            "provider, model, prompt} — the PNG itself is not returned inline, "
+            "so the run log stays readable. `path` blank = generated/<uuid>.png."
+        ),
+        params_schema=[
+            _param("prompt", "Prompt (expression, defaults to input)", "expression"),
+            _param("path", "Output path (blank = generated/<uuid>.png)", "text"),
+            _param("provider", "Force one chain provider (optional)", "text"),
+            _param("width", "Width", "number"),
+            _param("height", "Height", "number"),
+        ],
+        defaults={"retry": 1, "backoff": 2, "width": 1024, "height": 1024},
+    ),
+    NodeTypeInfo(
+        type="tts", category="ai", label="Text → speech", outputs=["main"],
+        description=(
+            "Synthesises speech from text via SPEECH_TTS_MODEL and writes the "
+            "audio into the workspace storage. Output: {path, bytes, format, "
+            "voice, model, chars}. Formats: mp3, opus, aac, flac, wav, pcm."
+        ),
+        params_schema=[
+            _param("text", "Text (expression, defaults to input)", "expression"),
+            _param("path", "Output path (blank = generated/<uuid>.<format>)", "text"),
+            _param("voice", "Voice (blank = SPEECH_TTS_VOICE)", "text"),
+            _param("model", "Model (blank = SPEECH_TTS_MODEL)", "text"),
+            _param("format", "Format", "text"),
+        ],
+        defaults={"retry": 1, "backoff": 2, "format": "mp3"},
+    ),
+
     # ── Phase 48 (roadmap fase 16.1) — persistent state across runs ──
     NodeTypeInfo(
         type="state.get", category="data", label="State: get", outputs=["main"],

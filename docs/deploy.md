@@ -56,6 +56,33 @@ make build   VERSION=v1.2.3   # solo build locale
 make push    VERSION=v1.2.3   # solo push
 ```
 
+### 1.1 Variante con browser (nodo `browser` dei workflow)
+
+Il nodo `browser` dei graph workflow guida un Chromium headless via Playwright.
+**Playwright non è nell'immagine backend standard**, quindi su di essa quel nodo
+fallisce a runtime con un errore esplicito. Chromium e le sue librerie di sistema
+raddoppiano l'immagine (1,03 GB → **2,3 GB**), e la maggior parte dei deployment
+non usa mai quel nodo: per questo esiste come **variante separata**, non come
+default.
+
+```bash
+# Costruisce <immagine>:<versione>-browser a partire dall'immagine backend della
+# stessa versione — quindi va costruita prima quella (make build o dev-build-backend).
+make docker/build-browser VERSION=v1.2.3
+make docker/push-browser  VERSION=v1.2.3
+```
+
+Per usarla basta puntare il servizio `backend` del compose al tag `-browser`:
+nessuna differenza di codice o di configurazione, è la stessa immagine più
+Playwright. Il build fallisce se Chromium non riesce ad avviarsi, così
+un'immagine che lo contiene ma non lo sa lanciare non arriva mai al registry.
+
+> **Perché non il runner remoto della fase 14.** La roadmap ipotizzava di
+> spostare il nodo su un'immagine runner dedicata, ma `browser` **non è** fra i
+> `_REMOTE_CAPABLE_TYPES`: scrive gli screenshot nella workspace storage, quindi
+> ha bisogno del contesto backend che un processo runner non riceve. Una variante
+> della stessa immagine è l'unica strada che fa davvero funzionare il nodo.
+
 ---
 
 ## 2. Architettura produzione

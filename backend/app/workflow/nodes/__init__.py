@@ -17,4 +17,5 @@ from app.workflow.nodes import io  # noqa: F401 — registers io-family handlers
 from app.workflow.nodes import llm  # noqa: F401 — registers llm-family handlers
 from app.workflow.nodes import logic  # noqa: F401 — registers logic-family handlers
 from app.workflow.nodes import messaging  # noqa: F401 — registers messaging-family handlers
+from app.workflow.nodes import multimodal  # noqa: F401 — registers audio/image/tts handlers
 from app.workflow.nodes import state  # noqa: F401 — registers state-family handlers

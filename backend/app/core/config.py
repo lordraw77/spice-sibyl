@@ -465,6 +465,17 @@ class Settings(BaseSettings):
     # forge a fresh throttling key on every request.
     trust_proxy_headers: bool = False
 
+    # --- Speech & multimodal workflow nodes (roadmap fase 15.5) ---
+    # Transcription model for audio.transcribe, in litellm's <provider>/<model>
+    # naming (whisper-1, groq/whisper-large-v3, …). Empty disables the node.
+    speech_transcription_model: str = "whisper-1"
+    # Text-to-speech model and default voice for the `tts` node.
+    speech_tts_model: str = "tts-1"
+    speech_tts_voice: str = "alloy"
+    # Vision model used by image.ocr to read text out of an image. Empty falls
+    # back to default_model, which only works if that model accepts images.
+    vision_ocr_model: str = ""
+
     # --- Multi-instance coordination (roadmap v2 § 3, P2) ---
     # Where the sliding windows live. "memory" counts only what this process
     # saw — correct for one instance, and N times too permissive for N of them.

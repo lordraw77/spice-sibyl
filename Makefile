@@ -1,5 +1,8 @@
 DOCKER_USER   ?= lordraw
 BACKEND_IMAGE  = $(DOCKER_USER)/spice-sibyl-backend
+# Optional variant: same backend plus Playwright + Chromium, for the `browser`
+# workflow node. Built and pushed only on demand — see docker/build-browser.
+BROWSER_IMAGE  = $(DOCKER_USER)/spice-sibyl-backend
 FRONTEND_IMAGE = $(DOCKER_USER)/spice-sibyl-frontend
 NGINX_IMAGE    = $(DOCKER_USER)/spice-sibyl-nginx
 GIT_TAG       := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "latest")
@@ -11,7 +14,7 @@ APP_VERSION   := $(patsubst v%,%,$(VERSION))
 .PHONY: up down logs backend frontend test-backend install-backend install-frontend \
         build push release prod-up prod-down frontend-docs \
         dev dev-build dev-build-backend dev-build-frontend rebuild publish \
-        tag push-tags clean lclean
+        tag push-tags clean lclean docker/build-browser docker/push-browser
 
 # Copy docs/it + screenshots into frontend/public/docs (in-app Help
 # page). Must run before the frontend/nginx image builds: their contexts only
@@ -59,6 +62,19 @@ dev-build: dev-build-frontend dev-build-backend
 
 dev-build-backend:
 	docker compose build --build-arg APP_VERSION=$(APP_VERSION) backend
+
+# Backend + Playwright/Chromium (roadmap fase 15.3). Layers on the backend image
+# for the same version, so build that first — `build` or `dev-build-backend`.
+# Chromium roughly doubles the image, which is why it is not in the default one.
+docker/build-browser:
+	docker build \
+	  --build-arg BASE_IMAGE=$(BACKEND_IMAGE) \
+	  --build-arg BASE_TAG=$(VERSION) \
+	  -f ./backend/Dockerfile.browser \
+	  -t $(BROWSER_IMAGE):$(VERSION)-browser ./backend
+
+docker/push-browser:
+	docker push $(BROWSER_IMAGE):$(VERSION)-browser
 
 dev-build-frontend: frontend-docs
 	docker build --build-arg APP_VERSION=$(APP_VERSION) -f ./nginx/Dockerfile -t $(NGINX_IMAGE):latest .
