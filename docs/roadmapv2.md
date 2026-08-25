@@ -110,9 +110,11 @@ anti-pattern: rende `git describe` sul default branch fuorviante e rompe qualunq
 refactoring architetturale, va chiuso dopo il merge.
 
 **Fatto il 2026-08-25:** il lavoro rimasto nel working tree (fix IDOR, fix MCP stdio, documentazione)
-è stato committato su `refactor`, poi `main` è stato allineato in **fast-forward** su `refactor` e
-pushato: `origin/main` contiene ora `v3.8.0` e tutto il refactoring P0/P1, e `git describe` sul
-branch di default è di nuovo significativo. `refactor` resta il **branch di lavoro permanente** —
+è stato committato su `refactor`, poi `main` è stato allineato in **fast-forward** su `refactor`:
+entrambi i branch locali puntano ora allo stesso commit, che contiene `v3.8.0` e tutto il
+refactoring P0/P1, così che `git describe` sul branch di default torni significativo.
+⚠️ **Push ancora da fare** (`git push origin refactor && git push origin main`): la macchina di
+lavoro non ha credenziali GitHub configurate — né `gh auth`, né token, né chiave SSH autorizzata. `refactor` resta il **branch di lavoro permanente** —
 si sviluppa lì e si porta su `main` in fast-forward a ogni release; la convenzione va scritta nel
 `CONTRIBUTING.md` previsto dalla § 2.4.
 
