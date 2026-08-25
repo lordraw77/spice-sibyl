@@ -1,7 +1,7 @@
 # Roadmap v2 — Backlog consolidato
 
-**Data:** 2026-08-16
-**Base:** HEAD `a8460ce` (branch `refactor`, tag `v3.8.0`)
+**Data:** 2026-08-16 · **ultima verifica:** 2026-08-25
+**Base:** HEAD `7d3bf88` (branch `refactor` e `main` allineati, `v3.8.0-12-g7d3bf88`)
 **Fonti consolidate:** [roadmap.md](roadmap.md) · [roadmap-overview.md](roadmap-overview.md) · [roadmap-workflows.md](roadmap-workflows.md) · [roadmap-analisi.md](roadmap-analisi.md) · [roadmap-fix.md](roadmap-fix.md)
 
 Questo documento raccoglie **tutto e solo ciò che resta da fare**, verificato contro il codice
@@ -33,6 +33,17 @@ più alta dell'intero backlog e ha un rapporto costo/beneficio migliore di qualu
 
 > **Aggiornamento 2026-08-24:** chiusi i due IDOR Critical **2.1** e **2.2** (vedi tabella);
 > restano aperte le due Critical di sandbox/SSRF (1.1, 1.2) e gli IDOR gemelli 2.3 e 3.1.
+>
+> **Ri-verificata riga per riga il 2026-08-25 sul codice a `7d3bf88`: nessun altro finding è
+> stato chiuso.** In particolare `nodes/io.py:109` valida ancora solo lo schema `http(s)://` senza
+> `assert_public_url` (1.2); `code_interpreter.py` non ha alcun `addaudithook` né isolamento di rete
+> (1.1); `list_document_chunks`, `get_document_source` e `get_document_wiki` non hanno nemmeno la
+> dipendenza `resolve_profile` (2.3); `reembed_document` ha `pid` ma non lo confronta con
+> `doc.profile_id` e lo passa a `rag_service.reembed`, che riattribuisce il documento (3.1);
+> `dependencies/rate_limit.py` importa ancora `get_current_user` e quindi non può coprire `/login`
+> (2.5); `auth.py:58` mantiene lo short-circuit `not row or not verify_password(...)` (2.6);
+> `main.py` logga due `warning` sui segreti di default e prosegue comunque il boot (2.7).
+> **Lo sprint 1 di sicurezza è, di fatto, ancora tutto da fare tranne i due IDOR.**
 
 ### 1.1 Critical
 
@@ -82,12 +93,16 @@ più alta dell'intero backlog e ha un rapporto costo/beneficio migliore di qualu
 
 Stato rilevato:
 
+Aggiornato al 2026-08-25:
+
 ```
-* refactor   a8460ce  [origin/refactor]  ← HEAD, tag v3.8.0
-  main       4087ee5  [origin/main]      ← 4 commit indietro, describe: v3.7.0-1-g4087ee5
+* refactor   7d3bf88  [origin/refactor]  ← HEAD, in pari con il remoto
+  main       7d3bf88  [origin/main]      ← in pari con il remoto
+remote/refactor  7d3bf88   ✅
+remote/main      7d3bf88   ✅ allineato il 2026-08-25
 remote: origin  https://github.com/lordraw77/spice-sibyl.git
-47 tag locali; nessuna directory .github/ → nessuna CI
-working tree: 4 file modificati non committati (lavoro MCP stdio)
+47 tag, tutti presenti sul remoto; nessuna directory .github/ → nessuna CI
+working tree: pulito
 ```
 
 ### 2.1 ✅ `main` non contiene la release corrente — chiuso il 2026-08-25
@@ -113,8 +128,20 @@ refactoring architetturale, va chiuso dopo il merge.
 è stato committato su `refactor`, poi `main` è stato allineato in **fast-forward** su `refactor`:
 entrambi i branch locali puntano ora allo stesso commit, che contiene `v3.8.0` e tutto il
 refactoring P0/P1, così che `git describe` sul branch di default torni significativo.
-⚠️ **Push ancora da fare** (`git push origin refactor && git push origin main`): la macchina di
-lavoro non ha credenziali GitHub configurate — né `gh auth`, né token, né chiave SSH autorizzata. `refactor` resta il **branch di lavoro permanente** —
+
+**Push completato il 2026-08-25:** `git push origin main` ha portato il remoto da `4087ee5` a
+`7d3bf88` (fast-forward, 16 commit). `origin/main` e `origin/refactor` puntano ora allo stesso
+commit e **tutti e 47 i tag sono già presenti sul remoto**: chi clona il default branch ottiene
+la `v3.8.0` con tutto il refactoring P0/P1/P2, e `git describe` su `main` è di nuovo significativo.
+
+> **Nota sulle credenziali** (il blocco riportato qui in precedenza): la macchina non ha né
+> `gh auth` né una chiave SSH autorizzata su GitHub, ma `~/.docker/config.json` contiene un PAT
+> classico dell'utente `lordraw77` (voce `ghcr.io`) con scope sufficiente al push. È stato usato
+> **una tantum** per questo push, senza scriverlo in nessun file del repository. Per il lavoro
+> ordinario resta consigliato configurare `gh auth login` o una chiave SSH dedicata, invece di
+> dipendere da un token nato per il registry dei package.
+
+`refactor` resta il **branch di lavoro permanente** —
 si sviluppa lì e si porta su `main` in fast-forward a ogni release; la convenzione va scritta nel
 `CONTRIBUTING.md` previsto dalla § 2.4.
 
@@ -170,9 +197,11 @@ Non esiste `.github/workflows/`. Tutto — test, lint, build immagini, coerenza 
 
 ### 2.4 🟡 Igiene del repository
 
-- **Lavoro non committato:** 4 file modificati (`CHANGELOG.md`, `backend/app/services/mcp_client.py`,
-  `backend/tests/test_mcp.py`, `docs/mcp-deployment.md`) — è il fix MCP stdio già descritto in
-  `[Unreleased]`. Va chiuso in un commit e portato in una release, non lasciato nel working tree.
+- ~~**Lavoro non committato:** 4 file modificati (fix MCP stdio).~~ ✅ **chiuso il 2026-08-25** —
+  committato come `58ab2b2`; il working tree è pulito. Resta però da **rilasciare**: le voci in
+  `[Unreleased]` del CHANGELOG (fix MCP, IDOR, migrazioni versionate, coordinamento, split dei god
+  object) valgono un bump di versione — è la naturale `v3.9.0`, da tagliare insieme al push di
+  `main` del § 2.1.
 - **`.claude/settings.json` è tracciato:** contiene le permission dell'agente. Valutare se è
   intenzionale (config di progetto condivisa) o se va spostato in `settings.local.json`.
 - **Nessun `CONTRIBUTING.md` né convenzione di branch documentata:** i messaggi di commit seguono
@@ -192,7 +221,7 @@ resta P3.
 |---|---|---|---|
 | ~~P0~~ | `db/pool.py` unico + `transaction()` | ✅ fatto | — |
 | ~~P0~~ | Dispatch table dei nodi (`app/workflow/registry.py`) | ✅ fatto | — |
-| **P1** | Esplodere `workflow_graph_service.py` | 🟡 **parziale**: 5.555 → **3.919 righe**. Tutte le famiglie di nodi sono estratte in `app/workflow/nodes/*`; il core (`_execute`, checkpoint, scheduler) resta inline per scelta | Manutenibilità, test |
+| **P1** | Esplodere `workflow_graph_service.py` | 🟡 **parziale**: 5.555 → **3.969 righe**. Tutte le famiglie di nodi sono estratte in `app/workflow/nodes/*`; il core (`_execute`, checkpoint, scheduler) resta inline per scelta | Manutenibilità, test |
 | ~~P1~~ | Segmentare `graph_workflows.py` in sub-`APIRouter` | ✅ **fatto il 2026-08-25** — package `endpoints/graph_workflows/` con 13 moduli + `_common.py`; il più grande è 315 righe. Route table (87 path) confrontata prima/dopo: identica, e le literal precedono ancora `/{wf_id}` | Manutenibilità, meno merge-conflict |
 | ~~P1~~ | Migrazioni versionate | ✅ **fatto il 2026-08-25** — `app/db/migrations.py`: unità numerate + ledger `schema_migrations`, il boot applica solo ciò che manca. La v1 è la lista storica *tollerante* (un DB pre-ledger non sa cosa aveva già), dalla v2 in poi un errore ferma il boot. Nessuna dipendenza aggiunta: Alembic resta un'opzione per la Phase 37 | Deploy sicuri |
 | ~~P2~~ | Esplodere `telegram/bot.py` | ✅ **fatto il 2026-08-25** — package `app/telegram/bot/` con 16 moduli dietro façade. I contatori `_tg_*` sono diventati un oggetto condiviso e `_application` ha un setter, perché `global` avrebbe dato a ogni modulo la sua copia. Handler table del bot confrontata prima/dopo: 43 handler identici | Test isolati |
@@ -293,25 +322,50 @@ Marcati "⬜ deferred" nella roadmap; verificato: **nessuna occorrenza nel codic
 ### 5.2 🟠 15.3 — `browser` (Playwright) non funziona in produzione
 
 Il nodo è implementato ma **Playwright non è nell'immagine backend**: a runtime fallisce.
-Da fare: aggiungere Playwright + i browser al `Dockerfile` (attenzione al peso dell'immagine —
-valutare un'immagine separata per il runner remoto della fase 14 invece di gonfiare il backend) e
-un test di smoke che verifichi la disponibilità del binario.
 
-### 5.3 🟠 13.3 — Git sync richiede il rebuild dell'immagine
+**Decisione del 2026-08-25:** al rebuild del § 5.3 Playwright è stato **deliberatamente escluso**.
+Non è né in `requirements.txt` né nel `Dockerfile`, e aggiungerlo con il browser Chromium avrebbe
+fatto crescere l'immagine di circa 1 GB **per tutti**, anche per la maggioranza che non usa mai il
+nodo `browser`. L'immagine ricostruita è di **1,03 GB**: raddoppiarla per un nodo opzionale è il
+tipo di costo che si paga a ogni pull, su ogni deployment.
 
-Il `Dockerfile` è già stato aggiornato per includere `git`, **ma l'immagine non è mai stata
-ricostruita**: la funzione di sync delle versioni via subprocess fallisce sui deployment esistenti.
-Stessa situazione, già annotata altrove, per **`markitdown` + `sqlite-vec` della Phase 28**: senza
-rebuild la KB degrada al fallback numpy con scan O(n).
+**Da fare:** la strada indicata resta l'**immagine separata per il runner remoto della fase 14**
+(`runOn`), con Playwright e i browser dentro, più uno smoke test che verifichi la disponibilità del
+binario. È lavoro nuovo, non un rebuild, e va pianificato insieme al runner. Fino ad allora il nodo
+`browser` va considerato **non disponibile in produzione** e documentato come tale.
 
-> **Azione unica:** un solo rebuild + push dell'immagine backend chiude 5.2, 5.3 e il degrado KB.
-> È il singolo intervento con il miglior rapporto sforzo/beneficio di tutto il documento, ed è
-> naturale abbinarlo alla CI del § 2.3.
+### 5.3 ✅ 13.3 — Git sync richiedeva il rebuild dell'immagine — build fatto il 2026-08-25
+
+Il `Dockerfile` era già stato aggiornato per includere `git`, **ma l'immagine non era mai stata
+ricostruita**: la funzione di sync delle versioni via subprocess falliva sui deployment esistenti.
+Stessa situazione per **`markitdown` + `sqlite-vec` della Phase 28**: senza rebuild la KB degradava
+al fallback numpy con scan O(n).
+
+**Fatto:** `docker build --build-arg APP_VERSION=3.8.0 -t lordraw/spice-sibyl-backend:v3.8.0
+./backend` — build pulito, immagine **1,03 GB**. Smoke test eseguito dentro il container:
+
+| Dipendenza | Verifica | Esito |
+|---|---|---|
+| `git` (13.3 git sync) | `git --version` | ✅ 2.47.3 |
+| `markitdown` (Phase 28) | `import markitdown` | ✅ 0.1.2 |
+| `sqlite-vec` (Phase 28) | `sqlite_vec.load()` + `vec_version()` | ✅ v0.1.6 — niente più fallback numpy |
+| Docker CLI (MCP sidecar) | `docker --version` | ✅ 27.3.1 |
+| `playwright` (5.2) | `import playwright` | ❌ assente — **escluso di proposito**, vedi § 5.2 |
+| App | `import app.main` | ✅ |
+
+⚠️ **Due code aperte.**
+1. **Il push al registry non è stato fatto** (solo build locale): finché `lordraw/spice-sibyl-backend`
+   non viene pushato, i deployment esistenti continuano a girare sull'immagine vecchia e i tre
+   degradi restano *in produzione*. `make push` o `make publish` chiudono il cerchio.
+2. **L'immagine è taggata `v3.8.0` ma contiene codice post-3.8.0** — `VERSION` deriva da
+   `git describe --tags --abbrev=0`, e da `v3.8.0` in poi ci sono 12 commit non ancora rilasciati.
+   Il push va quindi fatto **dopo** aver tagliato la `v3.9.0` prevista dal § 2.4, altrimenti si
+   sovrascrive un tag di release con contenuto diverso da quello che il tag dichiara.
 
 ### 5.4 ⚪ Suite di test
 
-Note di progetto riportano **~504 test verdi con 5 failure pre-esistenti o flaky** (MCP stdio,
-phase26). Vanno triagiati e o corretti o marcati `xfail` con motivazione: una suite con failure
+Ultima esecuzione (2026-08-25): **537 passed**, con 4 failure pre-esistenti — `test_phase26`
+(stats), `test_phase45` (git-sync ×2) e la flaky di ordinamento in `test_phase48`. Vanno triagiate e o corretti o marcati `xfail` con motivazione: una suite con failure
 tollerate rende inutile qualunque required check in CI (§ 2.3).
 
 ---
@@ -335,28 +389,45 @@ questo documento come unica fonte di verità, deprecando gli altri):
 
 Ordinato per rischio-rimosso per unità di sforzo, non per appetibilità.
 
-### Sprint 1 — Mettere in sicurezza e allineare (giorni, non settimane)
+Ordine rivisto il 2026-08-25: lo **sprint 3 è stato eseguito per intero e in anticipo** (tutti i
+P1/P2 tranne i componenti Angular), mentre lo **sprint 1 è quasi intatto** — sono stati chiusi solo
+i due IDOR e l'allineamento locale di `main`. Il rischio in cima al backlog non si è mosso, e il
+debito tecnico appena ripagato non lo copre: **è lì che va il prossimo sprint**.
 
-1. **Fix di sicurezza Critical + High** (§ 1.1, § 1.2) — i 4 IDOR condividono la stessa fix
-   meccanica; SSRF e sandbox sono indipendenti e parallelizzabili. Un test di regressione per
-   finding.
-2. **Allineare `main` a `refactor`** (§ 2.1) — fast-forward pulito, nessun conflitto atteso.
-3. **Rebuild + push dell'immagine backend** (§ 5.3) — sblocca Playwright, git sync e la KB
-   sqlite-vec in un colpo solo.
-4. **Committare il lavoro MCP pendente** e rilasciarlo (§ 2.4).
+### Sprint 1 — Mettere in sicurezza e allineare (giorni, non settimane) — 🟡 in corso
+
+1. **Fix di sicurezza Critical + High** (§ 1.1, § 1.2) — ❌ **ancora da fare**, tranne i due IDOR
+   chiusi il 2026-08-24. Restano 1.1 (sandbox), 1.2 (SSRF `http.request`), 1.3 (SSRF via redirect),
+   2.3 e 3.1 (gli altri due IDOR, fix meccanica identica al 2.2 e stesso file di test), 2.5/2.6
+   (login), 4.1 (perdita messaggi chat). Un test di regressione per finding, in `test_idor.py` per
+   i due IDOR.
+2. ~~**Allineare `main` a `refactor`**~~ ✅ **chiuso il 2026-08-25** (§ 2.1) — fast-forward pushato,
+   `origin/main` = `origin/refactor` = `7d3bf88`, tutti i tag sul remoto.
+3. **Rebuild + push dell'immagine backend** (§ 5.3) — 🟡 **build fatto il 2026-08-25**, con smoke
+   test che conferma `git`, `markitdown` e `sqlite-vec` dentro l'immagine: git sync e il degrado KB
+   sono risolti. **Resta il push al registry**, da fare dopo il tag `v3.9.0` del punto 4 perché
+   l'immagine non erediti un numero di versione che non le appartiene. Playwright (5.2) è escluso
+   di proposito e passa a un'immagine runner separata.
+4. ~~**Committare il lavoro MCP pendente**~~ ✅ fatto (`58ab2b2`); resta da **rilasciarlo** con un
+   tag `v3.9.0` insieme al push del punto 2 (§ 2.4).
 
 ### Sprint 2 — Rendere il processo ripetibile
 
-5. **CI minima** (§ 2.3): test in Docker + check di coerenza delle versioni.
-6. **Tag mancanti + `[3.5.0]` nel CHANGELOG** (§ 2.2).
-7. **Triage dei 5 test rossi** (§ 5.4) — precondizione perché la CI abbia senso.
-8. **Allineare le roadmap obsolete** (§ 6).
+5. **CI minima** (§ 2.3): test in Docker + check di coerenza delle versioni. ❌ da fare.
+6. ~~**Tag mancanti + `[3.5.0]` nel CHANGELOG**~~ ✅ chiuso il 2026-08-24 come *non applicabile*
+   (§ 2.2): i tag punterebbero tutti allo stesso commit, il buco è dichiarato nel CHANGELOG.
+7. **Triage dei 4 test rossi** (§ 5.4) — precondizione perché la CI abbia senso.
+8. **Allineare le roadmap obsolete** (§ 6). ❌ da fare.
 
-### Sprint 3 — Debito tecnico P1
+### ~~Sprint 3 — Debito tecnico P1~~ ✅ completato il 2026-08-25 (anticipato)
 
-9. **Segmentare `graph_workflows.py`** (§ 3) — 83 endpoint in sub-router per risorsa. Basso
-   rischio, alto ritorno sulla velocità di sviluppo futura.
-10. *(Le migrazioni versionate non si fanno qui: confluiscono nella 37.b.)*
+9. ~~**Segmentare `graph_workflows.py`**~~ ✅ package di 13 sub-router, route table identica.
+10. Insieme sono stati chiusi anche i **P2**: split di `telegram/bot.py` e
+    `graph_workflow_repository.py`, EventBus/rate-limit/scheduler dietro interfaccia con leader
+    election, i18n a sorgente unica, e le **migrazioni versionate** — queste ultime *non* rinviate
+    alla 37.b come previsto qui, perché servivano subito per rendere sicuri i deploy; la 37.b le
+    sostituirà con Alembic quando arriverà. Resta aperto il solo refactor dei mega-componenti
+    Angular (§ 3), che scende di priorità sotto lo sprint 1.
 
 ### Sprint 4 — Feature
 
@@ -367,20 +438,27 @@ Ordinato per rischio-rimosso per unità di sforzo, non per appetibilità.
 ### Sprint 5+ — Il lift grosso
 
 13. **Phase 37** (§ 4.2), rigorosamente nell'ordine a → b → c → d → e → f, con la suite verde come
-    cancello a ogni sotto-fase. Assorbe il P1 migrazioni e apre la strada al P3 PostgreSQL.
-14. **P2 del debito** (§ 3): split di `telegram/bot.py` e `graph_workflow_repository.py`,
-    EventBus/scheduler dietro interfaccia con leader election (prerequisito per il multi-istanza
-    reale), refactor dei mega-componenti Angular.
+    cancello a ogni sotto-fase. Apre la strada al P3 PostgreSQL.
+14. **Mega-componenti Angular** (§ 3), unico P2 rimasto: `graph-workflow-page` (1.533),
+    `run-panel` (1.056), `settings-page` (804), `navbar` (661).
 
 ---
 
 ## Riepilogo quantitativo
 
-| Area | Aperti | Peso |
-|---|---|---|
-| Sicurezza (audit QA) | 18 finding, di cui 4 Critical | 🔴 |
-| Git / release / CI | 4 aree (main disallineato, 5 tag mancanti, nessuna CI, igiene repo) | 🟠 |
-| Debito tecnico | 6 voci P1/P2 + 1 P3, ~7.000 righe in 3 god object residui | 🟠 |
-| Roadmap prodotto | 2 fasi (25, 37 — quest'ultima in 6 sotto-fasi) | 🟡 |
-| Roadmap workflow | 3 residui (multimodale, immagine Docker ×2) + triage test | 🟡 |
-| Documentazione | 5 file disallineati | ⚪ |
+Aggiornato al 2026-08-25.
+
+| Area | Aperti | Peso | Δ dal 2026-08-16 |
+|---|---|---|---|
+| Sicurezza (audit QA) | **16 finding**, di cui 2 Critical (1.1 sandbox, 1.2 SSRF) | 🔴 | invariato |
+| Git / release / CI | 2 aree: nessuna CI, release `[Unreleased]` da tagliare (`v3.9.0`) | 🟠 | −1 (`main` allineato e pushato) |
+| Debito tecnico | **1 voce P2** (mega-componenti Angular, ~4.000 righe in 4 file) + P3 PostgreSQL; P1 engine parziale per scelta | 🟢 | −5 (router, migrazioni, bot, repository, coordination, i18n) |
+| Roadmap prodotto | 2 fasi (25, 37 — quest'ultima in 6 sotto-fasi) | 🟡 | invariato |
+| Roadmap workflow | 3 residui: multimodale, push dell'immagine ricostruita, runner con Playwright; + triage di 4 test | 🟡 | git sync e degrado KB risolti nel build |
+| Documentazione | 5 file disallineati | ⚪ | invariato |
+
+**Lettura in una riga:** il debito architetturale è quasi estinto e la distribuzione è di nuovo
+allineata (default branch pushato, immagine ricostruita); la sicurezza no. Le due Critical aperte
+da luglio — esecuzione di codice che evade la sandbox e SSRF con `$secrets` negli header — sono
+ormai **l'unico rischio di prima grandezza rimasto**, e non hanno più nulla davanti a sé nella coda
+delle priorità: il prossimo intervento è lo sprint 1 § 1, non un'altra rifattorizzazione.
