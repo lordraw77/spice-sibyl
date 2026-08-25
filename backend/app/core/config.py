@@ -12,7 +12,7 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Fallback release version when APP_VERSION isn't stamped into the build.
-_DEFAULT_VERSION = '3.8.0'
+_DEFAULT_VERSION = '3.9.0'
 
 
 class Settings(BaseSettings):
