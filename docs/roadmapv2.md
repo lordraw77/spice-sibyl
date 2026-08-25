@@ -184,23 +184,33 @@ Non esiste `.github/workflows/`. Tutto — test, lint, build immagini, coerenza 
 
 ## 3. Debito tecnico architetturale
 
-Da [roadmap-analisi.md](roadmap-analisi.md) § 5. I due P0 sono chiusi; restano P1, P2 e P3.
+Da [roadmap-analisi.md](roadmap-analisi.md) § 5. **Aggiornato il 2026-08-25:** P0 chiusi, P1 chiusi
+(l'esplosione dell'engine resta volutamente parziale), P2 chiusi tranne i mega-componenti Angular;
+resta P3.
 
 | Prio | Intervento | Stato verificato | Beneficio |
 |---|---|---|---|
 | ~~P0~~ | `db/pool.py` unico + `transaction()` | ✅ fatto | — |
 | ~~P0~~ | Dispatch table dei nodi (`app/workflow/registry.py`) | ✅ fatto | — |
 | **P1** | Esplodere `workflow_graph_service.py` | 🟡 **parziale**: 5.555 → **3.919 righe**. Tutte le famiglie di nodi sono estratte in `app/workflow/nodes/*`; il core (`_execute`, checkpoint, scheduler) resta inline per scelta | Manutenibilità, test |
-| **P1** | **Segmentare `graph_workflows.py`** in sub-`APIRouter` per risorsa | ❌ **da fare** — ancora **2.102 righe, 83 endpoint** in un file: CRUD, run, trigger, schedule, versioni, approvals, import/export, MCP, git-sync | Manutenibilità, meno merge-conflict |
-| **P1** | **Migrazioni versionate** | ❌ **da fare** — nessuna directory di migrazioni, `_SCHEMA` come stringa unica + `_migrate_*` a mano in `db/database.py` (1.184 righe) | Deploy sicuri. **Prerequisito naturale della Phase 37** (§ 4.2): conviene farlo *dentro* quella fase con Alembic, non due volte |
-| **P2** | **Esplodere `telegram/bot.py`** | ❌ **da fare** — **2.523 righe, 84 funzioni**: routing comandi, streaming reply, upload, i18n, linking, launcher workflow. Secondo god object del progetto | Test isolati |
-| **P2** | **Esplodere `graph_workflow_repository.py`** per aggregato | ❌ **da fare** — **2.400 righe**, un repository unico per workflow/run/trigger/schedule/state/approvals/dedup | Manutenibilità |
-| **P2** | `EventBus`/rate-limit/scheduler dietro interfaccia + leader election | 🟡 il bus SSE esiste (`app/workflow/bus.py`) ma è **in-memory**; rate limit e scheduler restano stato di processo → **impossibile scalare a più istanze** | Multi-istanza reale |
-| **P2** | Refactor mega-componenti Angular + i18n a sorgente unica | ❌ da fare | Velocità frontend |
+| ~~P1~~ | Segmentare `graph_workflows.py` in sub-`APIRouter` | ✅ **fatto il 2026-08-25** — package `endpoints/graph_workflows/` con 13 moduli + `_common.py`; il più grande è 315 righe. Route table (87 path) confrontata prima/dopo: identica, e le literal precedono ancora `/{wf_id}` | Manutenibilità, meno merge-conflict |
+| ~~P1~~ | Migrazioni versionate | ✅ **fatto il 2026-08-25** — `app/db/migrations.py`: unità numerate + ledger `schema_migrations`, il boot applica solo ciò che manca. La v1 è la lista storica *tollerante* (un DB pre-ledger non sa cosa aveva già), dalla v2 in poi un errore ferma il boot. Nessuna dipendenza aggiunta: Alembic resta un'opzione per la Phase 37 | Deploy sicuri |
+| ~~P2~~ | Esplodere `telegram/bot.py` | ✅ **fatto il 2026-08-25** — package `app/telegram/bot/` con 16 moduli dietro façade. I contatori `_tg_*` sono diventati un oggetto condiviso e `_application` ha un setter, perché `global` avrebbe dato a ogni modulo la sua copia. Handler table del bot confrontata prima/dopo: 43 handler identici | Test isolati |
+| ~~P2~~ | Esplodere `graph_workflow_repository.py` per aggregato | ✅ **fatto il 2026-08-25** — 17 moduli + `_common`, façade che riesporta le **stesse 128 funzioni** (confrontate nome per nome). Ogni modulo dipende solo da `_common`: strato piatto, zero cicli | Manutenibilità |
+| ~~P2~~ | `EventBus`/rate-limit/scheduler dietro interfaccia + leader election | ✅ **fatto il 2026-08-25** — protocolli `EventBus` e `RateLimiter` con backend memory (default, comportamento invariato) e database; `app/services/coordination.py` fa leader election a lease e il poll loop degli schedule ci si appoggia. Tabelle introdotte dalla migrazione v2. 15 test guidano due istanze sullo stesso DB | Multi-istanza reale |
+| **P2** | Refactor mega-componenti Angular + i18n a sorgente unica | 🟡 **parziale (2026-08-25)** — i18n ✅ **fatto**: una sola dichiarazione per chiave con tutti e 5 i locali, tipo `Record<Locale, string>` (un locale mancante è errore di compilazione, non più fallback silenzioso); cataloghi verificati identici chiave per chiave. Componenti: da `chat-page` (1.711 → 1.551) estratti speech, link Telegram e allegati immagine; **restano** `graph-workflow-page` (1.533), `run-panel` (1.056), `settings-page` (804), `navbar` (661) | Velocità frontend |
 | **P3** | Valutare PostgreSQL quando il writer SQLite diventa il collo di bottiglia | ❌ da fare — **coincide con la Phase 37** (§ 4.2) | Scalabilità |
 
 **Regole d'ingaggio (invariate):** funzionalità invariata, un'estrazione per volta, suite verde prima
 e dopo ogni step.
+
+**Come sono state verificate le estrazioni del 2026-08-25.** Nessuna di queste rifattorizzazioni ha
+test propri che coprano il codice spostato, quindi ognuna ha il suo confronto meccanico prima/dopo,
+oltre alla suite: la **route table** FastAPI per il router, la **handler table** dell'Application per
+il bot, l'**elenco delle funzioni pubbliche** per il repository, i **cataloghi proiettati in JSON**
+per l'i18n. Baseline della suite prima di iniziare: 514 passed / 4 failed; alla fine: **537 passed**,
+con le stesse failure pre-esistenti (`test_phase26` stats, `test_phase45` git-sync ×2) più la flaky
+nota di ordinamento in `test_phase48`.
 
 ---
 

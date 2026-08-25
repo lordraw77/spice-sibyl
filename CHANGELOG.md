@@ -15,6 +15,18 @@ dichiarato a un tag falso. Dalla `v3.6.0` in poi ogni release ha il suo tag.
 
 ## [Unreleased]
 
+### Changed
+- **Debito tecnico P1/P2 (roadmap v2 § 3)** — quattro god object smontati, a funzionalità invariata e con un confronto meccanico prima/dopo per ognuno:
+  - `api/v1/endpoints/graph_workflows.py` (2.102 righe, 83 endpoint) → package di 13 sub-router + `_common.py`; route table FastAPI identica (87 path, stesso ordine di precedenza rispetto a `/{wf_id}`)
+  - `telegram/bot.py` (2.529 righe, 84 funzioni) → package di 16 moduli dietro façade; handler table del bot identica (43 handler). I contatori `_tg_*` sono ora un oggetto condiviso e `_application` ha un setter, perché `global` avrebbe dato a ogni modulo la sua copia
+  - `db/graph_workflow_repository.py` (2.400 righe) → 17 moduli per aggregato + façade; stesse 128 funzioni pubbliche, strato piatto senza cicli
+  - i18n frontend: cinque cataloghi paralleli → **una dichiarazione per chiave** con tutti e cinque i locali e tipo `Record<Locale, string>`, quindi un locale dimenticato è un errore di compilazione invece di un fallback silenzioso; cataloghi proiettati verificati identici chiave per chiave
+  - `chat-page.component.ts` (1.711 → 1.551 righe): estratti `SpeechService`, `TelegramLinkService`, `ImageAttachmentService`
+
+### Added
+- **Migrazioni di schema versionate** — `app/db/migrations.py` con unità numerate e ledger `schema_migrations`: il boot applica solo ciò che manca al database invece di rieseguire l'intera lista ingoiando gli errori. La versione 1 è la lista storica, tollerante perché su un DB pre-ledger non si può sapere cosa fosse già applicato; dalla 2 in poi un errore ferma il boot invece di lasciare uno schema a metà. Nessuna dipendenza aggiunta (Alembic resta un'opzione per la Phase 37)
+- **Coordinamento multi-istanza** — `EventBus` e `RateLimiter` diventano interfacce con backend `memory` (default, comportamento invariato) e `database`, e `app/services/coordination.py` aggiunge la leader election a lease usata dal poll loop degli schedule: con più istanze sullo stesso database non partono più N run per lo stesso trigger, il rate limit non vale più N volte e uno stream SSE servito da un'istanza vede i run eseguiti da un'altra. Nuove variabili: `RATE_LIMIT_BACKEND`, `WORKFLOW_BUS_BACKEND`, `SCHEDULER_LEADER_ELECTION`, `SCHEDULER_LEASE_TTL_SECONDS`
+
 ### Security
 - **IDOR sul link Telegram (audit 2.1)** — i tre endpoint `/v1/telegram/link` prendevano il `profile_id` da body/path senza alcun controllo di proprietà: conoscere l'UUID di un profilo bastava per leggerne lo stato del link, cancellarlo o dirottarlo sul proprio account Telegram. `POST /link`, `GET /link/{profile_id}` e `DELETE /link/{profile_id}` verificano ora il profilo contro l'utente autenticato (`404` se inesistente, `403` se di un altro utente) prima di qualunque lettura o scrittura; un tentativo respinto **non** consuma il codice di link monouso
 - **IDOR sulla cancellazione dei documenti KB (audit 2.2)** — `DELETE /v1/knowledge/documents/{doc_id}` cancellava documento, chunk, grafo e vettori di qualsiasi profilo. Ora la route risolve il profilo del chiamante e restituisce `404` per un documento che non gli appartiene
