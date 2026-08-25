@@ -27,7 +27,9 @@ Legenda gravità: 🔴 critico · 🟠 alto · 🟡 medio · ⚪ basso
 
 ## 1. Sicurezza — audit QA non risolto
 
-L'audit del 2026-07-17 ([roadmap-fix.md](roadmap-fix.md)) ha prodotto 20 finding. **Verificati oggi
+L'audit del 2026-07-17 ([roadmap-fix.md](roadmap-fix.md)) ha prodotto 19 finding numerati (il
+"20" citato nelle stesure precedenti di questo documento era un conteggio errato: `roadmap-fix.md`
+ne itemizza 19, da 1.1 a 4.4). **Verificati oggi
 uno per uno: 18 su 20 erano ancora aperti**, incluse tutte e 4 le Critical. È il blocco a priorità
 più alta dell'intero backlog e ha un rapporto costo/beneficio migliore di qualunque nuova feature.
 
@@ -473,7 +475,7 @@ Aggiornato al 2026-08-25 (fine giornata).
 
 | Area | Aperti | Peso | Δ dal 2026-08-16 |
 |---|---|---|---|
-| Sicurezza (audit QA) | **9 finding**, di cui 2 Critical (1.1 sandbox, 1.2 SSRF) | 🔴 | −9 (1.3, 2.1, 2.2, 2.3, 2.5, 2.6, 2.8, 3.1, 4.1) |
+| Sicurezza (audit QA) | **8 finding** (1.1, 1.2, 1.4, 2.7, 3.2, 3.3, 4.3, 4.4), di cui 2 Critical | 🔴 | −9 (1.3, 2.1, 2.2, 2.3, 2.5, 2.6, 2.8, 3.1, 4.1) |
 | Git / release / CI | 2 aree: nessuna CI, release `[Unreleased]` da tagliare (`v3.9.0`) | 🟠 | −1 (`main` allineato e pushato) |
 | Debito tecnico | **nessuna voce P0-P2 aperta**; resta il P3 PostgreSQL, che è la Phase 37. P1 engine parziale per scelta | ✅ | −1 (mega-componenti Angular) |
 | Roadmap prodotto | 2 fasi (25, 37 — quest'ultima in 6 sotto-fasi) | 🟡 | invariato |
@@ -481,7 +483,7 @@ Aggiornato al 2026-08-25 (fine giornata).
 | Documentazione | 5 file disallineati | ⚪ | invariato |
 
 **Lettura in una riga:** il debito architetturale P0-P2 è **esaurito**, la distribuzione è
-allineata e l'audit di sicurezza è sceso da 20 finding a 9. Quello che resta è concentrato e
+allineata e l'audit di sicurezza è sceso a 8 finding aperti su 19. Quello che resta è concentrato e
 nominabile: **le due Critical di luglio** — evasione della sandbox `python_exec` e SSRF nel nodo
 `http.request` con i `$secrets` negli header — più la CI che ancora non esiste e la release
 `[Unreleased]` da tagliare. Non c'è più nulla davanti a loro nella coda: il prossimo intervento è
