@@ -8,15 +8,9 @@ import {
   TranslationMap,
   isLocale,
 } from './locale';
-import { en } from './translations/en';
-import { it } from './translations/it';
-import { fr } from './translations/fr';
-import { de } from './translations/de';
-import { es } from './translations/es';
+import { CATALOGS } from './messages';
 
 const STORAGE_KEY = 'spicesibyl_locale';
-
-const CATALOGS: Record<Locale, TranslationMap> = { en, it, fr, de, es };
 
 /**
  * Runtime UI internationalization (Phase 22.a).
