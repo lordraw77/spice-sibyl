@@ -82,6 +82,21 @@ directory and/or a mounted path to actually see your files:
   every `npx`-launched server fails regardless of whether the package name is
   valid. Fixed by giving `app` a real home (`HOME=/home/app`, owned by `app`)
   in `backend/Dockerfile` — rebuild the image if you still see this.
+* **`handshake failed for 'docker' (exit code N): …`** — the sibling container
+  died before the MCP handshake. The text after the exit code is the server
+  process's own stderr; the two usual causes for a `docker run …` server are:
+  * the image is not on the host yet and the implicit pull fails or exceeds the
+    connect timeout — pre-pull it once on the host
+    (`docker pull ghcr.io/<org>/<image>:latest`);
+  * `permission denied … /var/run/docker.sock` — the `group_add` GID in
+    `docker-compose.yml` must match the host's docker group
+    (`stat -c '%g' /var/run/docker.sock`).
+* **`MCP server process is not accepting input (process exited with code N)`** —
+  same class of failure caught on the write side (the child exited before
+  reading our first request). Previously this surfaced as a raw event-loop
+  error (`unable to perform operation on <WriteUnixTransport closed=True …>;
+  the handler is closed`); it is now translated into an `MCPError` and the
+  server's stderr is reported with it.
 
 ## See also
 

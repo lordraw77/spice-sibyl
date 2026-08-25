@@ -146,12 +146,24 @@ class _StdioSession(_McpProtocol):
         self._next_id += 1
         return self._next_id
 
+    def _exit_suffix(self) -> str:
+        rc = self._proc.returncode
+        return f" (process exited with code {rc})" if rc is not None else ""
+
     async def _send(self, message: dict) -> None:
         if self._proc.stdin is None:
             raise MCPError("MCP server has no stdin pipe")
         line = json.dumps(message) + "\n"
-        self._proc.stdin.write(line.encode("utf-8"))
-        await self._proc.stdin.drain()
+        try:
+            self._proc.stdin.write(line.encode("utf-8"))
+            await self._proc.stdin.drain()
+        except (OSError, RuntimeError) as exc:
+            # The child died before reading us (bad image, missing runtime, exec
+            # failure): uvloop raises RuntimeError on the closed write transport,
+            # asyncio raises BrokenPipeError. Both mean the same thing here — and
+            # both must surface as MCPError so the caller can report stderr.
+            suffix = self._exit_suffix() or f": {exc}"
+            raise MCPError(f"MCP server process is not accepting input{suffix}") from exc
 
     async def _read_result(self, expected_id: int, timeout: float) -> dict:
         """Read lines until the response with ``expected_id`` arrives.
@@ -167,8 +179,12 @@ class _StdioSession(_McpProtocol):
                 raw = await asyncio.wait_for(self._proc.stdout.readline(), timeout)
             except asyncio.TimeoutError as exc:
                 raise MCPError(f"timed out waiting for response id={expected_id}") from exc
+            except (OSError, RuntimeError) as exc:
+                # Same failure mode as _send: the read transport is gone because
+                # the child process died.
+                raise MCPError(f"MCP server closed the connection{self._exit_suffix()}") from exc
             if not raw:
-                raise MCPError("MCP server closed the connection unexpectedly")
+                raise MCPError(f"MCP server closed the connection unexpectedly{self._exit_suffix()}")
             line = raw.decode("utf-8", errors="replace").strip()
             if not line:
                 continue
@@ -392,18 +408,19 @@ async def _open_stdio(config: McpServerConfig, connect_timeout: float):
     try:
         try:
             await session.initialize(timeout=connect_timeout)
-        except MCPError:
-            # Surface server stderr to make misconfig (bad image, missing env) debuggable.
-            stderr = b""
-            if proc.stderr is not None:
-                try:
-                    stderr = await asyncio.wait_for(proc.stderr.read(2000), 1.0)
-                except asyncio.TimeoutError:
-                    pass
-            detail = stderr.decode("utf-8", errors="replace").strip()
-            raise MCPError(
-                f"handshake failed for '{config.command}'" + (f": {detail}" if detail else "")
-            )
+        except Exception as exc:  # noqa: BLE001 — includes transport-level errors
+            # A child that dies before the handshake (missing image, denied
+            # docker socket, bad entrypoint) can fail as MCPError *or* as a raw
+            # transport error from the event loop. Either way the useful
+            # information is on the process's stderr, so catch everything and
+            # turn it into one actionable MCPError.
+            detail = (await _drain_stderr(proc)).strip()
+            rc = proc.returncode
+            parts = [f"handshake failed for '{config.command}'"]
+            if rc is not None:
+                parts.append(f" (exit code {rc})")
+            parts.append(f": {detail}" if detail else f": {exc}")
+            raise MCPError("".join(parts)) from exc
         yield session
     finally:
         await _shutdown(proc)
@@ -438,6 +455,20 @@ async def _open_sse(config: McpServerConfig, connect_timeout: float):
         except Exception:  # noqa: BLE001 — best-effort cleanup
             pass
         await client.aclose()
+
+
+async def _drain_stderr(proc: asyncio.subprocess.Process, limit: int = 4000) -> str:
+    """Best-effort read of a failed MCP server's stderr.
+
+    Never raises: a dead process may already have its read transport torn down.
+    """
+    if proc.stderr is None:
+        return ""
+    try:
+        data = await asyncio.wait_for(proc.stderr.read(limit), 2.0)
+    except (asyncio.TimeoutError, OSError, RuntimeError, ValueError):
+        return ""
+    return data.decode("utf-8", errors="replace")
 
 
 async def _shutdown(proc: asyncio.subprocess.Process) -> None:

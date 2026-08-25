@@ -42,6 +42,44 @@ def test_client_bad_command_raises():
     asyncio.run(run())
 
 
+def test_client_process_dying_before_handshake_reports_stderr():
+    """A server that exits immediately (bad docker image, denied socket, wrong
+    entrypoint) must surface its stderr + exit code as an MCPError — never a raw
+    transport error like uvloop's 'the handler is closed' RuntimeError."""
+
+    async def run():
+        cfg = McpServerConfig(
+            command=sys.executable,
+            args=["-c", "import sys; sys.stderr.write('boom: no such image'); sys.exit(3)"],
+        )
+        with pytest.raises(mcp_client.MCPError) as excinfo:
+            async with mcp_client.open_session(cfg, connect_timeout=5.0):
+                pass
+        message = str(excinfo.value)
+        assert "boom: no such image" in message
+        assert "exit code 3" in message
+
+    asyncio.run(run())
+
+
+def test_probe_of_dying_server_returns_error_status():
+    server = McpServerOut(
+        id="1",
+        name="dying",
+        enabled=True,
+        created_at=0,
+        updated_at=0,
+        config=McpServerConfig(
+            command=sys.executable,
+            args=["-c", "import sys; sys.stderr.write('boom'); sys.exit(1)"],
+        ),
+    )
+    state = asyncio.run(mcp_service._probe(server))
+    assert state["status"] == "error"
+    assert "boom" in state["error"]
+    assert state["tools"] == []
+
+
 def test_sse_config_accepted_and_inferred():
     cfg = McpServerConfig(type="sse", url="http://host:9999/mcp/sse")
     assert cfg.transport == "sse"
@@ -248,7 +286,10 @@ def test_stdio_guardrail_respects_disabled_flag(monkeypatch):
 def test_stdio_preflight_missing_launcher():
     async def run():
         with pytest.raises(mcp_client.MCPError, match="not found in the backend image"):
-            async with mcp_client.open_session(McpServerConfig(command="uvx", args=["mcp-server-nope"])):
+            # Allowlisted prefix (so we reach the PATH preflight) but not installed.
+            async with mcp_client.open_session(
+                McpServerConfig(command="uvx-not-installed", args=["mcp-server-nope"])
+            ):
                 pass
 
     asyncio.run(run())
