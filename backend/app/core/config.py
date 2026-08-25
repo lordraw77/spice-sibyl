@@ -455,6 +455,23 @@ class Settings(BaseSettings):
     # Default per-user request rate limit (slowapi syntax, e.g. "60/minute").
     rate_limit_default: str = "60/minute"
 
+    # --- Multi-instance coordination (roadmap v2 § 3, P2) ---
+    # Where the sliding windows live. "memory" counts only what this process
+    # saw — correct for one instance, and N times too permissive for N of them.
+    # "database" shares the window through the rate_limit_hits table.
+    rate_limit_backend: str = "memory"
+    # Where run events are fanned out. "memory" is single-process; "database"
+    # routes them through run_events so an SSE stream served by one instance
+    # sees runs executed by another.
+    workflow_bus_backend: str = "memory"
+    # Only the instance holding the scheduler lease fires due schedules, so N
+    # instances do not each start the same run. Disable to let every instance
+    # poll (the pre-lease behaviour).
+    scheduler_leader_election: bool = True
+    # Lease lifetime. A crashed leader is replaced after at most this long, so
+    # keep it a small multiple of the poll interval.
+    scheduler_lease_ttl_seconds: int = 90
+
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
 
 

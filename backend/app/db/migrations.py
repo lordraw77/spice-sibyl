@@ -211,7 +211,39 @@ MIGRATIONS: tuple[Migration, ...] = (
         statements=_LEGACY_STATEMENTS,
         tolerant=True,
     ),
-    # Migration(version=2, name="...", statements=("ALTER TABLE ...",)),
+    Migration(
+        version=2,
+        name="coordination-tables",
+        statements=(
+            # Leader election: one row per coordinated duty (the schedule poll
+            # loop today). Whoever holds an unexpired lease is the leader.
+            """
+            CREATE TABLE IF NOT EXISTS instance_leases (
+                name       TEXT    PRIMARY KEY,
+                owner      TEXT    NOT NULL,
+                expires_at INTEGER NOT NULL
+            )
+            """,
+            # Shared sliding-window rate limiting, for the database backend.
+            """
+            CREATE TABLE IF NOT EXISTS rate_limit_hits (
+                bucket TEXT NOT NULL,
+                at     REAL NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_rate_limit_hits ON rate_limit_hits(bucket, at)",
+            # Cross-instance run events, for the database event bus.
+            """
+            CREATE TABLE IF NOT EXISTS run_events (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id     TEXT    NOT NULL,
+                payload    TEXT    NOT NULL,
+                created_at INTEGER NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_run_events_run ON run_events(run_id, id)",
+        ),
+    ),
 )
 
 

@@ -46,6 +46,7 @@ import aiosqlite
 from app.core.config import settings
 from app.db import graph_workflow_repository as repo
 from app.db import pool
+from app.services import coordination
 from app.workflow import registry
 from app.workflow import nodes as _nodes  # noqa: F401 — importing registers node families
 from app.workflow.bus import publish as _publish, subscribe, unsubscribe  # noqa: F401 — SSE bus (§3)
@@ -78,7 +79,6 @@ from app.workflow.nodes.io import (  # noqa: F401
     _parse_rate_limits,
     _rate_hits,
     _rate_limit_admit,
-    _rate_lock,
     _ssh_host_allowed,
 )
 from app.workflow.nodes.llm import (  # noqa: F401
@@ -3766,12 +3766,51 @@ async def compare_runs(db: aiosqlite.Connection, run_a_id: str, run_b_id: str):
 
 # ── schedule poll loop (29.b) ───────────────────────────────────────────────
 
+_was_scheduler_leader = True
+
+
+async def _hold_scheduler_lease() -> bool:
+    """Whether this instance may fire schedules on this tick.
+
+    True immediately when leader election is disabled. Otherwise it takes or
+    renews the lease, logging only on transitions so a standby instance does
+    not narrate every poll.
+    """
+    global _was_scheduler_leader
+    if not settings.scheduler_leader_election:
+        return True
+    db = await _connect()
+    try:
+        is_leader = await coordination.acquire(
+            db, coordination.SCHEDULER, settings.scheduler_lease_ttl_seconds
+        )
+    except Exception:  # noqa: BLE001 — a lease error must not stop the loop
+        logger.exception("scheduler lease acquisition failed; standing by this tick")
+        return False
+    finally:
+        await db.close()
+
+    if is_leader and not _was_scheduler_leader:
+        logger.info("workflow scheduler: took the lease, firing schedules")
+    elif not is_leader and _was_scheduler_leader:
+        logger.info("workflow scheduler: standing by, another instance holds the lease")
+    _was_scheduler_leader = is_leader
+    return is_leader
+
+
 async def _poll_loop() -> None:
     from app.services import reminder_parsing
     from zoneinfo import ZoneInfo
 
     tz = ZoneInfo(settings.timezone) if getattr(settings, "timezone", None) else ZoneInfo("UTC")
     while True:
+        # Roadmap v2 § 3, P2 — with more than one instance against the same
+        # database, each would see the same due trigger and start the same run.
+        # Only the lease holder fires; a single instance always wins the lease,
+        # so single-node behaviour is unchanged.
+        if not await _hold_scheduler_lease():
+            await asyncio.sleep(_SCHEDULE_POLL_SECONDS)
+            continue
         try:
             db = await _connect()
             try:
@@ -3884,6 +3923,17 @@ async def stop_scheduler() -> None:
     except asyncio.CancelledError:
         pass
     _poll_task = None
+    # Hand the duty over now instead of making the next instance wait out the
+    # lease TTL. Best-effort: a crash skips this and the lease just expires.
+    if settings.scheduler_leader_election:
+        try:
+            db = await _connect()
+            try:
+                await coordination.release(db, coordination.SCHEDULER)
+            finally:
+                await db.close()
+        except Exception:  # noqa: BLE001 — shutdown must not fail on this
+            logger.exception("scheduler lease release failed")
 
 
 async def dispatch_event(event_type: str, payload: dict) -> None:

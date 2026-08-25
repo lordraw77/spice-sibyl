@@ -18,6 +18,7 @@ import uuid
 import aiosqlite
 
 from app.core.config import settings
+from app.services import rate_limiting
 from app.workflow.context import (
     _as_bool,
     _DB_QUERY_MAX_ROWS,
@@ -31,8 +32,11 @@ from app.workflow.registry import DispatchCtx, node
 
 # ── http.request + per-host rate limiting (fase 6.6) ─────────────────────────
 
-_rate_hits: dict[str, list[float]] = {}
-_rate_lock: asyncio.Lock = asyncio.Lock()
+# The per-host window is owned by services.rate_limiting now (roadmap v2 § 3,
+# P2 — it can be shared across instances via RATE_LIMIT_BACKEND=database).
+# _rate_hits stays bound to the in-memory limiter's own store so anything that
+# inspected or primed it keeps working.
+_rate_hits: dict[str, list[float]] = rate_limiting._memory_limiter.hits
 _global_rate_limits: dict[str, int] | None = None  # parsed lazily from settings
 
 
@@ -84,21 +88,12 @@ def _host_rate_limit(host: str, node_rpm) -> int | None:
 
 
 async def _rate_limit_admit(host: str, rpm: int) -> float:
-    """Block until the host's sliding one-minute window has a free slot, record
-    the admission, and return the seconds actually waited."""
-    waited = 0.0
-    while True:
-        async with _rate_lock:
-            now = time.monotonic()
-            hits = [t for t in _rate_hits.get(host, []) if now - t < 60.0]
-            if len(hits) < rpm:
-                hits.append(now)
-                _rate_hits[host] = hits
-                return waited
-            delay = max(0.05, hits[0] + 60.0 - now)
-            _rate_hits[host] = hits
-        await asyncio.sleep(delay)
-        waited += delay
+    """Block until the host's window has a free slot, and report the wait.
+
+    Throttling rather than failing is deliberate: the wait shows up as
+    ``rated_limited_s`` in the node output instead of turning into an error.
+    """
+    return await rate_limiting.get_limiter().admit(host, rpm, 60.0)
 
 
 async def _exec_http_request(params: dict) -> dict:
