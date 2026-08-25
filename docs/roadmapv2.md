@@ -31,6 +31,12 @@ L'audit del 2026-07-17 ([roadmap-fix.md](roadmap-fix.md)) ha prodotto 20 finding
 uno per uno: 18 su 20 erano ancora aperti**, incluse tutte e 4 le Critical. È il blocco a priorità
 più alta dell'intero backlog e ha un rapporto costo/beneficio migliore di qualunque nuova feature.
 
+> **Aggiornamento 2026-08-25 (secondo giro):** chiusi **1.3, 2.3, 3.1, 2.5, 2.6, 4.1** e — perché la
+> riscrittura del login lo rendeva un'aggiunta di tre righe anziché un lavoro a sé — anche **2.8**.
+> 19 test di regressione, suite da 537 a **556 passed** con le stesse 4 failure pre-esistenti.
+> **Restano aperte le due Critical, 1.1 (evasione sandbox) e 1.2 (SSRF in `http.request`)**, più i
+> Medium/Low 1.4, 2.7, 3.2, 3.3, 4.3, 4.4.
+
 > **Aggiornamento 2026-08-24:** chiusi i due IDOR Critical **2.1** e **2.2** (vedi tabella);
 > restano aperte le due Critical di sandbox/SSRF (1.1, 1.2) e gli IDOR gemelli 2.3 e 3.1.
 >
@@ -58,11 +64,11 @@ più alta dell'intero backlog e ha un rapporto costo/beneficio migliore di qualu
 
 | ID | Problema | File | Fix |
 |---|---|---|---|
-| **1.3** | Bypass SSRF via redirect: `assert_public_url` valida l'URL iniziale ma i client girano con `follow_redirects=True` in **5 punti** → 302 verso `169.254.169.254` | `tools/extras.py:234,334,404` · `tools/builtin.py:104,148` | `follow_redirects=False` + rivalidare ogni `Location` con `assert_public_url`, max 5 hop |
-| **2.3** | Data leak cross-tenant: `list_document_chunks`, `get_document_source` (testo integrale!), `get_document_wiki` senza `resolve_profile` | `knowledge.py:171,179,230` | stesso pattern del 2.2 |
-| **2.5** | Nessun rate limit su `/v1/auth/login` e `/refresh`: il limiter dipende da `get_current_user`, quindi per costruzione non può proteggere le route pubbliche → brute force illimitato | `api/v1/router.py` · `dependencies/rate_limit.py` | limiter indipendente per IP+email con lockout progressivo |
-| **2.6** | User enumeration via timing: lo short-circuit di `or` salta bcrypt quando l'email non esiste | `endpoints/auth.py:58` | eseguire sempre `verify_password` contro un hash dummy precalcolato |
-| **4.1** | Perdita silenziosa di messaggi chat: `appendMessages(...)`/`create(...)` senza handler `error` → il messaggio resta solo in memoria e sparisce al refresh | `frontend/.../chat-page.component.ts:1424-1467` | handler `error` + `NotificationService` + flag "non salvato" con retry |
+| ~~**1.3**~~ | ~~Bypass SSRF via redirect: `assert_public_url` valida l'URL iniziale ma i client girano con `follow_redirects=True` in **5 punti** → 302 verso `169.254.169.254`~~ | `app/core/safe_http.py` (nuovo) · `tools/extras.py` · `tools/builtin.py` | ✅ **fatto (2026-08-25)** — guard e `assert_public_url` spostati in `app/core/safe_http.py`; i client girano con `follow_redirects=False` e `safe_request` rivalida **ogni hop** prima di inviarlo, max 5. È httpx a costruire la richiesta di redirect (`Response.next_request`), quindi i downgrade di metodo/body su 301/302/303 restano quelli della specifica invece di una riscrittura a mano |
+| ~~**2.3**~~ | ~~Data leak cross-tenant: `list_document_chunks`, `get_document_source` (testo integrale!), `get_document_wiki` senza `resolve_profile`~~ | `knowledge.py` | ✅ **fatto (2026-08-25)** — helper unico `_owned_document` condiviso dai quattro endpoint; audit di **tutte e 16** le route `/knowledge`: sono ora tutte profile-scoped |
+| ~~**2.5**~~ | ~~Nessun rate limit su `/v1/auth/login` e `/refresh`~~ | `dependencies/rate_limit.py` · `services/rate_limiting.py` | ✅ **fatto (2026-08-25)** — `login_guard` indipendente: finestra stretta (`RATE_LIMIT_AUTH`, default 10/minuto) per IP **e** per email, più lockout a scaglioni crescenti (5/min, 15/15min, 30/ora). Contare i fallimenti senza consumare un'ammissione ha richiesto `record`/`count` accanto a `try_admit`, implementati su entrambi i backend → il lockout vale anche multi-istanza. `X-Forwarded-For` onorato solo con `TRUST_PROXY_HEADERS` |
+| ~~**2.6**~~ | ~~User enumeration via timing: lo short-circuit di `or` salta bcrypt quando l'email non esiste~~ | `endpoints/auth.py` | ✅ **fatto (2026-08-25)** — bcrypt gira su entrambi i rami, contro un hash dummy calcolato una volta all'import. Il test asserisce che la chiamata avvenga, invece di cronometrarla (sarebbe flaky) |
+| ~~**4.1**~~ | ~~Perdita silenziosa di messaggi chat: `appendMessages(...)`/`create(...)` senza handler `error`~~ | `frontend/.../chat-page.component.ts` | ✅ **fatto (2026-08-25)** — handler `error` su entrambi i rami **e** sul percorso create-then-append (aveva lo stesso buco un livello sopra); i messaggi restano a schermo marcati `unsaved` con chip di avviso, e il toast offre un retry che riusa la stessa closure di salvataggio. Alle risposte dell'assistente è stato dato un id come già l'avevano quelle utente: senza, il marcatore non aveva a cosa agganciarsi |
 
 ### 1.3 Medium / Low
 
@@ -70,8 +76,8 @@ più alta dell'intero backlog e ha un rapporto costo/beneficio migliore di qualu
 |---|---|---|
 | **1.4** | Sandbox senza confinamento filesystem + `$secrets` iniettati in chiaro nell'escape hatch `=py:` | aperto |
 | **2.7** | `JWT_SECRET_KEY`/`VAULT_SECRET_KEY` di default producono solo un `logging.warning`: l'app parte lo stesso con un segreto pubblico noto → chiunque forgia un JWT `role: admin` | aperto (`main.py:29-41`) — serve **fail-fast** quando `app_env == "production"` |
-| **2.8** | I login falliti non finiscono nell'audit log | aperto |
-| **3.1** | `reembed_document` ha `resolve_profile` ma non confronta `doc.profile_id` → re-embedding forzato di documenti altrui, con cambio silenzioso di attribuzione | aperto (`knowledge.py:190-193`) |
+| ~~**2.8**~~ | ~~I login falliti non finiscono nell'audit log~~ | ✅ **fatto (2026-08-25)** — `login_failed` registrato con l'email in `detail` (`user_id` NULL se l'email non esiste); incluso qui perché la riscrittura del login lo rendeva un'aggiunta di tre righe |
+| ~~**3.1**~~ | ~~`reembed_document` ha `resolve_profile` ma non confronta `doc.profile_id` → re-embedding forzato di documenti altrui, con cambio silenzioso di attribuzione~~ | ✅ **fatto (2026-08-25)** — `_owned_document` prima di `rag_service.reembed`; il test asserisce che l'attribuzione del documento sopravviva al tentativo respinto |
 | **3.2** | Nessun audit log su `create/enable/disable/delete_trigger` e `rotate_webhook_secret` | aperto |
 | **3.3** | Documenti "fantasma" se l'ingest fallisce dopo `create_document` (manca `mark_error` nell'`except`) | aperto |
 | **4.3** | Collisione di numerazione "Phase 30" tra roadmap (persistenza) e commenti nel codice (hardening workflow) | aperto |
@@ -80,12 +86,13 @@ più alta dell'intero backlog e ha un rapporto costo/beneficio migliore di qualu
 **Già risolti:** 2.1 e 2.2 (2026-08-24, vedi sopra), 2.4 (pin conversazioni, ora usa
 `_assert_owns_conversation`) e 4.2 (versione allineata a 3.8.0 su backend, frontend e CHANGELOG).
 
-> **Nota di metodo:** i quattro IDOR (2.1, 2.2, 2.3, 3.1) hanno la stessa causa radice — route
-> profile-scoped che omettono `resolve_profile`. **2.1 e 2.2 sono chiusi**, con 7 test di
-> regressione in `backend/tests/test_idor.py` (utente A non può toccare risorse di utente B);
-> **2.3 e 3.1 restano aperti** e vanno chiusi con lo stesso pattern, aggiungendo i rispettivi test
-> allo stesso file. Resta da fare l'**audit sistematico** di tutte le route `/knowledge`,
-> `/conversations`, `/telegram`, `/profiles` per verificare ovunque la presenza del controllo.
+> **Nota di metodo:** i quattro IDOR (2.1, 2.2, 2.3, 3.1) avevano la stessa causa radice — route
+> profile-scoped che omettono `resolve_profile`. **Sono chiusi tutti e quattro**, con 12 test di
+> regressione in `backend/tests/test_idor.py` (utente A non può toccare risorse di utente B), e la
+> logica è ora in un solo `_owned_document` invece che ricopiata quattro volte. L'audit sistematico
+> è stato fatto su `/knowledge` — **tutte e 16 le route** risolvono e confrontano il profilo.
+> **Resta da estendere lo stesso controllo meccanico** a `/conversations`, `/telegram` e
+> `/profiles`, che non sono ancora stati passati in rassegna route per route.
 
 ---
 
@@ -227,11 +234,26 @@ resta P3.
 | ~~P2~~ | Esplodere `telegram/bot.py` | ✅ **fatto il 2026-08-25** — package `app/telegram/bot/` con 16 moduli dietro façade. I contatori `_tg_*` sono diventati un oggetto condiviso e `_application` ha un setter, perché `global` avrebbe dato a ogni modulo la sua copia. Handler table del bot confrontata prima/dopo: 43 handler identici | Test isolati |
 | ~~P2~~ | Esplodere `graph_workflow_repository.py` per aggregato | ✅ **fatto il 2026-08-25** — 17 moduli + `_common`, façade che riesporta le **stesse 128 funzioni** (confrontate nome per nome). Ogni modulo dipende solo da `_common`: strato piatto, zero cicli | Manutenibilità |
 | ~~P2~~ | `EventBus`/rate-limit/scheduler dietro interfaccia + leader election | ✅ **fatto il 2026-08-25** — protocolli `EventBus` e `RateLimiter` con backend memory (default, comportamento invariato) e database; `app/services/coordination.py` fa leader election a lease e il poll loop degli schedule ci si appoggia. Tabelle introdotte dalla migrazione v2. 15 test guidano due istanze sullo stesso DB | Multi-istanza reale |
-| **P2** | Refactor mega-componenti Angular + i18n a sorgente unica | 🟡 **parziale (2026-08-25)** — i18n ✅ **fatto**: una sola dichiarazione per chiave con tutti e 5 i locali, tipo `Record<Locale, string>` (un locale mancante è errore di compilazione, non più fallback silenzioso); cataloghi verificati identici chiave per chiave. Componenti: da `chat-page` (1.711 → 1.551) estratti speech, link Telegram e allegati immagine; **restano** `graph-workflow-page` (1.533), `run-panel` (1.056), `settings-page` (804), `navbar` (661) | Velocità frontend |
+| ~~**P2**~~ | Refactor mega-componenti Angular + i18n a sorgente unica | ✅ **fatto il 2026-08-25** — i18n: una sola dichiarazione per chiave con tutti e 5 i locali, tipo `Record<Locale, string>` (un locale mancante è errore di compilazione, non più fallback silenzioso). Componenti: `chat-page` 1.711 → 1.551, `graph-workflow-page` 1.533 → **1.353**, `run-panel` 1.056 → **643**, `settings-page` 804 → **452**, `navbar` 661 → **223**. Vedi la nota sotto: erano due problemi diversi | Velocità frontend |
 | **P3** | Valutare PostgreSQL quando il writer SQLite diventa il collo di bottiglia | ❌ da fare — **coincide con la Phase 37** (§ 4.2) | Scalabilità |
 
 **Regole d'ingaggio (invariate):** funzionalità invariata, un'estrazione per volta, suite verde prima
 e dopo ogni step.
+
+**Perché i mega-componenti erano due problemi, non uno (2026-08-25).** Tre dei quattro non erano
+800-1.000 righe di logica: erano poche centinaia di righe di logica avvolte in un **template inline**
+e, in due casi, anche in un **foglio di stile inline**. Spostarli in file `.html`/`.css` fratelli —
+cioè fare quello che il resto del codebase già fa — riduce il `.ts` a ciò che davvero è, senza
+riscrivere una riga. Solo `graph-workflow-page` era grande sul serio, e da lì sono usciti quattro
+moduli senza Angular dentro (oltre ai signal): `editor/graph-history.ts` (undo/redo + clipboard),
+`editor/auto-layout.ts` (layering longest-path, funzione pura), `editor/data-mapping.ts` (candidati
+di mapping; prende `translate` come parametro invece di iniettare `I18nService`, così un modulo di
+funzioni pure non si tira dietro la DI) e `editor/debug-session.ts` (debugger passo-passo: possiede
+i propri signal, e tutto ciò che gli serve dalla pagina arriva via callback, così la dipendenza va
+in una direzione sola). **Verifica:** build di produzione verde e insieme dei **membri pubblici di
+classe identico** prima/dopo nei quattro file — le uniche differenze sono le chiavi del decoratore
+che dovevano cambiare (`template`/`styles` → `templateUrl`/`styleUrls`) e i campi dell'interfaccia
+`MapCandidate`, migrata nel suo modulo.
 
 **Come sono state verificate le estrazioni del 2026-08-25.** Nessuna di queste rifattorizzazioni ha
 test propri che coprano il codice spostato, quindi ognuna ha il suo confronto meccanico prima/dopo,
@@ -396,11 +418,12 @@ debito tecnico appena ripagato non lo copre: **è lì che va il prossimo sprint*
 
 ### Sprint 1 — Mettere in sicurezza e allineare (giorni, non settimane) — 🟡 in corso
 
-1. **Fix di sicurezza Critical + High** (§ 1.1, § 1.2) — ❌ **ancora da fare**, tranne i due IDOR
-   chiusi il 2026-08-24. Restano 1.1 (sandbox), 1.2 (SSRF `http.request`), 1.3 (SSRF via redirect),
-   2.3 e 3.1 (gli altri due IDOR, fix meccanica identica al 2.2 e stesso file di test), 2.5/2.6
-   (login), 4.1 (perdita messaggi chat). Un test di regressione per finding, in `test_idor.py` per
-   i due IDOR.
+1. **Fix di sicurezza Critical + High** (§ 1.1, § 1.2) — 🟡 **quasi chiuso il 2026-08-25**: fatti
+   1.3, 2.3, 3.1, 2.5, 2.6, 4.1 e 2.8, con 19 test di regressione. **Restano le due Critical**,
+   1.1 (evasione sandbox via `subprocess`) e 1.2 (SSRF nel nodo `http.request`). La 1.2 è ormai una
+   modifica di due righe sopra `safe_http`, ma inizierebbe a rifiutare host interni che i workflow
+   esistenti potrebbero legittimamente chiamare: vuole una decisione esplicita, non un fix di
+   passaggio.
 2. ~~**Allineare `main` a `refactor`**~~ ✅ **chiuso il 2026-08-25** (§ 2.1) — fast-forward pushato,
    `origin/main` = `origin/refactor` = `7d3bf88`, tutti i tag sul remoto.
 3. **Rebuild + push dell'immagine backend** (§ 5.3) — 🟡 **build fatto il 2026-08-25**, con smoke
@@ -426,8 +449,9 @@ debito tecnico appena ripagato non lo copre: **è lì che va il prossimo sprint*
     `graph_workflow_repository.py`, EventBus/rate-limit/scheduler dietro interfaccia con leader
     election, i18n a sorgente unica, e le **migrazioni versionate** — queste ultime *non* rinviate
     alla 37.b come previsto qui, perché servivano subito per rendere sicuri i deploy; la 37.b le
-    sostituirà con Alembic quando arriverà. Resta aperto il solo refactor dei mega-componenti
-    Angular (§ 3), che scende di priorità sotto lo sprint 1.
+    sostituirà con Alembic quando arriverà. Il refactor dei mega-componenti Angular è stato chiuso
+    il 2026-08-25 (§ 3): **il debito tecnico P0-P2 è esaurito**, resta solo il P3 PostgreSQL, che
+    coincide con la Phase 37.
 
 ### Sprint 4 — Feature
 
@@ -439,26 +463,27 @@ debito tecnico appena ripagato non lo copre: **è lì che va il prossimo sprint*
 
 13. **Phase 37** (§ 4.2), rigorosamente nell'ordine a → b → c → d → e → f, con la suite verde come
     cancello a ogni sotto-fase. Apre la strada al P3 PostgreSQL.
-14. **Mega-componenti Angular** (§ 3), unico P2 rimasto: `graph-workflow-page` (1.533),
-    `run-panel` (1.056), `settings-page` (804), `navbar` (661).
+14. *(Il P3 PostgreSQL non è una voce a sé: è la 37.c, e arriva con la Phase 37.)*
 
 ---
 
 ## Riepilogo quantitativo
 
-Aggiornato al 2026-08-25.
+Aggiornato al 2026-08-25 (fine giornata).
 
 | Area | Aperti | Peso | Δ dal 2026-08-16 |
 |---|---|---|---|
-| Sicurezza (audit QA) | **16 finding**, di cui 2 Critical (1.1 sandbox, 1.2 SSRF) | 🔴 | invariato |
+| Sicurezza (audit QA) | **9 finding**, di cui 2 Critical (1.1 sandbox, 1.2 SSRF) | 🔴 | −9 (1.3, 2.1, 2.2, 2.3, 2.5, 2.6, 2.8, 3.1, 4.1) |
 | Git / release / CI | 2 aree: nessuna CI, release `[Unreleased]` da tagliare (`v3.9.0`) | 🟠 | −1 (`main` allineato e pushato) |
-| Debito tecnico | **1 voce P2** (mega-componenti Angular, ~4.000 righe in 4 file) + P3 PostgreSQL; P1 engine parziale per scelta | 🟢 | −5 (router, migrazioni, bot, repository, coordination, i18n) |
+| Debito tecnico | **nessuna voce P0-P2 aperta**; resta il P3 PostgreSQL, che è la Phase 37. P1 engine parziale per scelta | ✅ | −1 (mega-componenti Angular) |
 | Roadmap prodotto | 2 fasi (25, 37 — quest'ultima in 6 sotto-fasi) | 🟡 | invariato |
-| Roadmap workflow | 3 residui: multimodale, push dell'immagine ricostruita, runner con Playwright; + triage di 4 test | 🟡 | git sync e degrado KB risolti nel build |
+| Roadmap workflow | 3 residui: multimodale, push dell'immagine ricostruita, runner con Playwright; + triage di 4 test | 🟡 | invariato |
 | Documentazione | 5 file disallineati | ⚪ | invariato |
 
-**Lettura in una riga:** il debito architetturale è quasi estinto e la distribuzione è di nuovo
-allineata (default branch pushato, immagine ricostruita); la sicurezza no. Le due Critical aperte
-da luglio — esecuzione di codice che evade la sandbox e SSRF con `$secrets` negli header — sono
-ormai **l'unico rischio di prima grandezza rimasto**, e non hanno più nulla davanti a sé nella coda
-delle priorità: il prossimo intervento è lo sprint 1 § 1, non un'altra rifattorizzazione.
+**Lettura in una riga:** il debito architetturale P0-P2 è **esaurito**, la distribuzione è
+allineata e l'audit di sicurezza è sceso da 20 finding a 9. Quello che resta è concentrato e
+nominabile: **le due Critical di luglio** — evasione della sandbox `python_exec` e SSRF nel nodo
+`http.request` con i `$secrets` negli header — più la CI che ancora non esiste e la release
+`[Unreleased]` da tagliare. Non c'è più nulla davanti a loro nella coda: il prossimo intervento è
+1.1 e 1.2, e la 1.2 in particolare è a due righe dall'essere chiusa una volta decisa la politica
+sugli host interni.
