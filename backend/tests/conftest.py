@@ -21,6 +21,10 @@ os.environ.setdefault("TELEGRAM_BOT_TOKEN", "")
 os.environ.setdefault("LITELLM_PROVIDER", "mock")
 # Keep the limiter out of the way of functional tests.
 os.environ.setdefault("RATE_LIMIT_DEFAULT", "10000/minute")
+# Same for the login guard (audit 2.5): fixtures log in on almost every test, so
+# the production-tight limit would 429 the suite. test_auth_hardening.py tightens
+# it back down for the tests that are actually about the guard.
+os.environ.setdefault("RATE_LIMIT_AUTH", "10000/minute")
 
 import asyncio  # noqa: E402
 
@@ -39,6 +43,21 @@ def _init_database():
         os.unlink(_DB_PATH)
     except OSError:
         pass
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Clear the in-memory windows between tests.
+
+    The limiter is a module-level singleton, so failed-login counters would leak
+    from one test into the next and trip the lockout tiers in whichever test
+    happened to run afterwards.
+    """
+    from app.services.rate_limiting import _memory_limiter
+
+    _memory_limiter.hits.clear()
+    yield
+    _memory_limiter.hits.clear()
 
 
 @pytest.fixture()

@@ -7,6 +7,8 @@ from datetime import datetime
 
 import httpx
 
+from app.core.safe_http import BlockedURLError, assert_public_url, safe_request
+
 logger = logging.getLogger(__name__)
 
 _ALLOWED_OPS = {
@@ -87,7 +89,6 @@ def _strip_html(text: str) -> str:
 async def read_url(url: str, max_chars: int = 4000) -> str:
     """Fetch a web page and return its plain-text content, stripped of HTML."""
     # Phase 19: SSRF hardening — refuse URLs resolving to private/internal hosts.
-    from app.tools.extras import assert_public_url
     blocked = assert_public_url(url)
     if blocked:
         return blocked
@@ -101,8 +102,8 @@ async def read_url(url: str, max_chars: int = 4000) -> str:
         "Accept-Language": "en-US,en;q=0.9",
     }
     try:
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            resp = await client.get(url, headers=headers)
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+            resp = await safe_request(client, "GET", url, headers=headers)
             resp.raise_for_status()
             content_type = resp.headers.get("content-type", "")
             if "text" not in content_type and "json" not in content_type:
@@ -124,6 +125,9 @@ async def read_url(url: str, max_chars: int = 4000) -> str:
         logger.debug("read_url fetched %d chars from %s", len(text), url)
         return text or f"No readable text found at {url}"
 
+    except BlockedURLError as exc:
+        logger.warning("read_url blocked for %s: %s", url, exc)
+        return str(exc)
     except (httpx.HTTPError, OSError) as exc:
         logger.warning("read_url failed for %s: %s", url, exc)
         return f"Error fetching {url}: {exc}"
@@ -145,9 +149,9 @@ async def web_search(query: str, max_results: int = 3) -> str:
 
     # Primary: DDG HTML search — richer results than the instant-answer API
     try:
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            resp = await client.get(
-                "https://html.duckduckgo.com/html/",
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            resp = await safe_request(
+                client, "GET", "https://html.duckduckgo.com/html/",
                 params={"q": query, "kl": "us-en"},
                 headers=headers,
             )
@@ -178,6 +182,8 @@ async def web_search(query: str, max_results: int = 3) -> str:
 
         logger.debug("DDG HTML search returned no snippets for query=%r, trying instant API", query)
 
+    except BlockedURLError as exc:
+        logger.warning("DDG HTML search blocked for query=%r: %s", query, exc)
     except (httpx.HTTPError, OSError) as exc:
         logger.warning("DDG HTML search failed for query=%r: %s", query, exc)
 

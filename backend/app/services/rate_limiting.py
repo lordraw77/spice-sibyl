@@ -20,6 +20,10 @@ Select with ``RATE_LIMIT_BACKEND=memory|database``.
 Two verbs, because the callers want different things from a full window: the
 API must answer immediately with 429 (``try_admit``), the workflow node wants
 to be throttled rather than fail (``admit``, which waits and reports how long).
+
+A third pair, ``record``/``count``, exists for the login lockout (audit 2.5):
+there the interesting event is a *failure*, and the check has to happen before
+the attempt is made, so counting and consuming cannot be the same call.
 """
 
 import asyncio
@@ -43,6 +47,17 @@ class RateLimiter(Protocol):
 
     async def admit(self, bucket: str, limit: int, window: float) -> float:
         """Wait for a slot, then admit. Returns the seconds actually waited."""
+
+    async def record(self, bucket: str) -> None:
+        """Note that an event happened, without consuming an admission slot."""
+
+    async def count(self, bucket: str, window: float) -> int:
+        """How many events were recorded in the last ``window`` seconds."""
+
+
+#: How long recorded events stay countable. Bounds the memory/table growth and
+#: caps the longest lockout tier that can be expressed.
+EVENT_RETENTION = 3600.0
 
 
 class InMemoryRateLimiter:
@@ -73,6 +88,18 @@ class InMemoryRateLimiter:
             delay = max(0.05, delay)
             await asyncio.sleep(delay)
             waited += delay
+
+    async def record(self, bucket: str) -> None:
+        async with self._lock:
+            now = time.monotonic()
+            kept = [t for t in self.hits.get(bucket, []) if now - t < EVENT_RETENTION]
+            kept.append(now)
+            self.hits[bucket] = kept
+
+    async def count(self, bucket: str, window: float) -> int:
+        async with self._lock:
+            now = time.monotonic()
+            return sum(1 for t in self.hits.get(bucket, []) if now - t < window)
 
 
 class DatabaseRateLimiter:
@@ -131,6 +158,31 @@ class DatabaseRateLimiter:
             delay = max(0.05, delay)
             await asyncio.sleep(delay)
             waited += delay
+
+    async def record(self, bucket: str) -> None:
+        async def _write(db):
+            now = time.time()
+            await db.execute(
+                "DELETE FROM rate_limit_hits WHERE bucket = ? AND at <= ?",
+                (bucket, now - EVENT_RETENTION),
+            )
+            await db.execute(
+                "INSERT INTO rate_limit_hits (bucket, at) VALUES (?, ?)", (bucket, now)
+            )
+            await db.commit()
+
+        await self._with_db(_write)
+
+    async def count(self, bucket: str, window: float) -> int:
+        async def _read(db):
+            async with db.execute(
+                "SELECT COUNT(*) FROM rate_limit_hits WHERE bucket = ? AND at > ?",
+                (bucket, time.time() - window),
+            ) as cursor:
+                (count,) = await cursor.fetchone()
+            return int(count)
+
+        return await self._with_db(_read)
 
 
 _memory_limiter = InMemoryRateLimiter()

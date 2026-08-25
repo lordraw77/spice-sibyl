@@ -1892,6 +1892,12 @@ select.form-select-sm:focus {
 /* ── Phase 19: memory / cache chips on assistant replies ── */
 .memory-chip { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .cache-chip { background: color-mix(in srgb, #5ac8c8 18%, transparent); }
+/* Audit 4.1 — unsaved message marker. Warm colour so it reads as a warning
+   next to the neutral memory/cache chips, without shouting like an error. */
+.unsaved-chip {
+  background: color-mix(in srgb, #e0a63c 20%, transparent);
+  border-color: color-mix(in srgb, #e0a63c 45%, transparent);
+}
 
 /* ── Phase 19: feedback thumbs ── */
 .feedback-btn.active-up { color: #89d39a; }

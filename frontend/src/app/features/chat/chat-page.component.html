@@ -416,6 +416,11 @@
           ⚠️ {{ 'chat.providerSwitch' | t: { from: message.provider_switch.from, to: message.provider_switch.to } }}
         </div>
 
+        <!-- Audit 4.1: this message lives only in this tab — a refresh loses it -->
+        <div class="rag-sources" *ngIf="message.unsaved">
+          <span class="rag-chip unsaved-chip" [title]="'chat.err.saveBody' | t">⚠️ {{ 'chat.unsavedBadge' | t }}</span>
+        </div>
+
         <!-- Phase 19: memory-grounded / cached reply chips -->
         <div class="rag-sources" *ngIf="message.memory_used || message.cached">
           <span class="rag-chip memory-chip" *ngIf="message.memory_used" [title]="'chat.chip.memoryTitle' | t">🧠 {{ 'chat.chip.memory' | t }}</span>

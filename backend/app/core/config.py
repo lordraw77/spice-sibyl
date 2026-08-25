@@ -455,6 +455,16 @@ class Settings(BaseSettings):
     # Default per-user request rate limit (slowapi syntax, e.g. "60/minute").
     rate_limit_default: str = "60/minute"
 
+    # --- Login guard (audit 2.5) ---
+    # Limit for the *unauthenticated* auth routes, applied per client IP and per
+    # submitted email. Much tighter than the per-user default: a human logs in a
+    # handful of times a minute, a script does not.
+    rate_limit_auth: str = "10/minute"
+    # Trust X-Forwarded-For for the client IP. Enable only when a reverse proxy
+    # you control sets it: trusting it on a directly exposed app lets a caller
+    # forge a fresh throttling key on every request.
+    trust_proxy_headers: bool = False
+
     # --- Multi-instance coordination (roadmap v2 § 3, P2) ---
     # Where the sliding windows live. "memory" counts only what this process
     # saw — correct for one instance, and N times too permissive for N of them.

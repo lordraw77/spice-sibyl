@@ -56,6 +56,12 @@ export interface ChatMessage {
   cached?: boolean;
   /** UI-only: Phase 26 — served from the semantic (fuzzy) cache layer (⚡~) */
   cached_semantic?: boolean;
+  /**
+   * UI-only (audit 4.1): persistence to the backend failed, so this message
+   * exists only in this tab and a refresh would lose it. Cleared once a retry
+   * succeeds.
+   */
+  unsaved?: boolean;
 }
 
 /** Phase 19: a persistent per-profile memory entry. */

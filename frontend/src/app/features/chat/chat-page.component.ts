@@ -1243,14 +1243,17 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
       return;
     }
 
-    // Assign IDs for branching support
-    const userMsgId = userMessage.id || self.crypto?.randomUUID?.() || (Math.random().toString(36).slice(2) + Date.now().toString(36));
+    // Assign IDs for branching support. The assistant message needs one too:
+    // without it the unsaved marker of audit 4.1 has nothing to attach to.
+    const userMsgId = userMessage.id || this.newMessageId();
     const userToSave = { ...userMessage, id: userMsgId };
+    const assistantMsgId = assistantMessage.id || this.newMessageId();
 
     if (this._pendingBranchParentId) {
       // Branching mode: only save the new assistant branch
       assistantMessage = {
         ...assistantMessage,
+        id: assistantMsgId,
         parent_id: this._pendingBranchParentId,
         branch_index: this._pendingBranchIndex,
       };
@@ -1264,7 +1267,13 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
       const saveMessages = () => {
         this.conversationService
           .appendMessages(this.currentConversationId!, [assistantMessage], this.memoryEnabled())
-          .subscribe({ next: () => this.loadConversationList() });
+          .subscribe({
+            next: () => {
+              this.markSaved([assistantMessage]);
+              this.loadConversationList();
+            },
+            error: (err) => this.onSaveFailed([assistantMessage], saveMessages, err),
+          });
       };
       if (this.currentConversationId) {
         saveMessages();
@@ -1273,7 +1282,7 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     }
 
     // Set parent_id on assistant message pointing to the user message
-    assistantMessage = { ...assistantMessage, parent_id: userMsgId, branch_index: 0, branch_count: 1 };
+    assistantMessage = { ...assistantMessage, id: assistantMsgId, parent_id: userMsgId, branch_index: 0, branch_count: 1 };
     // Update in-memory messages with IDs
     this.messages.update(items =>
       items.map((m, i) => {
@@ -1286,9 +1295,13 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     const saveMessages = () => {
       this.conversationService
         .appendMessages(this.currentConversationId!, [userToSave, assistantMessage], this.memoryEnabled())
-        .subscribe({ next: () => {
-          this.loadConversationList();
-        } });
+        .subscribe({
+          next: () => {
+            this.markSaved([userToSave, assistantMessage]);
+            this.loadConversationList();
+          },
+          error: (err) => this.onSaveFailed([userToSave, assistantMessage], saveMessages, err),
+        });
     };
 
     if (this.currentConversationId) {
@@ -1296,16 +1309,67 @@ export class ChatPageComponent implements OnInit, AfterViewChecked, OnDestroy {
     } else {
       const title = (typeof userMessage.content === 'string' ? userMessage.content : '').slice(0, 60);
       const profileId = this.profileService.currentId;
-      this.conversationService.create(title, this.model, profileId).subscribe({
-        next: (conv) => {
-          this.currentConversationId = conv.id;
-          saveMessages();
-          // Phase 19: the LLM auto-title lands a few seconds after the first
-          // exchange is persisted — refresh the list to pick it up.
-          setTimeout(() => this.loadConversationList(), 6000);
-        },
-      });
+      // Creating the conversation is the first half of persistence: if it
+      // fails there is nothing to append to, so the exchange is just as lost
+      // as if the append had failed (audit 4.1).
+      const createThenSave = () => {
+        this.conversationService.create(title, this.model, profileId).subscribe({
+          next: (conv) => {
+            this.currentConversationId = conv.id;
+            saveMessages();
+            // Phase 19: the LLM auto-title lands a few seconds after the first
+            // exchange is persisted — refresh the list to pick it up.
+            setTimeout(() => this.loadConversationList(), 6000);
+          },
+          error: (err) =>
+            this.onSaveFailed([userToSave, assistantMessage], createThenSave, err),
+        });
+      };
+      createThenSave();
     }
+  }
+
+  /**
+   * Audit 4.1 — persistence failed, so say so instead of losing the exchange.
+   *
+   * The messages stay on screen (throwing away the reply the user just read
+   * would be worse than keeping an unsaved one), get flagged so the template
+   * can mark them, and the toast offers a retry that reuses the very same save
+   * closure — including the create-then-append path for a brand new
+   * conversation.
+   */
+  private onSaveFailed(pending: ChatMessage[], retry: () => void, err: unknown): void {
+    this.markUnsaved(pending, true);
+    const detail = (err as { message?: string })?.message
+      || this.i18n.translate('chat.err.saveBody');
+    this.notifications.add(
+      'error',
+      this.i18n.translate('chat.err.saveTitle'),
+      detail,
+      12000,
+      undefined,
+      [{ label: this.i18n.translate('chat.err.saveRetry'), onClick: retry }],
+    );
+  }
+
+  private newMessageId(): string {
+    return self.crypto?.randomUUID?.()
+      || (Math.random().toString(36).slice(2) + Date.now().toString(36));
+  }
+
+  private markSaved(pending: ChatMessage[]): void {
+    this.markUnsaved(pending, false);
+  }
+
+  /** Flip the `unsaved` flag on the in-memory copies of the given messages. */
+  private markUnsaved(pending: ChatMessage[], unsaved: boolean): void {
+    const ids = new Set(pending.map(m => m.id).filter(Boolean));
+    if (!ids.size) {
+      return;
+    }
+    this.messages.update(items =>
+      items.map(m => (m.id && ids.has(m.id) ? { ...m, unsaved } : m)),
+    );
   }
 
   /** Open the profile selector (clears current profile so the modal reappears). */

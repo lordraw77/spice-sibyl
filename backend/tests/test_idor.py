@@ -5,6 +5,10 @@ Regression tests for the profile-scoping (IDOR) findings of the 2026-07-17 audit
           Telegram link of a profile owned by somebody else.
   * 2.2 — DELETE /v1/knowledge/documents/{doc_id}: deleting another profile's
           document (and, with it, its chunks, graph and vectors).
+  * 2.3 — GET /v1/knowledge/documents/{doc_id}/{chunks,source,wiki}: reading
+          another profile's document, `source` returning its full text.
+  * 3.1 — POST /v1/knowledge/documents/{doc_id}/reembed: re-ingesting another
+          profile's document, which also re-attributed it to the caller.
 
 Shape of every test: user B, holding a valid token of their own, must not be
 able to touch a resource of user A even knowing its UUID.
@@ -151,3 +155,58 @@ def _first_profile(client, headers) -> str:
     profiles = client.get("/api/v1/profiles", headers=headers).json()
     assert profiles, "expected at least one profile for the caller"
     return profiles[0]["id"]
+
+
+# ── 2.3 — Knowledge base document reads ────────────────────────
+@pytest.fixture()
+def victim_document(client, other_headers):
+    """A document owned by the *other* user, for the current user to poke at."""
+    profile = client.post(
+        "/api/v1/profiles", headers=other_headers, json={"name": "victim-read"}
+    ).json()
+    doc_id = _sync(
+        lambda db: kb_repository.create_document(
+            db, profile["id"], "confidential.txt", "text/plain", 42
+        )
+    )
+    return profile["id"], doc_id
+
+
+@pytest.mark.parametrize("suffix", ["chunks", "source", "wiki"])
+def test_reading_other_profile_document_is_404(
+    client, auth_headers, victim_document, suffix
+):
+    _, doc_id = victim_document
+    resp = client.get(
+        f"/api/v1/knowledge/documents/{doc_id}/{suffix}",
+        headers={**auth_headers, "X-Profile-ID": _first_profile(client, auth_headers)},
+    )
+    assert resp.status_code == 404, resp.text
+
+
+def test_reading_own_document_still_works(client, auth_headers):
+    pid = _first_profile(client, auth_headers)
+    doc_id = _sync(
+        lambda db: kb_repository.create_document(db, pid, "mine.txt", "text/plain", 10)
+    )
+    resp = client.get(
+        f"/api/v1/knowledge/documents/{doc_id}/chunks",
+        headers={**auth_headers, "X-Profile-ID": pid},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == []
+
+
+# ── 3.1 — Knowledge base re-embed ──────────────────────────────
+def test_reembed_other_profile_document_is_404(client, auth_headers, victim_document):
+    victim_pid, doc_id = victim_document
+    resp = client.post(
+        f"/api/v1/knowledge/documents/{doc_id}/reembed",
+        headers={**auth_headers, "X-Profile-ID": _first_profile(client, auth_headers)},
+    )
+    assert resp.status_code == 404, resp.text
+
+    # The real damage of 3.1 was not the read but the silent hand-over: the
+    # document must still belong to its owner.
+    doc = _sync(lambda db: kb_repository.get_document(db, doc_id))
+    assert doc is not None and doc.profile_id == victim_pid

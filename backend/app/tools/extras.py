@@ -14,11 +14,9 @@ All handlers return plain text (tool-result contract). Failures come back as
 "Error: …" strings so the model can recover instead of crashing the loop.
 """
 
-import ipaddress
 import json
 import logging
 import re
-import socket
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
@@ -26,6 +24,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app.core.config import settings
+from app.core.safe_http import BlockedURLError, assert_public_url, safe_request
 from app.db import pool
 
 logger = logging.getLogger(__name__)
@@ -37,35 +36,9 @@ async def _connect() -> pool.PooledConnection:
 
 
 # ── SSRF hardening ───────────────────────────────────────────────────────────
-
-def assert_public_url(url: str) -> str | None:
-    """Return an error string when the URL must not be fetched, else None.
-
-    Blocks non-HTTP schemes and hosts resolving to private/loopback/link-local
-    ranges; honors the optional HTTP_REQUEST_ALLOWED_DOMAINS suffix allowlist.
-    """
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        return f"Error: URL scheme '{parsed.scheme}' not allowed (http/https only)"
-    host = parsed.hostname
-    if not host:
-        return "Error: URL has no host"
-
-    allowlist = [d.strip().lower() for d in
-                 (settings.http_request_allowed_domains or "").split(",") if d.strip()]
-    if allowlist and not any(host.lower() == d or host.lower().endswith("." + d)
-                             for d in allowlist):
-        return f"Error: domain '{host}' is not in the configured allowlist"
-
-    try:
-        infos = socket.getaddrinfo(host, parsed.port or 443, proto=socket.IPPROTO_TCP)
-    except OSError as exc:
-        return f"Error: cannot resolve host '{host}': {exc}"
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
-            return f"Error: host '{host}' resolves to a non-public address ({ip}) — blocked"
-    return None
+# `assert_public_url` and the redirect-following guard moved to
+# app/core/safe_http.py so the workflow engine can share them (audit 1.3).
+# Re-exported here because callers and tests already import it from this module.
 
 
 # ── kb_search ────────────────────────────────────────────────────────────────
@@ -231,10 +204,13 @@ async def fetch_rss(url: str, max_entries: int = 5) -> str:
         return blocked
     max_entries = max(1, min(int(max_entries), 20))
     try:
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            resp = await client.get(url, headers={"User-Agent": "SpiceSibyl/1.0"})
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+            resp = await safe_request(client, "GET", url,
+                                      headers={"User-Agent": "SpiceSibyl/1.0"})
             resp.raise_for_status()
             root = ET.fromstring(resp.content)
+    except BlockedURLError as exc:
+        return str(exc)
     except (httpx.HTTPError, OSError) as exc:
         return f"Error: cannot fetch feed {url}: {exc}"
     except ET.ParseError as exc:
@@ -331,11 +307,14 @@ async def extract_document(url: str, max_chars: int = 8000) -> str:
         return blocked
     max_chars = max(500, min(int(max_chars), 20000))
     try:
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            resp = await client.get(url, headers={"User-Agent": "SpiceSibyl/1.0"})
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
+            resp = await safe_request(client, "GET", url,
+                                      headers={"User-Agent": "SpiceSibyl/1.0"})
             resp.raise_for_status()
             data = resp.content
             content_type = (resp.headers.get("content-type") or "").lower()
+    except BlockedURLError as exc:
+        return str(exc)
     except (httpx.HTTPError, OSError) as exc:
         return f"Error: cannot download {url}: {exc}"
 
@@ -401,8 +380,10 @@ async def http_request(
             kwargs["content"] = str(body)
 
     try:
-        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
-            resp = await client.request(method, url, **kwargs)
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=False) as client:
+            resp = await safe_request(client, method, url, **kwargs)
+    except BlockedURLError as exc:
+        return str(exc)
     except (httpx.HTTPError, OSError) as exc:
         return f"Error: request to {url} failed: {exc}"
 

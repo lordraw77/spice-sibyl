@@ -14,6 +14,8 @@ Admin only:
   GET   /v1/auth/audit         — recent audit log
 """
 
+import secrets
+
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -21,6 +23,7 @@ from app.db import audit_repository, token_repository, user_repository
 from app.db.database import get_db
 from app.db.user_repository import VALID_ROLES
 from app.dependencies.auth import get_current_user, require_role
+from app.dependencies.rate_limit import login_guard, record_login_failure
 from app.schemas.auth import (
     AuditEntry,
     LoginRequest,
@@ -33,6 +36,12 @@ from app.schemas.auth import (
 from app.services import auth_service
 
 router = APIRouter()
+
+# Bcrypt hash of a value nobody can present, compared against when the email is
+# unknown so that path costs the same as a wrong password (audit 2.6). Computed
+# once at import: bcrypt is deliberately slow, and doing it per request would
+# hand back the very timing signal this is meant to erase.
+_DUMMY_HASH = auth_service.hash_password(secrets.token_urlsafe(32))
 
 
 def _client_ip(request: Request) -> str | None:
@@ -48,23 +57,47 @@ async def _issue_tokens(
     return TokenResponse(access_token=access, refresh_token=refresh)
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=TokenResponse, dependencies=[Depends(login_guard)])
 async def login(
     body: LoginRequest,
     request: Request,
     db: aiosqlite.Connection = Depends(get_db),
 ):
     row = await user_repository.get_by_email(db, body.email)
-    if not row or not auth_service.verify_password(body.password, row["password_hash"]):
+    # Always run bcrypt, against a dummy hash when the email is unknown: the old
+    # `not row or not verify_password(...)` short-circuited, so an unknown email
+    # answered an order of magnitude faster and enumerated the user base for
+    # free (audit 2.6).
+    stored_hash = row["password_hash"] if row else _DUMMY_HASH
+    password_ok = auth_service.verify_password(body.password, stored_hash)
+
+    if not row or not password_ok:
+        await record_login_failure(body.email)
+        # Failed attempts belong in the audit log too, otherwise a brute-force
+        # run is invisible to whoever reads it (audit 2.8). user_id is NULL when
+        # the email matches nobody; the email goes in `detail` for triage.
+        await audit_repository.record(
+            db,
+            row["id"] if row else None,
+            "login_failed",
+            detail=body.email,
+            ip=_client_ip(request),
+        )
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
     if row["disabled"]:
+        await audit_repository.record(
+            db, row["id"], "login_failed", detail="account disabled",
+            ip=_client_ip(request),
+        )
         raise HTTPException(status_code=403, detail="Account disabled")
 
     await audit_repository.record(db, row["id"], "login", ip=_client_ip(request))
     return await _issue_tokens(db, row["id"], row["role"])
 
 
-@router.post("/refresh", response_model=TokenResponse)
+@router.post("/refresh", response_model=TokenResponse,
+             dependencies=[Depends(login_guard)])
 async def refresh(
     body: RefreshRequest,
     db: aiosqlite.Connection = Depends(get_db),

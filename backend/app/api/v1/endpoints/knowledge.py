@@ -54,6 +54,19 @@ _MAX_BYTES = 20 * 1024 * 1024
 _ALLOWED_EXT = document_converter.SUPPORTED_EXTENSIONS
 
 
+async def _owned_document(db: aiosqlite.Connection, doc_id: str, pid: str) -> KbDocument:
+    """Return the document only if it belongs to `pid`, else 404 (audit 2.2/2.3/3.1).
+
+    A document of another profile has to look *non-existent* rather than
+    forbidden: replying 403 would confirm that the id exists, which is half of
+    what an enumeration attack is after.
+    """
+    doc = await repo.get_document(db, doc_id)
+    if not doc or doc.profile_id != pid:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    return doc
+
+
 @router.get("/documents", response_model=list[KbDocument])
 async def list_documents(
     db: aiosqlite.Connection = Depends(get_db),
@@ -166,9 +179,7 @@ async def delete_document(
 ):
     # Profile-scoped: a document of another profile must look non-existent,
     # otherwise the id alone deletes its chunks, graph and vectors (finding 2.2).
-    doc = await repo.get_document(db, doc_id)
-    if not doc or doc.profile_id != pid:
-        raise HTTPException(status_code=404, detail="Document not found.")
+    await _owned_document(db, doc_id, pid)
     await repo.delete_document(db, doc_id)
     return Response(status_code=204)
 
@@ -177,7 +188,9 @@ async def delete_document(
 async def list_document_chunks(
     doc_id: str,
     db: aiosqlite.Connection = Depends(get_db),
+    pid: str = Depends(resolve_profile),
 ):
+    await _owned_document(db, doc_id, pid)
     return await repo.get_document_chunks(db, doc_id)
 
 
@@ -185,7 +198,10 @@ async def list_document_chunks(
 async def get_document_source(
     doc_id: str,
     db: aiosqlite.Connection = Depends(get_db),
+    pid: str = Depends(resolve_profile),
 ):
+    # The most sensitive of the three: this returns the full text, not a preview.
+    await _owned_document(db, doc_id, pid)
     source = await repo.get_document_source(db, doc_id)
     if not source:
         raise HTTPException(status_code=404, detail="Document not found.")
@@ -198,6 +214,9 @@ async def reembed_document(
     db: aiosqlite.Connection = Depends(get_db),
     pid: str = Depends(resolve_profile),
 ):
+    # `pid` was resolved but never compared: rag_service.reembed re-ingests with
+    # it, so an id from another profile got silently re-attributed (finding 3.1).
+    await _owned_document(db, doc_id, pid)
     try:
         chunk_count = await rag_service.reembed(db, doc_id, pid)
         logger.info("KB re-embed OK: profile=%s doc_id=%s chunks=%d", pid, doc_id, chunk_count)
@@ -236,8 +255,10 @@ async def search(
 async def get_document_wiki(
     doc_id: str,
     db: aiosqlite.Connection = Depends(get_db),
+    pid: str = Depends(resolve_profile),
 ):
     """Section tree (headings + extractive summaries) built from the Markdown."""
+    await _owned_document(db, doc_id, pid)
     return await wiki_service.get_wiki(db, doc_id)
 
 
