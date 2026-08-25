@@ -28,15 +28,15 @@ import { NodeInspectorComponent } from './editor/node-inspector.component';
 import { ExpressionContext } from './editor/expression-autocomplete';
 import { NodePaletteComponent } from './editor/node-palette.component';
 import { RunPanelComponent } from './editor/run-panel.component';
-
-/** One selectable value in the connect-time mapping chooser. */
-interface MapCandidate {
-  path: string;
-  typeDesc: string;
-  preview: string;
-  /** Shape class used for smart preselection: list | object | string | number | … */
-  kind: string;
-}
+import { autoLayoutNodes } from './editor/auto-layout';
+import { WorkflowDebugSession } from './editor/debug-session';
+import { GraphClipboard, GraphHistory, GraphSnapshot } from './editor/graph-history';
+import {
+  MapCandidate,
+  buildMapCandidates,
+  loopBodyCandidates,
+  preferredCandidate,
+} from './editor/data-mapping';
 
 /** Phase 29 — visual node-graph workflow editor. Roadmap fase 1 (1.1): the page
  *  is now a thin orchestrator over dedicated editor components — the SVG canvas
@@ -143,10 +143,24 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   notes: GraphNote[] = [];
 
   // ── fase 8.3: step-debug state ────────────────────────────────────────────
-  readonly debugMode = signal(false);
-  readonly breakpoints = signal<string[]>([]);
-  readonly pendingNode = signal<string | null>(null);
-  readonly debugStatus = signal<string | null>(null); // the paused run's status
+  // The state machine lives in editor/debug-session.ts; the signals below are
+  // the session's own, re-exposed under the names the template already binds to.
+  private readonly debug = new WorkflowDebugSession({
+    api: this.api,
+    notify: this.notify,
+    translate: (key) => this.i18n.translate(key),
+    workflowId: () => this.current()?.id ?? null,
+    payloadText: () => this.runPayloadText,
+    environment: () => this.runEnvironment,
+    onRunStarted: (runId) => this.runId.set(runId),
+    onNodeStatuses: (statuses) => this.nodeStatus.update((s) => ({ ...s, ...statuses })),
+    onReset: () => this.nodeStatus.set({}),
+    onExit: () => this.stopRunPoll(),
+  });
+  readonly debugMode = this.debug.mode;
+  readonly breakpoints = this.debug.breakpoints;
+  readonly pendingNode = this.debug.pendingNode;
+  readonly debugStatus = this.debug.status; // the paused run's status
 
   // ── fase 8.1: version diff overlay ────────────────────────────────────────
   readonly diffStatus = signal<Record<string, string>>({});
@@ -159,10 +173,10 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   private watchPoll: ReturnType<typeof setInterval> | null = null;
 
   // ── Phase 30.c / fase 3.4: copy/paste (multi) + undo/redo ─────────────────
-  private clipboard: { nodes: GraphNode[]; edges: GraphEdge[] } | null = null;
-  private undoStack: { nodes: GraphNode[]; edges: GraphEdge[] }[] = [];
-  private redoStack: { nodes: GraphNode[]; edges: GraphEdge[] }[] = [];
-  private readonly MAX_HISTORY = 50;
+  // The stacks themselves live in editor/graph-history.ts; the component only
+  // keeps the two signals the toolbar binds to in sync with them.
+  private readonly clipboard = new GraphClipboard();
+  private readonly history = new GraphHistory(50);
 
   readonly selectedNode = computed(() => {
     const id = this.selectedNodeId();
@@ -515,10 +529,8 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
     this.runId.set(null);
     this.running.set(false);
     this.dirty.set(false);
-    this.undoStack = [];
-    this.redoStack = [];
-    this.canUndo.set(false);
-    this.canRedo.set(false);
+    this.history.clear();
+    this.syncHistoryFlags();
     this.reattachRunningRun(wf.id);
     this.loadHistoricalOutputs(wf.id);
     this.startRunWatcher(wf.id);
@@ -735,115 +747,46 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
   }
 
   // ── fase 8.3: step debugging ──────────────────────────────────────────────
+  // Thin delegations to the session above; see editor/debug-session.ts.
 
   toggleDebugMode(): void {
-    if (this.debugMode()) {
-      this.exitDebug();
-    } else {
-      this.debugMode.set(true);
-    }
+    this.debug.toggleMode();
   }
 
   toggleBreakpoint(nodeId: string): void {
-    this.breakpoints.update((bps) =>
-      bps.includes(nodeId) ? bps.filter((b) => b !== nodeId) : [...bps, nodeId],
-    );
+    this.debug.toggleBreakpoint(nodeId);
   }
 
   exitDebug(): void {
+    this.debug.exit();
+  }
+
+  debugRunActive(): boolean {
+    return this.debug.isActive();
+  }
+
+  startDebugRun(): void {
+    this.debug.start();
+  }
+
+  debugStep(): void {
+    this.debug.step();
+  }
+
+  debugContinue(): void {
+    this.debug.continue();
+  }
+
+  debugStop(): void {
+    this.debug.stop();
+  }
+
+  /** Drop the run poller the page owns (the debug session asks for this on exit). */
+  private stopRunPoll(): void {
     if (this.runPoll) {
       clearInterval(this.runPoll);
       this.runPoll = null;
     }
-    this.debugMode.set(false);
-    this.breakpoints.set([]);
-    this.pendingNode.set(null);
-    this.debugStatus.set(null);
-    this.debugRunId = null;
-  }
-
-  private debugRunId: string | null = null;
-
-  /** A debug run is under way and can still be stepped (paused, not yet done). */
-  debugRunActive(): boolean {
-    const s = this.debugStatus();
-    return !!this.debugRunId && (s === 'paused' || s === 'running' || s === 'pending');
-  }
-
-  /** Launch a step-debug run: it is created paused; the first step/continue
-   *  advances it. Requires a saved graph (the run snapshots the workflow). */
-  startDebugRun(): void {
-    const wf = this.current();
-    if (!wf) return;
-    let payload: Record<string, unknown> = {};
-    try {
-      payload = this.runPayloadText.trim() ? JSON.parse(this.runPayloadText) : {};
-    } catch {
-      this.notify.add('error', 'Workflow', this.i18n.translate('gwf.runPayloadInvalid'));
-      return;
-    }
-    this.debugMode.set(true);
-    this.nodeStatus.set({});
-    this.api
-      .run(wf.id, payload, null, this.runEnvironment || null, { breakpoints: this.breakpoints() })
-      .subscribe({
-        next: (res) => {
-          this.debugRunId = res.run_id;
-          this.runId.set(res.run_id);
-          this.debugStatus.set('paused');
-          this.pendingNode.set(null);
-        },
-        error: () => this.notify.add('error', 'Workflow', this.i18n.translate('gwf.debug.startError')),
-      });
-  }
-
-  debugStep(): void {
-    this.sendDebug('step');
-  }
-
-  debugContinue(): void {
-    this.sendDebug('continue');
-  }
-
-  debugStop(): void {
-    const rid = this.debugRunId;
-    if (!rid) return;
-    this.api.debugRun(rid, 'stop').subscribe({
-      next: () => {
-        this.debugStatus.set('cancelled');
-        this.pendingNode.set(null);
-      },
-      error: () => {},
-    });
-  }
-
-  private sendDebug(command: 'step' | 'continue'): void {
-    const rid = this.debugRunId;
-    if (!rid) return;
-    // Keep the run's breakpoints in sync with the canvas before advancing.
-    this.api.debugRun(rid, command, { breakpoints: this.breakpoints() }).subscribe({
-      next: () => this.pollDebug(rid, 40),
-      error: () => this.notify.add('error', 'Workflow', this.i18n.translate('gwf.debug.stepError')),
-    });
-  }
-
-  /** Poll the paused/running debug run until it settles (paused again or done),
-   *  projecting node statuses + the pending node onto the canvas. */
-  private pollDebug(runId: string, attempts: number): void {
-    this.api.getRun(runId).subscribe({
-      next: (run) => {
-        const statuses: Record<string, string> = {};
-        for (const nr of run.node_runs ?? []) statuses[nr.node_id] = nr.status;
-        this.nodeStatus.update((s) => ({ ...s, ...statuses }));
-        this.debugStatus.set(run.status);
-        this.pendingNode.set(run.debug?.pending_node ?? null);
-        const settled = run.status !== 'running' && run.status !== 'pending';
-        if (!settled && attempts > 0) {
-          setTimeout(() => this.pollDebug(runId, attempts - 1), 300);
-        }
-      },
-      error: () => {},
-    });
   }
 
   reloadCurrent(): void {
@@ -937,45 +880,24 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
     const ids = new Set(this.selectedNodeIds());
     const primary = this.selectedNodeId();
     if (primary) ids.add(primary);
-    if (!ids.size) return;
-    this.clipboard = {
-      nodes: this.nodes
-        .filter((n) => ids.has(n.id))
-        .map((n) => ({ ...n, params: n.params ? { ...n.params } : {} })),
-      edges: this.edges.filter((e) => ids.has(e.source) && ids.has(e.target)).map((e) => ({ ...e })),
-    };
+    this.clipboard.copy(this.graphState(), ids);
   }
 
   hasClipboard(): boolean {
-    return this.clipboard !== null && this.clipboard.nodes.length > 0;
+    return this.clipboard.hasContent;
   }
 
   /** Paste the clipboard offset by 30px, remapping node ids (and the internal
    *  edges to the new ids); the pasted nodes become the new selection. */
   pasteNode(): void {
-    if (!this.clipboard?.nodes.length || !this.current()) return;
+    if (!this.current()) return;
+    const pasted = this.clipboard.paste(() => this.newNodeId());
+    if (!pasted) return;
     this.pushUndoSnapshot();
-    const idMap = new Map<string, string>();
-    const pasted = this.clipboard.nodes.map((src) => {
-      const id = this.newNodeId();
-      idMap.set(src.id, id);
-      return {
-        ...src,
-        id,
-        params: src.params ? { ...src.params } : {},
-        position: { x: (src.position?.x ?? 0) + 30, y: (src.position?.y ?? 0) + 30 },
-      } as GraphNode;
-    });
-    const pastedEdges = this.clipboard.edges.map((e, i) => ({
-      ...e,
-      id: `e${Date.now().toString(36)}p${i}`,
-      source: idMap.get(e.source)!,
-      target: idMap.get(e.target)!,
-    }));
-    this.nodes = [...this.nodes, ...pasted];
-    this.edges = [...this.edges, ...pastedEdges];
-    this.selectedNodeIds.set(pasted.map((n) => n.id));
-    this.selectedNodeId.set(pasted[pasted.length - 1].id);
+    this.nodes = [...this.nodes, ...pasted.nodes];
+    this.edges = [...this.edges, ...pasted.edges];
+    this.selectedNodeIds.set(pasted.nodes.map((n) => n.id));
+    this.selectedNodeId.set(pasted.nodes[pasted.nodes.length - 1].id);
     this.dirty.set(true);
   }
 
@@ -986,51 +908,40 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
     this.selectedEdgeId.set(null);
   }
 
-  private snapshot(): { nodes: GraphNode[]; edges: GraphEdge[] } {
-    return {
-      nodes: this.nodes.map((n) => ({
-        ...n,
-        params: n.params ? { ...n.params } : n.params,
-        position: n.position ? { x: n.position.x, y: n.position.y } : n.position,
-      })),
-      edges: this.edges.map((e) => ({ ...e })),
-    };
+  /** The graph as the history/clipboard see it. */
+  private graphState(): GraphSnapshot {
+    return { nodes: this.nodes, edges: this.edges };
   }
 
   pushUndoSnapshot(): void {
-    this.undoStack.push(this.snapshot());
-    if (this.undoStack.length > this.MAX_HISTORY) this.undoStack.shift();
-    this.redoStack = [];
-    this.canUndo.set(true);
-    this.canRedo.set(false);
+    this.history.push(this.graphState());
+    this.syncHistoryFlags();
   }
 
   undo(): void {
-    const prev = this.undoStack.pop();
-    if (!prev) return;
-    this.redoStack.push(this.snapshot());
-    this.nodes = prev.nodes;
-    this.edges = prev.edges;
-    this.selectedNodeId.set(null);
-    this.selectedNodeIds.set([]);
-    this.selectedEdgeId.set(null);
-    this.dirty.set(true);
-    this.canUndo.set(this.undoStack.length > 0);
-    this.canRedo.set(true);
+    this.applyRestored(this.history.undo(this.graphState()));
   }
 
   redo(): void {
-    const next = this.redoStack.pop();
-    if (!next) return;
-    this.undoStack.push(this.snapshot());
-    this.nodes = next.nodes;
-    this.edges = next.edges;
+    this.applyRestored(this.history.redo(this.graphState()));
+  }
+
+  /** Swap the canvas over to a restored snapshot, dropping the selection: the
+   *  ids it pointed at may not exist in the state we just moved to. */
+  private applyRestored(restored: GraphSnapshot | null): void {
+    if (!restored) return;
+    this.nodes = restored.nodes;
+    this.edges = restored.edges;
     this.selectedNodeId.set(null);
     this.selectedNodeIds.set([]);
     this.selectedEdgeId.set(null);
     this.dirty.set(true);
-    this.canRedo.set(this.redoStack.length > 0);
-    this.canUndo.set(true);
+    this.syncHistoryFlags();
+  }
+
+  private syncHistoryFlags(): void {
+    this.canUndo.set(this.history.canUndo);
+    this.canRedo.set(this.history.canRedo);
   }
 
   // ── canvas events ─────────────────────────────────────────────────────────
@@ -1084,35 +995,12 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
     this.canvas?.fitView();
   }
 
-  /** Layered left-to-right layout: each node's column is its longest path from
-   *  a root, rows keep the previous vertical order. Undoable like any edit. */
+  /** Layered left-to-right layout (see editor/auto-layout.ts). Undoable like
+   *  any other edit, hence the snapshot before it runs. */
   autoLayout(): void {
     if (!this.nodes.length) return;
     this.pushUndoSnapshot();
-    const layer = new Map<string, number>(this.nodes.map((n) => [n.id, 0]));
-    // Longest-path layering; the graph is a DAG, |V| passes are a safe bound.
-    for (let pass = 0; pass < this.nodes.length; pass++) {
-      let moved = false;
-      for (const e of this.edges) {
-        const want = (layer.get(e.source) ?? 0) + 1;
-        if (layer.has(e.target) && want > (layer.get(e.target) ?? 0)) {
-          layer.set(e.target, want);
-          moved = true;
-        }
-      }
-      if (!moved) break;
-    }
-    const byLayer = new Map<number, GraphNode[]>();
-    for (const n of this.nodes) {
-      const l = layer.get(n.id) ?? 0;
-      byLayer.set(l, [...(byLayer.get(l) ?? []), n]);
-    }
-    for (const [l, group] of byLayer) {
-      group.sort((a, b) => (a.position?.y ?? 0) - (b.position?.y ?? 0));
-      group.forEach((n, i) => {
-        n.position = { x: 60 + l * (NODE_W + 70), y: 60 + i * (NODE_H + 50) };
-      });
-    }
+    autoLayoutNodes(this.nodes, this.edges, { nodeWidth: NODE_W, nodeHeight: NODE_H });
     this.nodes = [...this.nodes];
     this.dirty.set(true);
     this.canvas?.fitView();
@@ -1202,13 +1090,10 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
     if (isLoop && edge.sourceHandle === 'loop') {
       // Loop BODY: the for/repeat node hasn't finished yet, so $node.<id>.output
       // does not exist here — the per-iteration scope variables do.
-      candidates = [
-        { path: '$item', typeDesc: this.i18n.translate('gwf.map.tItem'), preview: '', kind: 'item' },
-        { path: '$index', typeDesc: this.i18n.translate('gwf.map.tIndex'), preview: '', kind: 'number' },
-      ];
+      candidates = loopBodyCandidates(this.translate);
     } else {
       const out = this.nodeOutputs()[edge.source];
-      candidates = this.buildMapCandidates(out, base);
+      candidates = buildMapCandidates(out, base, this.translate);
       if (isLoop && edge.sourceHandle === 'done' && (out === undefined || out === null)) {
         // No run data yet, but a loop's `done` shape is fixed: {items, count}.
         candidates.push({ path: `${base}.items`, typeDesc: this.i18n.translate('gwf.map.tList'), preview: '', kind: 'list' });
@@ -1226,79 +1111,14 @@ export class GraphWorkflowPageComponent implements OnInit, OnDestroy {
       sourceName: source.name || source.type,
       targetName: target.name || target.type,
       candidates,
-      selectedPath: this.preferredCandidate(candidates, fillable[0].name).path,
+      selectedPath: preferredCandidate(candidates, fillable[0].name).path,
       targetParams: fillable.map((p) => ({ name: p.name, label: p.label, kind: p.kind })),
       selectedParam: fillable[0].name,
     });
   }
 
-  /** Human-readable shape of a value — the "what makes this option different"
-   *  line in the chooser (list length, object keys, scalar type + preview). */
-  private describeValue(v: unknown): string {
-    if (v === undefined) return this.i18n.translate('gwf.map.tUnknown');
-    if (v === null) return this.i18n.translate('gwf.map.tNull');
-    if (Array.isArray(v)) return `${this.i18n.translate('gwf.map.tList')} · ${v.length}`;
-    if (typeof v === 'object') {
-      const keys = Object.keys(v as Record<string, unknown>);
-      return `${this.i18n.translate('gwf.map.tObject')} · ${keys.slice(0, 5).join(', ')}${keys.length > 5 ? '…' : ''}`;
-    }
-    if (typeof v === 'number') return this.i18n.translate('gwf.map.tNumber');
-    if (typeof v === 'boolean') return this.i18n.translate('gwf.map.tBool');
-    return this.i18n.translate('gwf.map.tText');
-  }
-
-  private previewText(v: unknown): string {
-    if (v === undefined || v === null) return '';
-    const text = typeof v === 'string' ? v : JSON.stringify(v);
-    return text && text.length > 70 ? text.slice(0, 70) + '…' : text ?? '';
-  }
-
-  private valueKind(v: unknown): string {
-    if (Array.isArray(v)) return 'list';
-    if (v === undefined || v === null) return 'empty';
-    return typeof v === 'object' ? 'object' : typeof v;
-  }
-
-  /** The whole output first, then its first-level fields (or the fields of the
-   *  first list item), each classified so the user can tell them apart. */
-  private buildMapCandidates(out: unknown, base: string): MapCandidate[] {
-    const mk = (path: string, v: unknown): MapCandidate => ({
-      path,
-      typeDesc: this.describeValue(v),
-      preview: this.previewText(v),
-      kind: this.valueKind(v),
-    });
-    const list: MapCandidate[] = [mk(base, out)];
-    const pushFields = (obj: Record<string, unknown>, prefix: string) => {
-      for (const k of Object.keys(obj).slice(0, 10)) list.push(mk(`${prefix}.${k}`, obj[k]));
-    };
-    if (Array.isArray(out) && out.length) {
-      const first = out[0];
-      list.push(mk(`${base}[0]`, first));
-      if (first !== null && typeof first === 'object' && !Array.isArray(first)) {
-        pushFields(first as Record<string, unknown>, `${base}[0]`);
-      }
-    } else if (out !== null && typeof out === 'object' && !Array.isArray(out)) {
-      pushFields(out as Record<string, unknown>, base);
-    }
-    return list;
-  }
-
-  /** Default selection. An `items` param (for/filter/aggregate/batch) needs a
-   *  real list, so the first list-shaped value wins; otherwise the field most
-   *  engines put the useful value in. */
-  private preferredCandidate(candidates: MapCandidate[], paramName: string): MapCandidate {
-    if (paramName === 'items') {
-      const listHit = candidates.find((c) => c.kind === 'list');
-      if (listHit) return listHit;
-    }
-    const favored = ['result', 'text', 'content', 'message', 'output', 'body'];
-    for (const name of favored) {
-      const hit = candidates.find((c) => c.path.endsWith(`.${name}`));
-      if (hit) return hit;
-    }
-    return candidates[0];
-  }
+  /** i18n lookup as a plain function, for the pure helpers in data-mapping.ts. */
+  private readonly translate = (key: string): string => this.i18n.translate(key);
 
   setMapPath(path: string): void {
     this.mapDialog.update((d) => (d ? { ...d, selectedPath: path } : d));

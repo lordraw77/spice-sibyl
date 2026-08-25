@@ -1,0 +1,412 @@
+    <div class="side-head"><span>{{ 'gwf.runPanel' | t }}</span></div>
+
+    <div class="wf-id-row">
+      <span class="side-subhead">{{ 'gwf.workflowId' | t }}</span>
+      <code class="wf-id" [title]="wf.id">{{ wf.id }}</code>
+      <button class="icon-btn" (click)="copyWorkflowId()" [title]="'gwf.copyId' | t">⧉</button>
+    </div>
+
+    <div class="triggers">
+      <div class="side-subhead">{{ 'gwf.triggers' | t }}</div>
+      <div *ngFor="let tr of wf.triggers || []" class="trigger-row">
+        <span class="trigger-type">{{ tr.type }}</span>
+        <a *ngIf="tr.token" class="trigger-url" [href]="webhookUrl(tr.token)" target="_blank" rel="noopener">
+          {{ 'gwf.webhookUrl' | t }}
+        </a>
+        <button class="icon-btn danger" (click)="deleteTrigger(tr.id)">✕</button>
+      </div>
+      <div class="trigger-add">
+        <button class="btn small" (click)="addScheduleTrigger()">＋ {{ 'gwf.cat.trigger' | t }} · schedule</button>
+        <button class="btn small" (click)="addWebhookTrigger()">＋ webhook</button>
+        <button class="btn small" (click)="addErrorTrigger()" [title]="'gwf.errorTriggerHint' | t">＋ error</button>
+        <button class="btn small" (click)="addSuccessTrigger()" [title]="'gwf.successTriggerHint' | t">＋ success</button>
+      </div>
+    </div>
+
+    <label class="field">
+      <span>{{ 'gwf.runPayload' | t }}</span>
+      <textarea
+        rows="3"
+        [ngModel]="payload"
+        (ngModelChange)="payloadChange.emit($event)"
+        [placeholder]="'gwf.runPayloadHint' | t"
+      ></textarea>
+    </label>
+
+    <!-- ── execution settings (fase 2.3) ───────────────────────── -->
+    <details class="advanced wf-exec">
+      <summary>{{ 'gwf.exec.title' | t }}</summary>
+      <p class="muted small">{{ 'gwf.exec.hint' | t }}</p>
+      <div class="var-row">
+        <span class="var-key">{{ 'gwf.exec.maxConcurrentRuns' | t }}</span>
+        <input
+          class="var-value"
+          type="number"
+          min="0"
+          max="100"
+          [(ngModel)]="maxConcurrentRuns"
+          (ngModelChange)="execDirty.set(true)"
+        />
+        <button class="btn small primary" [disabled]="!execDirty()" (click)="saveExecSettings()">
+          {{ 'gwf.save' | t }}
+        </button>
+      </div>
+    </details>
+
+    <!-- ── contracts (fase 6.4) ─────────────────────────────────── -->
+    <details class="advanced wf-contracts">
+      <summary>
+        {{ 'gwf.contracts.title' | t }}
+        <span class="subcat-count" *ngIf="wf.input_schema || wf.output_schema">✓</span>
+      </summary>
+      <p class="muted small">{{ 'gwf.contracts.hint' | t }}</p>
+      <label class="field">
+        <span>{{ 'gwf.contracts.input' | t }}</span>
+        <textarea
+          rows="4"
+          [(ngModel)]="inputSchemaText"
+          (ngModelChange)="contractsDirty.set(true)"
+          [placeholder]="'gwf.contracts.placeholder' | t"
+        ></textarea>
+      </label>
+      <label class="field">
+        <span>{{ 'gwf.contracts.output' | t }}</span>
+        <textarea
+          rows="4"
+          [(ngModel)]="outputSchemaText"
+          (ngModelChange)="contractsDirty.set(true)"
+          [placeholder]="'gwf.contracts.placeholder' | t"
+        ></textarea>
+      </label>
+      <!-- fase 9.1 — publish as a callable tool (needs an input contract) -->
+      <label class="field checkbox-field">
+        <input
+          type="checkbox"
+          [(ngModel)]="exposeAsTool"
+          (ngModelChange)="contractsDirty.set(true)"
+        />
+        <span>{{ 'gwf.contracts.exposeAsTool' | t }}</span>
+      </label>
+      <p class="muted small">{{ 'gwf.contracts.exposeAsToolHint' | t }}</p>
+      <div class="trigger-add">
+        <button class="btn small primary" [disabled]="!contractsDirty()" (click)="saveContracts()">
+          {{ 'gwf.save' | t }}
+        </button>
+      </div>
+    </details>
+
+    <!-- ── environments (fase 7.2) ──────────────────────────────── -->
+    <details class="advanced wf-envs">
+      <summary>
+        {{ 'gwf.envs.title' | t }}
+        <span class="subcat-count">{{ envNames().length }}</span>
+      </summary>
+      <p class="muted small">{{ 'gwf.envs.hint' | t }}</p>
+      <label class="field" *ngIf="envNames().length">
+        <span>{{ 'gwf.envs.runIn' | t }}</span>
+        <select [ngModel]="environment" (ngModelChange)="environmentChange.emit($event)">
+          <option value="">{{ 'gwf.envs.default' | t }}</option>
+          <option *ngFor="let name of envNames()" [value]="name">
+            {{ name }}{{ pinnedVersion(name) ? ' (v' + pinnedVersion(name) + ')' : '' }}
+          </option>
+        </select>
+      </label>
+      <div class="var-row" *ngFor="let name of envNames()">
+        <code class="var-key">{{ name }}</code>
+        <span class="muted small">
+          {{ pinnedVersion(name) ? 'v' + pinnedVersion(name) : ('gwf.envs.unpinned' | t) }}
+        </span>
+        <button class="btn small" (click)="promote(name)" [title]="'gwf.envs.promoteHint' | t">
+          ⇧ {{ 'gwf.envs.promote' | t }}
+        </button>
+      </div>
+      <label class="field">
+        <span>{{ 'gwf.envs.json' | t }}</span>
+        <textarea
+          rows="5"
+          [(ngModel)]="environmentsText"
+          (ngModelChange)="envsDirty.set(true)"
+          [placeholder]="'gwf.envs.placeholder' | t"
+        ></textarea>
+      </label>
+      <div class="trigger-add">
+        <button class="btn small primary" [disabled]="!envsDirty()" (click)="saveEnvironments()">
+          {{ 'gwf.save' | t }}
+        </button>
+      </div>
+    </details>
+
+    <!-- ── $vars (1.3) ─────────────────────────────────────────── -->
+    <details class="advanced wf-vars">
+      <summary>{{ 'gwf.vars.title' | t }} <span class="subcat-count">{{ varRows.length }}</span></summary>
+      <p class="muted small">{{ 'gwf.vars.hint' | t }}</p>
+      <div class="var-row" *ngFor="let row of varRows; let i = index">
+        <input class="var-key" [(ngModel)]="row.key" [placeholder]="'gwf.vars.key' | t" (ngModelChange)="varsDirty.set(true)" />
+        <input class="var-value" [(ngModel)]="row.value" [placeholder]="'gwf.vars.value' | t" (ngModelChange)="varsDirty.set(true)" />
+        <button class="icon-btn danger" (click)="removeVar(i)">✕</button>
+      </div>
+      <div class="trigger-add">
+        <button class="btn small" (click)="addVar()">＋ {{ 'gwf.vars.add' | t }}</button>
+        <button class="btn small primary" [disabled]="!varsDirty()" (click)="saveVars()">{{ 'gwf.save' | t }}</button>
+      </div>
+    </details>
+
+    <!-- ── $secrets (1.3) ──────────────────────────────────────── -->
+    <details class="advanced wf-secrets">
+      <summary>{{ 'gwf.secrets.title' | t }} <span class="subcat-count">{{ secrets().length }}</span></summary>
+      <p class="muted small">{{ 'gwf.secrets.hint' | t }}</p>
+      <div class="var-row" *ngFor="let s of secrets()">
+        <code class="var-key secret-name">{{ s.name }}</code>
+        <span class="secret-masked">••••••</span>
+        <button class="icon-btn" (click)="copySecretRef(s.name)" [title]="'gwf.fieldCopyHint' | t">⧉</button>
+        <button class="icon-btn danger" (click)="deleteSecret(s.name)">✕</button>
+      </div>
+      <div class="var-row">
+        <input class="var-key" [(ngModel)]="newSecretName" [placeholder]="'gwf.secrets.name' | t" />
+        <input class="var-value" type="password" [(ngModel)]="newSecretValue" [placeholder]="'gwf.secrets.value' | t" />
+        <button class="btn small" [disabled]="!newSecretName.trim() || !newSecretValue" (click)="addSecret()">
+          ＋
+        </button>
+      </div>
+    </details>
+
+    <!-- ── versions (1.4) ──────────────────────────────────────── -->
+    <details class="advanced wf-versions" (toggle)="onVersionsToggle($event)">
+      <summary>{{ 'gwf.versions.title' | t }} <span class="subcat-count">v{{ wf.version }}</span></summary>
+      <div class="version-row" *ngFor="let v of versions()">
+        <span class="version-badge" [class.current]="v.version === wf.version">v{{ v.version }}</span>
+        <span class="version-when">{{ versionWhen(v.created_at) }}</span>
+        <span class="version-current" *ngIf="v.version === wf.version">{{ 'gwf.versions.current' | t }}</span>
+        <button
+          class="btn small"
+          *ngIf="v.version !== wf.version"
+          (click)="restoreVersion(v.version)"
+        >
+          {{ 'gwf.versions.restore' | t }}
+        </button>
+      </div>
+
+      <!-- fase 8.1 — compare two versions on the canvas -->
+      <div class="version-diff-row" *ngIf="versions().length > 1">
+        <span class="muted small">{{ 'gwf.diff.compare' | t }}</span>
+        <select [(ngModel)]="diffFrom" class="version-select">
+          <option *ngFor="let v of versions()" [ngValue]="v.version">v{{ v.version }}</option>
+        </select>
+        <span>→</span>
+        <select [(ngModel)]="diffTo" class="version-select">
+          <option *ngFor="let v of versions()" [ngValue]="v.version">v{{ v.version }}</option>
+        </select>
+        <button class="btn small" (click)="emitDiff()">{{ 'gwf.diff.show' | t }}</button>
+      </div>
+
+      <!-- fase 13.3 — Git sync of definitions (workflow-as-code) -->
+      <div class="side-subhead">{{ 'gwf.gitSync.title' | t }}</div>
+      <p class="muted small">{{ 'gwf.gitSync.hint' | t }}</p>
+      <label class="field">
+        <span>{{ 'gwf.gitSync.repoUrl' | t }}</span>
+        <input [(ngModel)]="gitRepoUrl" (ngModelChange)="gitSyncDirty.set(true)" placeholder="https://github.com/org/repo.git" />
+      </label>
+      <label class="field">
+        <span>{{ 'gwf.gitSync.branch' | t }}</span>
+        <input [(ngModel)]="gitBranch" (ngModelChange)="gitSyncDirty.set(true)" placeholder="main" />
+      </label>
+      <label class="field">
+        <span>{{ 'gwf.gitSync.tokenSecret' | t }}</span>
+        <input [(ngModel)]="gitTokenSecret" (ngModelChange)="gitSyncDirty.set(true)" placeholder="GIT_TOKEN" />
+      </label>
+      <label class="field">
+        <span>{{ 'gwf.gitSync.subpath' | t }}</span>
+        <input [(ngModel)]="gitSubpath" (ngModelChange)="gitSyncDirty.set(true)" [placeholder]="'workflows/' + wf.id + '.json'" />
+      </label>
+      <div class="node-run-actions">
+        <button class="btn small primary" [disabled]="!gitSyncDirty()" (click)="saveGitSync()">
+          {{ 'gwf.gitSync.save' | t }}
+        </button>
+        <button class="btn small" *ngIf="wf.git_sync" [disabled]="gitPulling()" (click)="pullGitSync()">
+          {{ 'gwf.gitSync.pull' | t }}
+        </button>
+        <button class="btn small" *ngIf="wf.git_sync" (click)="disableGitSync()">
+          {{ 'gwf.gitSync.disable' | t }}
+        </button>
+      </div>
+    </details>
+
+    <!-- ── tests, dry-run, cost estimate (roadmap fase 11) ─────── -->
+    <details class="advanced wf-quality" (toggle)="onQualityToggle($event)">
+      <summary>{{ 'gwf.quality.title' | t }} <span class="subcat-count">{{ testCases().length }}</span></summary>
+      <p class="muted small">{{ 'gwf.quality.hint' | t }}</p>
+
+      <div class="side-subhead">{{ 'gwf.quality.testsSubtitle' | t }}</div>
+      <div class="version-row" *ngFor="let c of testCases()">
+        <span class="version-when">{{ c.name }}</span>
+        <span class="muted small">{{ c.assertions.length }} {{ 'gwf.quality.assertionsCount' | t }}</span>
+        <button class="icon-btn danger" (click)="deleteTestCase(c.id)">✕</button>
+      </div>
+
+      <label class="field">
+        <span>{{ 'gwf.quality.caseName' | t }}</span>
+        <input [(ngModel)]="newCaseName" [placeholder]="'gwf.quality.caseName' | t" />
+      </label>
+      <label class="field">
+        <span>{{ 'gwf.quality.casePayload' | t }}</span>
+        <textarea rows="2" [(ngModel)]="newCasePayloadText" placeholder="{}"></textarea>
+      </label>
+      <label class="field">
+        <span>{{ 'gwf.quality.caseAssertions' | t }}</span>
+        <textarea
+          rows="3"
+          [(ngModel)]="newCaseAssertionsText"
+          [placeholder]="'gwf.quality.caseAssertionsHint' | t"
+        ></textarea>
+      </label>
+      <div class="trigger-add">
+        <button class="btn small" [disabled]="!newCaseName.trim()" (click)="addTestCase()">
+          ＋ {{ 'gwf.quality.addCase' | t }}
+        </button>
+        <button class="btn small primary" [disabled]="!testCases().length || testsRunning()" (click)="runTests()">
+          {{ 'gwf.quality.runTests' | t }}
+        </button>
+      </div>
+
+      <div class="run-status" *ngIf="testSuiteResult() as result">
+        <div class="side-subhead">
+          {{ 'gwf.quality.testsResult' | t: { passed: result.passed, total: result.total } }}
+        </div>
+        <ul>
+          <li *ngFor="let r of result.results" class="rs-item">
+            <div class="rs-row">
+              <span class="rs-dot" [attr.data-status]="r.passed ? 'ok' : 'error'"></span>
+              <span class="rs-name">{{ r.name }}</span>
+            </div>
+            <p class="rs-error" *ngIf="r.error">{{ r.error }}</p>
+            <p class="rs-error" *ngFor="let a of r.assertions" [class.rs-ok]="a.passed">
+              {{ a.node_id }} · {{ a.type }} — {{ a.passed ? '✓' : ('✗ ' + a.message) }}
+            </p>
+          </li>
+        </ul>
+      </div>
+
+      <div class="side-subhead">{{ 'gwf.quality.dryRunSubtitle' | t }}</div>
+      <p class="muted small">{{ 'gwf.quality.dryRunHint' | t }}</p>
+      <div class="trigger-add">
+        <button class="btn small" [disabled]="dryRunRunning()" (click)="runDryRun()">
+          {{ 'gwf.quality.runDryRun' | t }}
+        </button>
+      </div>
+      <div class="run-status" *ngIf="dryRunResult() as dr">
+        <div class="side-subhead">{{ 'gwf.quality.dryRunPath' | t }}</div>
+        <p class="muted small">{{ dr.path.join(' → ') }}</p>
+        <div class="side-subhead" *ngIf="dr.external_effects.length">{{ 'gwf.quality.dryRunEffects' | t }}</div>
+        <ul>
+          <li *ngFor="let e of dr.external_effects" class="rs-item">
+            <div class="rs-row">
+              <span class="rs-name">{{ e.node_id }} ({{ e.node_type }})</span>
+              <span class="rs-badge">{{ e.source }}</span>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <div class="side-subhead">{{ 'gwf.quality.costSubtitle' | t }}</div>
+      <div class="run-status" *ngIf="costEstimate() as ce">
+        <p class="muted small">
+          {{ 'gwf.quality.llmNodeCount' | t }}: {{ ce.llm_node_count }}<br />
+          <ng-container *ngIf="ce.avg_tokens_per_run != null">
+            {{ 'gwf.quality.avgTokensPerRun' | t }}: {{ ce.avg_tokens_per_run | number: '1.0-0' }}<br />
+          </ng-container>
+          <ng-container *ngIf="ce.tokens_per_month_est != null">
+            {{ 'gwf.quality.tokensPerMonth' | t }}: {{ ce.tokens_per_month_est | number: '1.0-0' }}<br />
+          </ng-container>
+          {{ ce.basis }}
+        </p>
+      </div>
+
+      <div class="side-subhead">{{ 'gwf.budget.subtitle' | t }}</div>
+      <p class="muted small">{{ 'gwf.budget.hint' | t }}</p>
+      <div class="var-row">
+        <span class="var-key">{{ 'gwf.budget.tokenCap' | t }}</span>
+        <input
+          class="var-value"
+          type="number"
+          min="0"
+          [(ngModel)]="tokenBudgetMonth"
+          (ngModelChange)="budgetDirty.set(true)"
+        />
+      </div>
+      <div class="var-row">
+        <span class="var-key">{{ 'gwf.budget.runCap' | t }}</span>
+        <input
+          class="var-value"
+          type="number"
+          min="0"
+          [(ngModel)]="runBudgetMonth"
+          (ngModelChange)="budgetDirty.set(true)"
+        />
+      </div>
+      <div class="var-row">
+        <span class="var-key">{{ 'gwf.budget.retentionDays' | t }}</span>
+        <input
+          class="var-value"
+          type="number"
+          min="0"
+          [(ngModel)]="runsRetentionDays"
+          (ngModelChange)="budgetDirty.set(true)"
+        />
+        <button class="btn small primary" [disabled]="!budgetDirty()" (click)="saveBudget()">
+          {{ 'gwf.save' | t }}
+        </button>
+      </div>
+      <div class="run-status" *ngIf="budgetStatus() as bs">
+        <p class="muted small" [class.rs-error]="bs.exceeded">
+          {{ 'gwf.budget.usage' | t }} ({{ bs.period }}): {{ bs.tokens_used | number: '1.0-0' }} tokens / {{ bs.runs_used }} runs
+          <ng-container *ngIf="bs.exceeded">— {{ 'gwf.budget.exceeded' | t }}</ng-container>
+        </p>
+        <p class="muted small" [class.rs-error]="bs.profile_exceeded" *ngIf="bs.profile_token_budget_month != null || bs.profile_run_budget_month != null">
+          {{ 'gwf.budget.profileUsage' | t }}: {{ bs.profile_tokens_used | number: '1.0-0' }} tokens / {{ bs.profile_runs_used }} runs
+          <ng-container *ngIf="bs.profile_exceeded">— {{ 'gwf.budget.exceeded' | t }}</ng-container>
+        </p>
+      </div>
+    </details>
+
+    <div class="run-status" *ngIf="runId">
+      <div class="side-subhead">{{ 'gwf.lastRun' | t }}</div>
+      <ul>
+        <li *ngFor="let n of nodes" class="rs-item">
+          <div class="rs-row">
+            <span class="rs-dot" [attr.data-status]="nodeStatus[n.id] || 'idle'"></span>
+            <span class="rs-name">{{ n.name || n.type }}</span>
+            <span class="rs-badge" [attr.data-status]="nodeStatus[n.id]">
+              {{ nodeStatus[n.id] || '—' }}
+            </span>
+          </div>
+          <p class="rs-error" *ngIf="nodeErrors[n.id]">{{ nodeErrors[n.id] }}</p>
+          <pre class="rs-output" *ngIf="outputPreview(n.id)">{{ outputPreview(n.id) }}</pre>
+
+          <!-- fase 13.2 — "explain / repair" for the failed node -->
+          <button
+            class="btn small"
+            *ngIf="nodeStatus[n.id] === 'error' && runId"
+            [disabled]="explaining()"
+            (click)="explainNode()"
+          >
+            🩹 {{ (explaining() ? 'gwf.explain.running' : 'gwf.explain.action') | t }}
+          </button>
+          <div class="explain-result" *ngIf="explainResult() as ex" [style.display]="ex.node_id === n.id ? 'block' : 'none'">
+            <p class="muted small">{{ ex.explanation }}</p>
+            <ng-container *ngIf="ex.patch && ex.patch.length">
+              <pre class="edge-payload expr-test-result">{{ patchText(ex.patch) }}</pre>
+              <div class="node-run-actions">
+                <button class="btn small primary" (click)="acceptExplainPatch()">
+                  {{ 'gwf.explain.accept' | t }}
+                </button>
+                <button class="btn small" (click)="explainResult.set(null)">
+                  {{ 'gwf.explain.discard' | t }}
+                </button>
+              </div>
+            </ng-container>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <p class="muted small">{{ 'gwf.runHint' | t }}</p>
